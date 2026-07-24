@@ -19,28 +19,37 @@ import nox.os
 from nox.os import OsError
 import nyx.flash
 
+# NOT: Kurucu (__init__) PARAMETRE adlari, bu modulun ASAGIDAKI
+# `session_json()`/`has_session()`/`locale()`/`request_id()`/`started_ms()`
+# GETTER FONKSIYONLARIYLA KASITLI OLARAK AYNI DEGIL (bkz. `sj`/`hs`/`loc`/
+# `rid`/`sms`) — bir parametrenin modul-duzeyinde AYNI ada sahip bir
+# fonksiyonla CAKISMASI, o fonksiyon/metod GERCEKTEN COGENDIR (codegen)
+# EDILDIGINDE derleyicinin "nested function/class definition" DESTEKLENMEYEN
+# bir yapi URETMESINE yol acan GERCEK bir derleyici hatasidir (yalnizca
+# `noxc check`te DEGIL, yalnizca `noxc build`/`test` COGENDIR asamasinda
+# ORTAYA CIKAR — bkz. proje notlari).
 class RequestBag:
     def __init__(
         self: RequestBag,
-        session_json: str,
+        sj: str,
         session_dirty: bool,
-        has_session: bool,
+        hs: bool,
         user_id: str,
         user_payload: str,
         has_user: bool,
-        locale: str,
-        request_id: str,
-        started_ms: int
+        loc: str,
+        rid: str,
+        sms: int
     ) -> None:
-        self.session_json = session_json
+        self.session_json = sj
         self.session_dirty = session_dirty
-        self.has_session = has_session
+        self.has_session = hs
         self.user_id = user_id
         self.user_payload = user_payload
         self.has_user = has_user
-        self.locale = locale
-        self.request_id = request_id
-        self.started_ms = started_ms
+        self.locale = loc
+        self.request_id = rid
+        self.started_ms = sms
 
 class RuntimeError:
     def __init__(self: RuntimeError, message: str) -> None:

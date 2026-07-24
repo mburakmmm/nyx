@@ -53,15 +53,19 @@ class AppError:
     def __init__(self: AppError, message: str) -> None:
         self.message = message
 
+# NOT: Kurucu parametreleri asagidaki `config()`/`db()` modul-duzeyi
+# fonksiyonlarla AYNI ADI TASIMAZ (`cfg`/`conn`) — bkz. nyx.runtime'daki
+# ayni sinif/isim cakismasi notu (codegen'de "nested function" hatasina
+# yol acan GERCEK bir derleyici kisiti).
 class Application:
     def __init__(
         self: Application,
-        config: Config,
-        db: Connection,
+        cfg: Config,
+        conn: Connection,
         router: Router
     ) -> None:
-        self.config = config
-        self.db = db
+        self.config = cfg
+        self.db = conn
         self.router = router
 
 def db(application: Application) -> Connection:
