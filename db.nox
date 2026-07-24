@@ -24,6 +24,21 @@ def open(path: str) -> Connection:
 def _ends_with_sql(name: str) -> bool:
     return nox.strings.ends_with(name, ".sql")
 
+def _str_less(a: str, b: str) -> bool:
+    # lexicographic ASCII (byte) karşılaştırma
+    i: int = 0
+    na: int = len(a)
+    nb: int = len(b)
+    while i < na and i < nb:
+        ba: int = nox.strings.byte_at(a, i)
+        bb: int = nox.strings.byte_at(b, i)
+        if ba < bb:
+            return True
+        if ba > bb:
+            return False
+        i = i + 1
+    return na < nb
+
 def _sort_names(names: list[str]) -> list[str]:
     # Basit insertion sort — migration dosya adları kısa.
     out: list[str] = []
@@ -35,12 +50,15 @@ def _sort_names(names: list[str]) -> list[str]:
         while j > 0:
             prev: str = out[j - 1]
             cur: str = out[j]
-            if prev < cur:
+            if _str_less(prev, cur):
                 j = 0
             else:
-                out[j - 1] = cur
-                out[j] = prev
-                j = j - 1
+                if _str_less(cur, prev):
+                    out[j - 1] = cur
+                    out[j] = prev
+                    j = j - 1
+                else:
+                    j = 0
         i = i + 1
     return out
 
