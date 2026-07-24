@@ -1,0 +1,32 @@
+import nox.test
+import nox.strings
+import web.cookie
+from web.cookie import CookieError
+
+parsed: dict[str, str] = web.cookie.parse("a=1; b=two")
+nox.test.assert_eq_str(parsed["a"], "1", "parse a")
+nox.test.assert_eq_str(parsed["b"], "two", "parse b")
+
+line: str = web.cookie.serialize("sid", "abc", "/", 3600, True, "Lax", True)
+nox.test.assert_true(nox.strings.contains(line, "sid=abc"), "serialize name")
+nox.test.assert_true(nox.strings.contains(line, "Path=/"), "serialize path")
+nox.test.assert_true(nox.strings.contains(line, "Max-Age=3600"), "serialize max-age")
+nox.test.assert_true(nox.strings.contains(line, "HttpOnly"), "serialize httponly")
+nox.test.assert_true(nox.strings.contains(line, "Secure"), "serialize secure")
+nox.test.assert_true(nox.strings.contains(line, "SameSite=Lax"), "serialize samesite")
+
+raised: bool = False
+try:
+    web.cookie.serialize("bad;name", "x", "/", -1, False, "", False)
+except CookieError:
+    raised = True
+nox.test.assert_true(raised, "reject bad name")
+
+raised2: bool = False
+try:
+    web.cookie.parse("nosesame")
+except CookieError:
+    raised2 = True
+nox.test.assert_true(raised2, "reject missing eq")
+
+print("cookie_test ok")

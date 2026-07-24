@@ -1,0 +1,41 @@
+import nox.test
+import nox.time
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import web.auth
+import web.jwt
+
+secret: str = "auth-secret-key-32chars-minimum!!!"
+now: int = nox.time.now_ms() // 1000
+token: str = web.jwt.encode(secret, "{\"sub\":\"u1\"}", now + 3600)
+
+mw: (Context) -> HttpResponse | None = web.auth.require_bearer(secret)
+
+h0: dict[str, str] = {}
+req0: HttpRequest = HttpRequest("GET", "/me", "", h0)
+ctx0: Context = Context(req0, {})
+r0: HttpResponse | None = mw(ctx0)
+nox.test.assert_true(r0 != None, "missing auth")
+missing: HttpResponse = r0
+nox.test.assert_eq_int(missing.status, 401, "missing status")
+
+h1: dict[str, str] = {}
+h1["Authorization"] = "Bearer " + token
+req1: HttpRequest = HttpRequest("GET", "/me", "", h1)
+ctx1: Context = Context(req1, {})
+nox.test.assert_true(mw(ctx1) == None, "valid bearer")
+
+h2: dict[str, str] = {}
+h2["Authorization"] = "Bearer totally-invalid"
+req2: HttpRequest = HttpRequest("GET", "/me", "", h2)
+ctx2: Context = Context(req2, {})
+r2: HttpResponse | None = mw(ctx2)
+nox.test.assert_true(r2 != None, "invalid token")
+
+skip: (Context) -> HttpResponse | None = web.auth.require_bearer_unless(secret, "/login")
+h3: dict[str, str] = {}
+req3: HttpRequest = HttpRequest("POST", "/login", "", h3)
+ctx3: Context = Context(req3, {})
+nox.test.assert_true(skip(ctx3) == None, "exempt login")
+
+print("auth_test ok")

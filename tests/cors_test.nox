@@ -1,0 +1,29 @@
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import web.cors
+from web.cors import CorsConfig
+
+cfg: CorsConfig = web.cors.default_config()
+nox.test.assert_eq_str(cfg.origin, "*", "default origin")
+
+before: (Context) -> HttpResponse | None = web.cors.before_handler(cfg)
+headers: dict[str, str] = {}
+req: HttpRequest = HttpRequest("OPTIONS", "/x", "", headers)
+ctx: Context = Context(req, {})
+pre: HttpResponse | None = before(ctx)
+nox.test.assert_true(pre != None, "preflight response")
+pre_resp: HttpResponse = pre
+nox.test.assert_eq_int(pre_resp.status, 204, "preflight status")
+nox.test.assert_eq_str(pre_resp.headers["Access-Control-Allow-Origin"], "*", "preflight acao")
+
+req2: HttpRequest = HttpRequest("GET", "/x", "", headers)
+ctx2: Context = Context(req2, {})
+nox.test.assert_true(before(ctx2) == None, "non-options passes")
+
+after: (Context, HttpResponse) -> HttpResponse = web.cors.after_handler(cfg)
+base: HttpResponse = HttpResponse(200, "ok", {})
+out: HttpResponse = after(ctx2, base)
+nox.test.assert_eq_str(out.headers["Access-Control-Allow-Origin"], "*", "after acao")
+
+print("cors_test ok")

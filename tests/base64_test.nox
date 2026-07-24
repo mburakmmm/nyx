@@ -1,0 +1,18 @@
+import nox.test
+import web.base64
+
+nox.test.assert_eq_str(web.base64.encode("hello"), "aGVsbG8=", "encode hello")
+nox.test.assert_eq_str(web.base64.decode("aGVsbG8="), "hello", "decode hello")
+nox.test.assert_eq_str(web.base64.encode_url("hello"), "aGVsbG8", "encode_url hello")
+nox.test.assert_eq_str(web.base64.decode_url("aGVsbG8"), "hello", "decode_url hello")
+nox.test.assert_eq_str(web.base64.encode(""), "", "encode empty")
+nox.test.assert_eq_str(web.base64.decode(""), "", "decode empty")
+nox.test.assert_eq_str(web.base64.encode("f"), "Zg==", "encode f")
+nox.test.assert_eq_str(web.base64.encode("fo"), "Zm8=", "encode fo")
+nox.test.assert_eq_str(web.base64.encode("foo"), "Zm9v", "encode foo")
+nox.test.assert_eq_str(web.base64.encode_url("{}"), "e30", "encode_url empty object")
+nox.test.assert_eq_str(web.base64.decode_url("e30"), "{}", "decode_url empty object")
+# HMAC-SHA256("", "") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 — not empty msg
+# Use known hex: sha256 of empty is above; for encode_hex_url of 2 bytes "4d" -> ...
+nox.test.assert_eq_str(web.base64.encode_hex_url("4d616e"), "TWFu", "encode_hex_url Man")
+print("base64_test ok")

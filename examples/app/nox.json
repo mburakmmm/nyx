@@ -1,0 +1,11 @@
+{
+  "name": "nox-web-example",
+  "entry": "main.nox",
+  "requires": [
+    {
+      "alias": "web",
+      "repo": "/Users/melihburakmemis/Documents/nox-lib",
+      "ref": "v0.1.0"
+    }
+  ]
+}

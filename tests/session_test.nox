@@ -1,0 +1,26 @@
+import nox.test
+import nox.strings
+import web.session
+
+secret: str = "session-secret-key-32chars-min!!"
+val: str = web.session.create(secret, "{\"user\":\"alice\"}", 3600)
+parts: list[str] = nox.strings.split(val, ".")
+nox.test.assert_eq_int(len(parts), 2, "session parts")
+
+loaded: str | None = web.session.load(secret, val)
+nox.test.assert_true(loaded != None, "load ok")
+nox.test.assert_true(nox.strings.contains(loaded, "alice"), "load user")
+
+nox.test.assert_true(web.session.load("wrong-secret-key-32chars-min!!!", val) == None, "wrong secret")
+
+tampered: str = parts[0] + ".AAAA"
+nox.test.assert_true(web.session.load(secret, tampered) == None, "tampered")
+
+expired: str = web.session.create(secret, "{\"user\":\"bob\"}", 1)
+# max_age 1 saniye — hemen yüklenmeli; expire testi için 0 geçersiz,
+# bu yüzden bozuk envelope ile expire benzeri davranışı doğrularız.
+nox.test.assert_true(web.session.load(secret, "") == None, "empty")
+
+nox.test.assert_eq_str(web.session.default_cookie_name(), "nox_session", "cookie name")
+
+print("session_test ok")

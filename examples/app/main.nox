@@ -1,0 +1,84 @@
+# Örnek: login + JWT korumalı /me + CORS
+#
+#   cd examples/app && noxc run main.nox
+#
+# Demo kullanıcı: alice / secret123
+
+import nox.http
+import nox.validate
+import nox.time
+import nox.json
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Router, Context
+from nox.validate import Schema
+import web.jwt
+import web.password
+import web.auth
+import web.cors
+import web.response
+from web.cors import CorsConfig
+
+class AppState:
+    def __init__(self: AppState, user: str, password_hash: str, secret: str) -> None:
+        self.user = user
+        self.password_hash = password_hash
+        self.secret = secret
+
+def build_router(state: AppState) -> Router:
+    router: Router = Router()
+    cfg: CorsConfig = CorsConfig("http://localhost:3000", "GET,POST,OPTIONS", "Authorization,Content-Type", True)
+    router.use_before(web.cors.before_handler(cfg))
+    router.use_before(web.auth.require_bearer_unless(state.secret, "/login"))
+    router.use_after(web.cors.after_handler(cfg))
+
+    def login(ctx: Context) -> HttpResponse:
+        schema: Schema = Schema()
+        schema.require("username", "string")
+        schema.require("password", "string")
+        errors: list[str] = nox.validate.validate_json_str(ctx.request.body, schema)
+        if len(errors) > 0:
+            return web.response.json(400, "{\"error\":\"validation\"}")
+        body: JsonValue = nox.json.decode(ctx.request.body)
+        user: str = ""
+        password: str = ""
+        i: int = 0
+        while i < nox.json.object_len(body):
+            k: str = nox.json.object_key(body, i)
+            v: JsonValue = nox.json.object_value(body, i)
+            if k == "username" and nox.json.is_string(v):
+                user = nox.json.as_string(v)
+            if k == "password" and nox.json.is_string(v):
+                password = nox.json.as_string(v)
+            i = i + 1
+        if user != state.user or not web.password.verify(state.password_hash, password):
+            return web.response.json(401, "{\"error\":\"invalid_credentials\"}")
+        exp: int = (nox.time.now_ms() // 1000) + 3600
+        token: str = web.jwt.encode(state.secret, "{\"sub\":\"" + user + "\"}", exp)
+        return web.response.json(200, "{\"token\":\"" + token + "\"}")
+
+    def me(ctx: Context) -> HttpResponse:
+        auth: str = ctx.request.headers["Authorization"]
+        token: str = ""
+        j: int = 7
+        while j < len(auth):
+            token = token + auth[j]
+            j = j + 1
+        payload: str = web.jwt.decode(state.secret, token)
+        return web.response.json(200, payload)
+
+    router.post("/login", login)
+    router.get("/me", me)
+    return router
+
+def main() -> None:
+    secret: str = "example-app-secret-key-32chars!!"
+    state: AppState = AppState("alice", web.password.hash("secret123"), secret)
+    router: Router = build_router(state)
+
+    def handle(req: HttpRequest) -> HttpResponse:
+        return router.dispatch(req)
+
+    print("listening on :8080  POST /login  GET /me")
+    nox.http.serve(8080, handle)
+
+main()

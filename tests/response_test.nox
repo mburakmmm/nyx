@@ -1,0 +1,21 @@
+import nox.test
+from nox.http import HttpResponse
+import web.response
+
+r: HttpResponse = web.response.json(200, "{\"ok\":true}")
+nox.test.assert_eq_int(r.status, 200, "json status")
+nox.test.assert_eq_str(r.body, "{\"ok\":true}", "json body")
+nox.test.assert_eq_str(r.headers["Content-Type"], "application/json; charset=utf-8", "json ct")
+
+t: HttpResponse = web.response.text(201, "hi")
+nox.test.assert_eq_int(t.status, 201, "text status")
+nox.test.assert_eq_str(t.headers["Content-Type"], "text/plain; charset=utf-8", "text ct")
+
+d: HttpResponse = web.response.redirect("/home", 302)
+nox.test.assert_eq_str(d.headers["Location"], "/home", "redirect loc")
+
+h: HttpResponse = web.response.with_header(r, "X-Request-Id", "abc")
+nox.test.assert_eq_str(h.headers["X-Request-Id"], "abc", "with_header new")
+nox.test.assert_eq_str(h.headers["Content-Type"], "application/json; charset=utf-8", "with_header keep")
+
+print("response_test ok")
