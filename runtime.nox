@@ -1,3 +1,20 @@
+# nyx.runtime — istek-kapsamli (ambient/thread-local benzeri) durum.
+#
+# ONEMLI DIL KISITI: Nox'ta modul-duzeyi (top-level) degiskenler HICBIR
+# fonksiyon/metod govdesinden GORULEMEZ (yalnizca ust-duzey script
+# ifadelerinden erisilebilirler) — bu yuzden GERCEK bir surec-capinda
+# "su anki istek" durumu burada nox.os.set_var/nox.os.getenv (PROSES ORTAM
+# DEGISKENLERI, gercek bir global depo) UZERINDEN saklanir. `nox.router`in
+# `Context`i de calisma zamaninda yeni alan KAZANAMADIGINDAN (bkz. nyx
+# dil kisitlari), session/current_user'i tasimanin BASKA pratik bir yolu
+# yoktur. Bu tasarim, nyx.app.dispatch'in TEK bir istegi UCTAN UCA senkron
+# isledigi (thread/fiber arasi PAYLASIM olmadigi) varsayimina dayanir.
+#
+# `current()` artik BIR SNAPSHOT (o anki degerlerin KOPYASI) doner —
+# donen `RequestBag` nesnesinin alanlarini DOGRUDAN degistirmek ARTIK
+# KALICI DEGILDIR (env degiskenlerine geri YAZILMAZ). Durumu degistirmek
+# icin bu modulun `set_*`/`load_*`/`touch_*` fonksiyonlarini kullanin.
+
 import nox.os
 from nox.os import OsError
 import nyx.flash
@@ -25,21 +42,21 @@ class RequestBag:
         self.request_id = request_id
         self.started_ms = started_ms
 
-def _get(name: str, default: str) -> str:
-    try:
-        return nox.os.getenv(name)
-    except OsError:
-        return default
-
-def _put(name: str, value: str) -> None:
-    nox.os.set_var(name, value)
-
 class RuntimeError:
     def __init__(self: RuntimeError, message: str) -> None:
         self.message = message
 
 def _key(name: str) -> str:
     return "NYX_RT_" + name
+
+def _get(name: str, default: str) -> str:
+    try:
+        return nox.os.getenv(_key(name))
+    except OsError:
+        return default
+
+def _put(name: str, value: str) -> None:
+    nox.os.set_var(_key(name), value)
 
 def _get_bool(name: str, default: bool) -> bool:
     raw: str = _get(name, "")
@@ -62,6 +79,7 @@ def _get_int(name: str, default: int) -> int:
 def is_active() -> bool:
     return _get_bool("ACTIVE", False)
 
+# TUM istek durumunu varsayilanlara doner (aktif DEGIL).
 def reset() -> None:
     _put_bool("ACTIVE", False)
     _put("SESSION_JSON", "{}")
@@ -74,7 +92,17 @@ def reset() -> None:
     _put("REQUEST_ID", "")
     _put("STARTED_MS", "0")
 
-def begin(request_id: str, started_ms: int, locale: str) -> RequestBag:
+# Yeni bir istek icin durumu baslatir (nyx.app.dispatch tarafindan HER
+# istegin basinda cagrilir).
+#
+# NOT: Parametre adlari KASITLI OLARAK asagidaki `locale()`/`request_id()`/
+# `started_ms()` getter FONKSIYONLARIYLA AYNI ADI TASIMAZ (`req_id`/
+# `start_ms`/`loc`) — Nox derleyicisinde modul-duzeyi bir fonksiyonla AYNI
+# ada sahip bir parametrenin, o modul BASKA bir dosyadan BAGIMLILIK olarak
+# IMPORT EDILDIGINDE (yalnizca `noxc check`in kendi dosyasi olarak
+# calistirilmasinda DEGIL) parametrenin turunu fonksiyonun turuyle
+# KARISTIRDIGI GERCEK bir derleyici hatasi GOZLEMLENDI (bkz. proje notlari).
+def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _put_bool("ACTIVE", True)
     _put("SESSION_JSON", "{}")
     _put_bool("SESSION_DIRTY", False)
@@ -82,14 +110,18 @@ def begin(request_id: str, started_ms: int, locale: str) -> RequestBag:
     _put("USER_ID", "")
     _put("USER_PAYLOAD", "")
     _put_bool("HAS_USER", False)
-    _put("LOCALE", locale)
-    _put("REQUEST_ID", request_id)
-    _put("STARTED_MS", str(started_ms))
+    _put("LOCALE", loc)
+    _put("REQUEST_ID", req_id)
+    _put("STARTED_MS", str(start_ms))
     return current()
 
 def end() -> None:
     reset()
 
+# `begin()` HIC CAGRILMAMISSA (ör. bir middleware'i `nyx.app.dispatch`
+# DISINDA, dogrudan bir birim testinde cagirirken) BILE cokmemek icin
+# durumu SESSIZCE baslatir — eski davranis (RuntimeError firlatmak)
+# gereksiz KIRILGANDI.
 def current() -> RequestBag:
     if not is_active():
         _put_bool("ACTIVE", True)
@@ -105,6 +137,9 @@ def current() -> RequestBag:
         _get_int("STARTED_MS", 0)
     )
 
+# `nyx.app`in cookie'den YUKLEDIGI oturum verisini isaretler — kullanicinin
+# KENDI degisikligi OLMADIGINDAN `session_dirty` DOKUNULMAZ (Set-Cookie
+# gereksiz yere yeniden yazilmasin).
 def load_session(data_json: str) -> None:
     _put("SESSION_JSON", data_json)
     _put_bool("HAS_SESSION", True)
@@ -153,3 +188,17 @@ def started_ms() -> int:
 
 def locale() -> str:
     return _get("LOCALE", "")
+
+def flash_set(key: str, message: str) -> None:
+    updated: str = nyx.flash.set(session_json(), key, message)
+    _put("SESSION_JSON", updated)
+    _put_bool("HAS_SESSION", True)
+    _put_bool("SESSION_DIRTY", True)
+
+def flash_get(key: str) -> str | None:
+    return nyx.flash.get(session_json(), key)
+
+def flash_clear(key: str) -> None:
+    updated: str = nyx.flash.clear(session_json(), key)
+    _put("SESSION_JSON", updated)
+    _put_bool("SESSION_DIRTY", True)
