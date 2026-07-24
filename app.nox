@@ -1,18 +1,31 @@
-# nyx.app — Application boot, paylaşılan DB, istek yaşam döngüsü.
+# nyx.app — Application boot + istek yasam dongusu.
 #
-# cfg: Config = nyx.config.load()
-# app: Application = nyx.app.boot(cfg, build_router)
+# def build_router(db: Connection) -> Router:
+#     router: Router = Router()
+#     router.get("/", some_handler)
+#     return router
+#
 # def handle(req: HttpRequest) -> HttpResponse:
+#     cfg: Config = nyx.config.load()
+#     app: Application = nyx.app.boot(cfg, build_router)
 #     return nyx.app.dispatch(app, req)
-# nyx.app.serve(app)
 #
-# NOT: Nox'ta modul-duzeyi degiskenler fonksiyon govdelerinden GORULEMEZ
-# (bkz. nyx.runtime'in belge notu) — bu yuzden `Application` burada bir
-# modul-duzeyi "holder" SINGLETON'INDA DEGIL, `boot()`in dondurdugu ve
-# cagiranin (uygulamanin `main.nox`inin) ACIKCA tasidigi bir DEGER olarak
-# yasar. `serve(app)` bu degeri BIR KAPANIS (closure) PARAMETRESI olarak
-# `nox.http.serve`e gecirir (kapanislar KENDI parametrelerini/yerel
-# degiskenlerini goebilir — modul-duzeyi globaller DEGIL, bu YUZDEN calisir).
+# nox.http.serve(8080, handle)
+#
+# NOT: Nox'ta (a) modul-duzeyi degiskenler HICBIR fonksiyon govdesinden
+# (top-level dahil) GORULEMEZ VE (b) `nox.http.serve`in ikinci argumani
+# SOZDIZIMSEL olarak DOGRUDAN bir ust-duzey fonksiyon ADI olmalidir (bir
+# closure DONDUREN baska bir cagrinin SONUCU DEGIL — "metod/lambda henuz
+# desteklenmiyor" derleyici kisiti). Bu IKI kisit BIRLIKTE, `Application`in
+# (acik DB baglantisi + Router KAPANISLARI icerir) istekler ARASI KALICI
+# bir SINGLETON olarak saklanmasini IMKANSIZ kilar. Bu yuzden `nyx.app`
+# `serve()` SUNMAZ — cagiran (`main.nox`) KENDI ust-duzey `handle`
+# fonksiyonunu tanimlar; bu fonksiyon HER istekte `nyx.app.boot`u YENIDEN
+# cagirip (examples/blog/main.nox'daki KANITLANMIS "istek-basi yeniden
+# olustur" modeliyle AYNI) TAZE bir DB baglantisi + router kurar. `boot()`
+# HER cagrida DB'yi acar/migration calistirir — bu YUZDEN uzun-omurlu bir
+# surecte cagirici `db.close()`i KENDISI cagirmalidir (bkz. `dispatch`in
+# DB'yi KAPATMADIGI notu).
 
 import nox.http
 import nox.log
@@ -59,8 +72,8 @@ def config(application: Application) -> Config:
 
 # Config'i dogrular, DB'yi acar, migration'lari calistirir, `router_builder`i
 # cagirip framework ara katmanlarini takar. Donen `Application`i cagiran
-# (main.nox) tasimalidir — `nyx.app.dispatch`/`nyx.app.serve`e ACIKCA
-# gecirilir (bkz. modul basindaki not).
+# (main.nox'un ust-duzey `handle` fonksiyonu) `nyx.app.dispatch`e ACIKCA
+# gecirir (bkz. modul basindaki not).
 def boot(cfg: Config, router_builder: (Application) -> Router) -> Application:
     if len(cfg.secret_key) < 16:
         raise AppError("secret_key en az 16 karakter olmali")
@@ -112,27 +125,28 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             d: int = 0
     return None
 
+def _load_session_from_cookie(cfg: Config, raw: str) -> None:
+    try:
+        cookies: dict[str, str] = nyx.cookie.parse(raw)
+        val: str = cookies[cfg.session_cookie]
+        data: str | None = nyx.session.load(cfg.secret_key, val)
+        if data != None:
+            nyx.runtime.load_session(data)
+        else:
+            nyx.runtime.load_session("{}")
+    except KeyError:
+        nyx.runtime.load_session("{}")
+    except CookieError:
+        nyx.runtime.load_session("{}")
+
 def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
-        if raw == None:
+        if raw != None:
+            _load_session_from_cookie(cfg, raw)
+        else:
             nyx.runtime.load_session("{}")
-            return None
-        try:
-            cookies: dict[str, str] = nyx.cookie.parse(raw)
-            val: str = cookies[cfg.session_cookie]
-            data: str | None = nyx.session.load(cfg.secret_key, val)
-            if data == None:
-                nyx.runtime.load_session("{}")
-            else:
-                nyx.runtime.load_session(data)
-            return None
-        except KeyError:
-            nyx.runtime.load_session("{}")
-            return None
-        except CookieError:
-            nyx.runtime.load_session("{}")
-            return None
+        return None
     return handler
 
 def _session_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
@@ -178,17 +192,7 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
     path: str = _strip_query(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
-    try:
-        return application.router.dispatch(routed)
-    finally:
-        nyx.runtime.end()
+    resp: HttpResponse = application.router.dispatch(routed)
+    nyx.runtime.end()
+    return resp
 
-def _make_serve_handler(application: Application) -> (HttpRequest) -> HttpResponse:
-    def handler(req: HttpRequest) -> HttpResponse:
-        return dispatch(application, req)
-    return handler
-
-def serve(application: Application) -> None:
-    port: int = application.config.port
-    nox.log.info("nyx listening on :" + str(port) + " env=" + application.config.env)
-    nox.http.serve(port, _make_serve_handler(application))
