@@ -1,0 +1,39 @@
+import nox.test
+import nyx.testing
+from nox.http import HttpRequest, HttpResponse
+
+def echo_handler(req: HttpRequest) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "text/plain; charset=utf-8"
+    headers["X-Method"] = req.method
+    headers["X-Path"] = req.target
+    if req.method == "POST":
+        return HttpResponse(201, "gonderildi: " + req.body, headers)
+    return HttpResponse(200, "merhaba: " + req.target, headers)
+
+resp: HttpResponse = nyx.testing.get(echo_handler, "/posts")
+nyx.testing.assert_status(resp, 200)
+nyx.testing.assert_body_contains(resp, "merhaba")
+nyx.testing.assert_header_eq(resp, "X-Method", "GET")
+nyx.testing.assert_header_eq(resp, "X-Path", "/posts")
+
+resp2: HttpResponse = nyx.testing.post(echo_handler, "/posts", "title=Merhaba")
+nyx.testing.assert_status(resp2, 201)
+nyx.testing.assert_body_contains(resp2, "title=Merhaba")
+nyx.testing.assert_header_eq(resp2, "X-Method", "POST")
+
+resp3: HttpResponse = nyx.testing.post_json(echo_handler, "/api/posts", "{\"title\":\"json\"}")
+nyx.testing.assert_status(resp3, 201)
+nyx.testing.assert_body_eq(resp3, "gonderildi: {\"title\":\"json\"}")
+
+base_headers: dict[str, str] = {}
+bearer_headers: dict[str, str] = nyx.testing.with_bearer(base_headers, "tok123")
+nox.test.assert_eq_str(bearer_headers["Authorization"], "Bearer tok123", "with_bearer authorization ekler")
+
+cookie_headers: dict[str, str] = nyx.testing.with_cookie(base_headers, "session=abc")
+nox.test.assert_eq_str(cookie_headers["Cookie"], "session=abc", "with_cookie cookie ekler")
+
+no_cookie: str | None = nyx.testing.extract_set_cookie(resp)
+nox.test.assert_true(no_cookie == None, "Set-Cookie yoksa None doner")
+
+print("testing_test ok")

@@ -1,7 +1,9 @@
 import nox.test
 import nox.fs
+import nox.strings
 import nyx.db
-from nox.sqlite import Connection
+from nyx.db import DbError
+from nox.sqlite import Connection, Row
 
 dir_path: str = "/tmp/nyx_migrate_test"
 if nox.fs.exists(dir_path):
@@ -12,11 +14,40 @@ else:
 
 nox.fs.write_string(dir_path + "/001_a.sql", "CREATE TABLE IF NOT EXISTS t_a (id INTEGER PRIMARY KEY);")
 nox.fs.write_string(dir_path + "/002_b.sql", "CREATE TABLE IF NOT EXISTS t_b (id INTEGER PRIMARY KEY);")
+nox.fs.write_string(dir_path + "/001_a.down.sql", "DROP TABLE IF EXISTS t_a;")
+nox.fs.write_string(dir_path + "/002_b.down.sql", "DROP TABLE IF EXISTS t_b;")
 
 db: Connection = nyx.db.open(":memory:")
 n1: int = nyx.db.migrate(db, dir_path)
 nox.test.assert_eq_int(n1, 2, "first migrate applies 2")
 n2: int = nyx.db.migrate(db, dir_path)
 nox.test.assert_eq_int(n2, 0, "second migrate noop")
+
+reverted: str = nyx.db.rollback(db, dir_path)
+nox.test.assert_eq_str(reverted, "002_b.sql", "rollback en son migration'i geri alir")
+
+check_rows: list[Row] = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 't_b'")
+nox.test.assert_eq_int(len(check_rows), 0, "rollback sonrasi t_b tablosu olmamali")
+
+remaining: list[Row] = db.query("SELECT version FROM schema_migrations")
+nox.test.assert_eq_int(len(remaining), 1, "rollback sonrasi tek migration kaydi kalmali")
+
+n3: int = nyx.db.migrate(db, dir_path)
+nox.test.assert_eq_int(n3, 1, "rollback sonrasi tekrar migrate 1 uygulamali")
+
+dump_path: str = "/tmp/nyx_migrate_test/schema.sql"
+nyx.db.schema_dump(db, dump_path)
+dump_content: str = nox.fs.read_to_string(dump_path)
+nox.test.assert_true(nox.strings.contains(dump_content, "t_a"), "schema_dump t_a tablosunu icermeli")
+nox.test.assert_true(nox.strings.contains(dump_content, "t_b"), "schema_dump t_b tablosunu icermeli")
+nox.test.assert_true(nox.strings.contains(dump_content, "CREATE TABLE"), "schema_dump CREATE TABLE ifadeleri icermeli")
+
+threw: bool = False
+try:
+    nyx.db.rollback(db, "/tmp/nyx_migrate_test_bos_dizin_yok")
+except DbError:
+    threw = True
+nox.test.assert_true(threw, "olmayan down dosyasi DbError firlatir")
+
 db.close()
 print("db_test ok")

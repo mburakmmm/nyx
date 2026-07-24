@@ -24,6 +24,11 @@ def open(path: str) -> Connection:
 def _ends_with_sql(name: str) -> bool:
     return nox.strings.ends_with(name, ".sql")
 
+# "*.down.sql" dosyalari `rollback()` tarafindan kullanilir, `migrate()`
+# tarafindan DUZ ("up") migration olarak calistirilmamalidir.
+def _is_up_migration(name: str) -> bool:
+    return _ends_with_sql(name) and not nox.strings.ends_with(name, ".down.sql")
+
 def _str_less(a: str, b: str) -> bool:
     # lexicographic ASCII (byte) karşılaştırma
     i: int = 0
@@ -89,7 +94,7 @@ def migrate(db: Connection, dir_path: str) -> int:
     i: int = 0
     while i < len(entries):
         name: str = entries[i]
-        if _ends_with_sql(name):
+        if _is_up_migration(name):
             sql_files.append(name)
         i = i + 1
     ordered: list[str] = _sort_names(sql_files)

@@ -1,0 +1,41 @@
+import nox.test
+import nyx.db
+import nyx.model
+import nyx.assoc
+from nox.sqlite import Connection
+from nyx.model import Record
+
+db: Connection = nyx.db.open(":memory:")
+db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT NOT NULL)")
+db.execute("CREATE TABLE comments (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, body TEXT NOT NULL)")
+
+user_id: int = nyx.model.create(db, "users", "{\"name\":\"Alice\"}")
+post_id: int = nyx.model.create(db, "posts", "{\"user_id\":" + str(user_id) + ",\"title\":\"Merhaba Dunya\"}")
+nyx.model.create(db, "comments", "{\"post_id\":" + str(post_id) + ",\"body\":\"ilk yorum\"}")
+nyx.model.create(db, "comments", "{\"post_id\":" + str(post_id) + ",\"body\":\"ikinci yorum\"}")
+
+author: Record | None = nyx.assoc.belongs_to(db, "posts", post_id, "users", "user_id")
+nox.test.assert_true(author != None, "belongs_to yazar bulur")
+if author != None:
+    nox.test.assert_eq_str(author.get("name"), "Alice", "belongs_to dogru yazari doner")
+
+no_post: Record | None = nyx.assoc.belongs_to(db, "posts", 999999, "users", "user_id")
+nox.test.assert_true(no_post == None, "olmayan cocuk icin belongs_to None doner")
+
+comments: list[Record] = nyx.assoc.has_many(db, "posts", post_id, "comments", "post_id")
+nox.test.assert_eq_int(len(comments), 2, "has_many iki yorum doner")
+
+no_comments: list[Record] = nyx.assoc.has_many(db, "posts", 999999, "comments", "post_id")
+nox.test.assert_eq_int(len(no_comments), 0, "eslesmeyen ebeveyn icin has_many bos liste doner")
+
+first_comment: Record | None = nyx.assoc.has_one(db, "posts", post_id, "comments", "post_id")
+nox.test.assert_true(first_comment != None, "has_one ilk yorumu bulur")
+if first_comment != None:
+    nox.test.assert_eq_str(first_comment.get("body"), "ilk yorum", "has_one ilk kaydi doner")
+
+no_one: Record | None = nyx.assoc.has_one(db, "posts", 999999, "comments", "post_id")
+nox.test.assert_true(no_one == None, "eslesmeyen ebeveyn icin has_one None doner")
+
+db.close()
+print("assoc_test ok")
