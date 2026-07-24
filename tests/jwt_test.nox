@@ -4,6 +4,15 @@ import nox.strings
 import web.jwt
 from web.jwt import JwtError
 
+def expect_jwt_error(secret: str, token: str) -> bool:
+    try:
+        payload: str = web.jwt.decode(secret, token)
+        if len(payload) >= 0:
+            return False
+        return False
+    except JwtError:
+        return True
+
 secret: str = "test-secret-key-32chars-minimum!!"
 now: int = nox.time.now_ms() // 1000
 exp: int = now + 3600
@@ -16,27 +25,12 @@ payload: str = web.jwt.decode(secret, token)
 nox.test.assert_true(nox.strings.contains(payload, "alice"), "payload sub")
 nox.test.assert_true(nox.strings.contains(payload, "exp"), "payload exp")
 
-bad_sig: bool = False
-try:
-    web.jwt.decode("wrong-secret-key-32chars-minimum!", token)
-except JwtError:
-    bad_sig = True
-nox.test.assert_true(bad_sig, "reject wrong secret")
+nox.test.assert_true(expect_jwt_error("wrong-secret-key-32chars-minimum!", token), "reject wrong secret")
 
 expired: str = web.jwt.encode(secret, "{\"sub\":\"bob\"}", now - 10)
-expired_fail: bool = False
-try:
-    web.jwt.decode(secret, expired)
-except JwtError:
-    expired_fail = True
-nox.test.assert_true(expired_fail, "reject expired")
+nox.test.assert_true(expect_jwt_error(secret, expired), "reject expired")
 
 tampered: str = parts[0] + "." + parts[1] + ".AAAA"
-tamper_fail: bool = False
-try:
-    web.jwt.decode(secret, tampered)
-except JwtError:
-    tamper_fail = True
-nox.test.assert_true(tamper_fail, "reject tampered")
+nox.test.assert_true(expect_jwt_error(secret, tampered), "reject tampered")
 
 print("jwt_test ok")

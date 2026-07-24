@@ -10388,21 +10388,16 @@ _web_base64__decode_to_ascii_impl:
 	cmp	x1, #0
 	beq	L1473
 	mov	x2, #8
-	mov	w21, w3
-	sub	x3, x1, x2
-	ldr	x2, [x3]
-	mov	x4, #1
-	add	x2, x2, x4
-	str	x2, [x3]
-	b	L1474
+	sub	x4, x1, x2
+	ldr	x2, [x4]
+	mov	x5, #1
+	add	x2, x2, x5
+	str	x2, [x4]
 L1473:
-	mov	w21, w3
-L1474:
-	cmp	w21, #0
-	beq	L1485
-	mov	w23, w21
+	cmp	w3, #0
+	beq	L1483
 	mov	x19, #0
-L1476:
+L1475:
 	mov	x21, x1
 	adrp	x1, _str100@page+8
 	add	x1, x1, _str100@pageoff+8
@@ -10417,14 +10412,12 @@ L1476:
 	mov	x21, x1
 	mov	x20, x0
 	bl	_web_base64__drop_last
-	mov	w3, w23
 	mov	x2, x22
 	mov	x1, x21
 	mov	x21, x0
 	mov	x0, x20
 	cmp	x1, #0
-	beq	L1481
-	mov	w23, w3
+	beq	L1480
 	mov	x3, #8
 	sub	x3, x1, x3
 	mov	x22, x2
@@ -10433,46 +10426,32 @@ L1476:
 	sub	x2, x2, x4
 	str	x2, [x3]
 	cmp	x2, #0
-	ble	L1480
+	ble	L1479
 	mov	x1, x21
-	mov	w3, w23
 	mov	x2, x22
-	b	L1482
-L1480:
+	b	L1481
+L1479:
 	mov	x20, x0
 	bl	_nox_str_free_now
-	mov	w3, w23
 	mov	x2, x22
 	mov	x1, x21
 	mov	x0, x20
-	b	L1482
-L1481:
+	b	L1481
+L1480:
 	mov	x1, x21
-L1482:
-	mov	x4, #1
-	add	x19, x19, x4
-	mov	w23, w3
+L1481:
+	mov	x3, #1
+	add	x19, x19, x3
 	mov	x22, x2
-	b	L1476
-L1484:
-	mov	w21, w23
-	b	L1486
-L1485:
+	b	L1475
+L1483:
 	mov	x19, #0
-L1486:
+L1484:
 	mov	x23, x1
 	mov	x20, x0
 	bl	_web_base64__byte_len
-	mov	w3, w21
 	mov	x1, x0
 	mov	x0, x20
-	mov	w2, #1
-	eor	w2, w3, w2
-	cmp	w2, #0
-	bne	L1488
-	mov	x1, x23
-	b	L1505
-L1488:
 	mov	x2, #4
 	sdiv	x17, x1, x2
 	msub	x1, x17, x2, x1
@@ -10487,10 +10466,10 @@ L1488:
 	add	x20, x1, x2
 	cmp	x23, #0
 	cmp	x20, #1
-	beq	L1490
+	beq	L1486
 	mov	x1, x23
-	b	L1491
-L1490:
+	b	L1487
+L1486:
 	mov	x1, #16
 	mov	x21, x0
 	bl	_nox_rc_alloc
@@ -10518,22 +10497,27 @@ L1490:
 	mov	w2, w0
 	mov	x0, x21
 	cmp	w2, #0
-	bne	L1712
-L1491:
+	bne	L1717
+L1487:
+	cmp	x19, #0
 	cmp	x20, #2
-	beq	L1499
+	beq	L1496
 	cmp	x20, #3
-	bne	L1505
+	bne	L1503
+	cmp	x19, #0
+	bne	L1491
+	mov	x19, #1
+L1491:
 	adrp	x2, _str103@page+8
 	add	x2, x2, _str103@pageoff+8
-	mov	x20, x1
-	mov	x19, x0
-	bl	_nox_str_concat
-	mov	x1, x20
+	mov	x21, x1
 	mov	x20, x0
-	mov	x0, x19
+	bl	_nox_str_concat
+	mov	x1, x21
+	mov	x21, x0
+	mov	x0, x20
 	cmp	x1, #0
-	beq	L1497
+	beq	L1495
 	mov	x2, #8
 	sub	x2, x1, x2
 	ldr	x2, [x2]
@@ -10543,31 +10527,33 @@ L1491:
 	sub	x3, x1, x3
 	str	x2, [x3]
 	cmp	x2, #0
-	ble	L1496
-	mov	x1, x20
-	b	L1498
-L1496:
-	mov	x19, x0
+	ble	L1494
+	mov	x1, x21
+	b	L1503
+L1494:
+	mov	x20, x0
 	bl	_nox_str_free_now
-	mov	x1, x20
-	mov	x0, x19
-	b	L1498
-L1497:
-	mov	x1, x20
+	mov	x1, x21
+	mov	x0, x20
+	b	L1503
+L1495:
+	mov	x1, x21
+	b	L1503
+L1496:
+	cmp	x19, #0
+	bne	L1498
+	mov	x19, #2
 L1498:
-	mov	x19, #1
-	b	L1505
-L1499:
 	adrp	x2, _str102@page+8
 	add	x2, x2, _str102@pageoff+8
-	mov	x20, x1
-	mov	x19, x0
-	bl	_nox_str_concat
-	mov	x1, x20
+	mov	x21, x1
 	mov	x20, x0
-	mov	x0, x19
+	bl	_nox_str_concat
+	mov	x1, x21
+	mov	x21, x0
+	mov	x0, x20
 	cmp	x1, #0
-	beq	L1503
+	beq	L1502
 	mov	x2, #8
 	sub	x2, x1, x2
 	ldr	x2, [x2]
@@ -10577,20 +10563,18 @@ L1499:
 	sub	x3, x1, x3
 	str	x2, [x3]
 	cmp	x2, #0
-	ble	L1502
-	mov	x1, x20
-	b	L1504
-L1502:
-	mov	x19, x0
+	ble	L1501
+	mov	x1, x21
+	b	L1503
+L1501:
+	mov	x20, x0
 	bl	_nox_str_free_now
-	mov	x1, x20
-	mov	x0, x19
-	b	L1504
+	mov	x1, x21
+	mov	x0, x20
+	b	L1503
+L1502:
+	mov	x1, x21
 L1503:
-	mov	x1, x20
-L1504:
-	mov	x19, #2
-L1505:
 	mov	x21, x1
 	mov	x20, x0
 	bl	_web_base64__byte_len
@@ -10613,10 +10597,10 @@ L1505:
 	add	x1, x1, x2
 	cmp	x21, #0
 	cmp	x1, #0
-	bne	L1507
+	bne	L1505
 	mov	x1, x21
-	b	L1508
-L1507:
+	b	L1506
+L1505:
 	mov	x1, #16
 	mov	x20, x0
 	bl	_nox_rc_alloc
@@ -10644,8 +10628,8 @@ L1507:
 	mov	w2, w0
 	mov	x0, x20
 	cmp	w2, #0
-	bne	L1708
-L1508:
+	bne	L1713
+L1506:
 	mov	x21, x1
 	mov	x1, #4
 	sdiv	x1, x28, x1
@@ -10663,6 +10647,36 @@ L1508:
 	mul	x1, x1, x2
 	sub	x19, x1, x19
 	str	x19, [x29, 32]
+	cmp	x19, #0
+	bge	L1508
+	mov	x1, #16
+	mov	x19, x0
+	bl	_nox_rc_alloc
+	mov	x1, x0
+	mov	x0, x19
+	mov	x2, #9
+	str	x2, [x1]
+	mov	x2, #8
+	add	x3, x1, x2
+	mov	x2, #0
+	str	x2, [x3]
+	adrp	x2, _str105@page+8
+	add	x2, x2, _str105@pageoff+8
+	mov	x20, x1
+	mov	x19, x0
+	bl	_web_base64_Base64Error___init__
+	mov	x1, x20
+	mov	x0, x19
+	mov	x19, x0
+	bl	_nox_raise
+	mov	x0, x19
+	mov	x19, x0
+	bl	_nox_exception_pending
+	mov	w1, w0
+	mov	x0, x19
+	cmp	w1, #0
+	bne	L1708
+L1508:
 	mov	x19, x0
 	mov	x0, x21
 	bl	_nox_str_char_count
@@ -10679,8 +10693,8 @@ L1508:
 	mov	x20, x17
 	str	x20, [x29, 88]
 	mov	x2, x22
-	adrp	x23, _str105@page+8
-	add	x23, x23, _str105@pageoff+8
+	adrp	x23, _str106@page+8
+	add	x23, x23, _str106@pageoff+8
 	mov	x22, #0
 	mov	x24, #0
 L1510:
@@ -10712,8 +10726,8 @@ L1513:
 	add	x3, x1, x2
 	mov	x2, #0
 	str	x2, [x3]
-	adrp	x2, _str106@page+8
-	add	x2, x2, _str106@pageoff+8
+	adrp	x2, _str107@page+8
+	add	x2, x2, _str107@pageoff+8
 	mov	x26, x1
 	mov	x21, x0
 	bl	_IndexError___init__
@@ -10832,8 +10846,8 @@ L1526:
 	add	x3, x1, x2
 	mov	x2, #0
 	str	x2, [x3]
-	adrp	x2, _str107@page+8
-	add	x2, x2, _str107@pageoff+8
+	adrp	x2, _str108@page+8
+	add	x2, x2, _str108@pageoff+8
 	mov	x26, x1
 	mov	x22, x0
 	bl	_IndexError___init__
@@ -10953,8 +10967,8 @@ L1539:
 	add	x3, x1, x2
 	mov	x2, #0
 	str	x2, [x3]
-	adrp	x2, _str108@page+8
-	add	x2, x2, _str108@pageoff+8
+	adrp	x2, _str109@page+8
+	add	x2, x2, _str109@pageoff+8
 	mov	x26, x1
 	mov	x22, x0
 	bl	_IndexError___init__
@@ -11075,8 +11089,8 @@ L1552:
 	add	x3, x1, x2
 	mov	x2, #0
 	str	x2, [x3]
-	adrp	x2, _str109@page+8
-	add	x2, x2, _str109@pageoff+8
+	adrp	x2, _str110@page+8
+	add	x2, x2, _str110@pageoff+8
 	mov	x26, x1
 	mov	x21, x0
 	bl	_IndexError___init__
@@ -11594,7 +11608,7 @@ L1618:
 	bl	_nox_str_free_now
 L1621:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1622:
 	mov	x1, x25
 	cmp	x1, #0
@@ -11629,7 +11643,7 @@ L1626:
 	bl	_nox_str_free_now
 L1629:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1630:
 	mov	x19, x23
 	mov	x1, x25
@@ -11665,7 +11679,7 @@ L1634:
 	bl	_nox_str_free_now
 L1637:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1638:
 	mov	x19, x23
 	mov	x1, x25
@@ -11701,7 +11715,7 @@ L1642:
 	bl	_nox_str_free_now
 L1645:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1646:
 	mov	x19, x23
 	cmp	x1, #0
@@ -11736,7 +11750,7 @@ L1650:
 	bl	_nox_str_free_now
 L1653:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1654:
 	mov	x19, x23
 	mov	x1, x25
@@ -11772,7 +11786,7 @@ L1658:
 	bl	_nox_str_free_now
 L1661:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1662:
 	mov	x19, x23
 	cmp	x1, #0
@@ -11807,7 +11821,7 @@ L1666:
 	bl	_nox_str_free_now
 L1669:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1670:
 	mov	x19, x23
 	mov	x1, x25
@@ -11843,7 +11857,7 @@ L1674:
 	bl	_nox_str_free_now
 L1677:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1678:
 	mov	x19, x23
 	cmp	x1, #0
@@ -11878,7 +11892,7 @@ L1682:
 	bl	_nox_str_free_now
 L1685:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1686:
 	mov	x19, x23
 	mov	x1, x25
@@ -11914,7 +11928,7 @@ L1690:
 	bl	_nox_str_free_now
 L1693:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1694:
 	mov	x19, x23
 	cmp	x1, #0
@@ -11949,7 +11963,7 @@ L1698:
 	bl	_nox_str_free_now
 L1701:
 	mov	x0, #0
-	b	L1716
+	b	L1721
 L1702:
 	mov	x19, x23
 	cmp	x1, #0
@@ -11965,17 +11979,18 @@ L1702:
 	cmp	x2, #0
 	ble	L1706
 	mov	x0, x19
-	b	L1716
+	b	L1721
 L1706:
 	bl	_nox_str_free_now
 	mov	x0, x19
-	b	L1716
+	b	L1721
 L1707:
 	mov	x0, x19
-	b	L1716
+	b	L1721
 L1708:
+	mov	x1, x21
 	cmp	x1, #0
-	beq	L1711
+	beq	L1712
 	mov	x2, #8
 	sub	x2, x1, x2
 	ldr	x2, [x2]
@@ -11985,14 +12000,14 @@ L1708:
 	sub	x3, x1, x3
 	str	x2, [x3]
 	cmp	x2, #0
-	bgt	L1711
+	bgt	L1712
 	bl	_nox_str_free_now
-L1711:
-	mov	x0, #0
-	b	L1716
 L1712:
+	mov	x0, #0
+	b	L1721
+L1713:
 	cmp	x1, #0
-	beq	L1715
+	beq	L1716
 	mov	x2, #8
 	sub	x2, x1, x2
 	ldr	x2, [x2]
@@ -12002,11 +12017,28 @@ L1712:
 	sub	x3, x1, x3
 	str	x2, [x3]
 	cmp	x2, #0
-	bgt	L1715
+	bgt	L1716
 	bl	_nox_str_free_now
-L1715:
-	mov	x0, #0
 L1716:
+	mov	x0, #0
+	b	L1721
+L1717:
+	cmp	x1, #0
+	beq	L1720
+	mov	x2, #8
+	sub	x2, x1, x2
+	ldr	x2, [x2]
+	mov	x3, #1
+	sub	x2, x2, x3
+	mov	x3, #8
+	sub	x3, x1, x3
+	str	x2, [x3]
+	cmp	x2, #0
+	bgt	L1720
+	bl	_nox_str_free_now
+L1720:
+	mov	x0, #0
+L1721:
 	ldr	x19, [x29, 232]
 	ldr	x20, [x29, 224]
 	ldr	x21, [x29, 216]
@@ -12031,8 +12063,8 @@ _web_base64_decode:
 	str	x19, [x29, 24]
 	str	x20, [x29, 16]
 	mov	w3, #1
-	adrp	x2, _str110@page+8
-	add	x2, x2, _str110@pageoff+8
+	adrp	x2, _str111@page+8
+	add	x2, x2, _str111@pageoff+8
 	mov	x19, x0
 	bl	_web_base64__decode_to_ascii_impl
 	mov	x17, x0
@@ -12042,39 +12074,39 @@ _web_base64_decode:
 	bl	_nox_exception_pending
 	mov	w1, w0
 	mov	x0, x20
-	adrp	x2, _str110@page+8
-	add	x2, x2, _str110@pageoff+8
+	adrp	x2, _str111@page+8
+	add	x2, x2, _str111@pageoff+8
 	cmp	x2, #0
 	cmp	w1, #0
-	bne	L1723
-	adrp	x1, _str110@page+8
-	add	x1, x1, _str110@pageoff+8
+	bne	L1728
+	adrp	x1, _str111@page+8
+	add	x1, x1, _str111@pageoff+8
 	cmp	x1, #0
-	beq	L1722
-	adrp	x1, _str110@page
-	add	x1, x1, _str110@pageoff
+	beq	L1727
+	adrp	x1, _str111@page
+	add	x1, x1, _str111@pageoff
 	ldr	x1, [x1]
 	mov	x2, #1
 	sub	x1, x1, x2
-	adrp	x2, _str110@page
-	add	x2, x2, _str110@pageoff
+	adrp	x2, _str111@page
+	add	x2, x2, _str111@pageoff
 	str	x1, [x2]
 	cmp	x1, #0
-	ble	L1721
+	ble	L1726
 	mov	x0, x19
-	b	L1724
-L1721:
-	adrp	x1, _str110@page+8
-	add	x1, x1, _str110@pageoff+8
+	b	L1729
+L1726:
+	adrp	x1, _str111@page+8
+	add	x1, x1, _str111@pageoff+8
 	bl	_nox_str_free_now
 	mov	x0, x19
-	b	L1724
-L1722:
+	b	L1729
+L1727:
 	mov	x0, x19
-	b	L1724
-L1723:
+	b	L1729
+L1728:
 	mov	x0, #0
-L1724:
+L1729:
 	ldr	x19, [x29, 24]
 	ldr	x20, [x29, 16]
 	ldp	x29, x30, [sp], 32
@@ -12091,8 +12123,8 @@ _web_base64_decode_url:
 	str	x19, [x29, 24]
 	str	x20, [x29, 16]
 	mov	w3, #0
-	adrp	x2, _str111@page+8
-	add	x2, x2, _str111@pageoff+8
+	adrp	x2, _str112@page+8
+	add	x2, x2, _str112@pageoff+8
 	mov	x19, x0
 	bl	_web_base64__decode_to_ascii_impl
 	mov	x17, x0
@@ -12102,39 +12134,39 @@ _web_base64_decode_url:
 	bl	_nox_exception_pending
 	mov	w1, w0
 	mov	x0, x20
-	adrp	x2, _str111@page+8
-	add	x2, x2, _str111@pageoff+8
+	adrp	x2, _str112@page+8
+	add	x2, x2, _str112@pageoff+8
 	cmp	x2, #0
 	cmp	w1, #0
-	bne	L1731
-	adrp	x1, _str111@page+8
-	add	x1, x1, _str111@pageoff+8
+	bne	L1736
+	adrp	x1, _str112@page+8
+	add	x1, x1, _str112@pageoff+8
 	cmp	x1, #0
-	beq	L1730
-	adrp	x1, _str111@page
-	add	x1, x1, _str111@pageoff
+	beq	L1735
+	adrp	x1, _str112@page
+	add	x1, x1, _str112@pageoff
 	ldr	x1, [x1]
 	mov	x2, #1
 	sub	x1, x1, x2
-	adrp	x2, _str111@page
-	add	x2, x2, _str111@pageoff
+	adrp	x2, _str112@page
+	add	x2, x2, _str112@pageoff
 	str	x1, [x2]
 	cmp	x1, #0
-	ble	L1729
+	ble	L1734
 	mov	x0, x19
-	b	L1732
-L1729:
-	adrp	x1, _str111@page+8
-	add	x1, x1, _str111@pageoff+8
+	b	L1737
+L1734:
+	adrp	x1, _str112@page+8
+	add	x1, x1, _str112@pageoff+8
 	bl	_nox_str_free_now
 	mov	x0, x19
-	b	L1732
-L1730:
+	b	L1737
+L1735:
 	mov	x0, x19
-	b	L1732
-L1731:
+	b	L1737
+L1736:
 	mov	x0, #0
-L1732:
+L1737:
 	ldr	x19, [x29, 24]
 	ldr	x20, [x29, 16]
 	ldp	x29, x30, [sp], 32
@@ -12159,8 +12191,8 @@ _main:
 	mov	x19, x17
 	bl	_nox_os_init
 	mov	x0, x19
-	adrp	x1, _str112@page+8
-	add	x1, x1, _str112@pageoff+8
+	adrp	x1, _str113@page+8
+	add	x1, x1, _str113@pageoff+8
 	mov	x19, x0
 	bl	_web_base64_encode
 	mov	x20, x0
@@ -12171,11 +12203,11 @@ _main:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1817
-	adrp	x3, _str114@page+8
-	add	x3, x3, _str114@pageoff+8
-	adrp	x2, _str113@page+8
-	add	x2, x2, _str113@pageoff+8
+	bne	L1822
+	adrp	x3, _str115@page+8
+	add	x3, x3, _str115@pageoff+8
+	adrp	x2, _str114@page+8
+	add	x2, x2, _str114@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12186,49 +12218,7 @@ _main:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1816
-	cmp	x1, #0
-	beq	L1738
-	mov	x2, #8
-	sub	x3, x1, x2
-	ldr	x2, [x3]
-	mov	x4, #1
-	sub	x2, x2, x4
-	str	x2, [x3]
-	cmp	x2, #0
-	bgt	L1738
-	mov	x19, x0
-	bl	_nox_str_free_now
-	mov	x0, x19
-L1738:
-	adrp	x1, _str115@page+8
-	add	x1, x1, _str115@pageoff+8
-	mov	x19, x0
-	bl	_web_base64_decode
-	mov	x20, x0
-	mov	x0, x19
-	mov	x19, x0
-	bl	_nox_exception_pending
-	mov	x1, x20
-	mov	w2, w0
-	mov	x0, x19
-	cmp	w2, #0
-	bne	L1815
-	adrp	x3, _str117@page+8
-	add	x3, x3, _str117@pageoff+8
-	adrp	x2, _str116@page+8
-	add	x2, x2, _str116@pageoff+8
-	mov	x20, x1
-	mov	x19, x0
-	bl	_nox_test_assert_eq_str
-	mov	x0, x19
-	mov	x19, x0
-	bl	_nox_exception_pending
-	mov	x1, x20
-	mov	w2, w0
-	mov	x0, x19
-	cmp	w2, #0
-	bne	L1814
+	bne	L1821
 	cmp	x1, #0
 	beq	L1743
 	mov	x2, #8
@@ -12243,10 +12233,10 @@ L1738:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1743:
-	adrp	x1, _str118@page+8
-	add	x1, x1, _str118@pageoff+8
+	adrp	x1, _str116@page+8
+	add	x1, x1, _str116@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_encode_url
+	bl	_web_base64_decode
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12255,11 +12245,11 @@ L1743:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1813
-	adrp	x3, _str120@page+8
-	add	x3, x3, _str120@pageoff+8
-	adrp	x2, _str119@page+8
-	add	x2, x2, _str119@pageoff+8
+	bne	L1820
+	adrp	x3, _str118@page+8
+	add	x3, x3, _str118@pageoff+8
+	adrp	x2, _str117@page+8
+	add	x2, x2, _str117@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12270,7 +12260,7 @@ L1743:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1812
+	bne	L1819
 	cmp	x1, #0
 	beq	L1748
 	mov	x2, #8
@@ -12285,10 +12275,10 @@ L1743:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1748:
-	adrp	x1, _str121@page+8
-	add	x1, x1, _str121@pageoff+8
+	adrp	x1, _str119@page+8
+	add	x1, x1, _str119@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_decode_url
+	bl	_web_base64_encode_url
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12297,11 +12287,11 @@ L1748:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1811
-	adrp	x3, _str123@page+8
-	add	x3, x3, _str123@pageoff+8
-	adrp	x2, _str122@page+8
-	add	x2, x2, _str122@pageoff+8
+	bne	L1818
+	adrp	x3, _str121@page+8
+	add	x3, x3, _str121@pageoff+8
+	adrp	x2, _str120@page+8
+	add	x2, x2, _str120@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12312,7 +12302,7 @@ L1748:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1810
+	bne	L1817
 	cmp	x1, #0
 	beq	L1753
 	mov	x2, #8
@@ -12327,10 +12317,10 @@ L1748:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1753:
-	adrp	x1, _str124@page+8
-	add	x1, x1, _str124@pageoff+8
+	adrp	x1, _str122@page+8
+	add	x1, x1, _str122@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_encode
+	bl	_web_base64_decode_url
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12339,11 +12329,11 @@ L1753:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1809
-	adrp	x3, _str126@page+8
-	add	x3, x3, _str126@pageoff+8
-	adrp	x2, _str125@page+8
-	add	x2, x2, _str125@pageoff+8
+	bne	L1816
+	adrp	x3, _str124@page+8
+	add	x3, x3, _str124@pageoff+8
+	adrp	x2, _str123@page+8
+	add	x2, x2, _str123@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12354,7 +12344,7 @@ L1753:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1808
+	bne	L1815
 	cmp	x1, #0
 	beq	L1758
 	mov	x2, #8
@@ -12369,10 +12359,10 @@ L1753:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1758:
-	adrp	x1, _str127@page+8
-	add	x1, x1, _str127@pageoff+8
+	adrp	x1, _str125@page+8
+	add	x1, x1, _str125@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_decode
+	bl	_web_base64_encode
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12381,11 +12371,11 @@ L1758:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1807
-	adrp	x3, _str129@page+8
-	add	x3, x3, _str129@pageoff+8
-	adrp	x2, _str128@page+8
-	add	x2, x2, _str128@pageoff+8
+	bne	L1814
+	adrp	x3, _str127@page+8
+	add	x3, x3, _str127@pageoff+8
+	adrp	x2, _str126@page+8
+	add	x2, x2, _str126@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12396,7 +12386,7 @@ L1758:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1806
+	bne	L1813
 	cmp	x1, #0
 	beq	L1763
 	mov	x2, #8
@@ -12411,10 +12401,10 @@ L1758:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1763:
-	adrp	x1, _str130@page+8
-	add	x1, x1, _str130@pageoff+8
+	adrp	x1, _str128@page+8
+	add	x1, x1, _str128@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_encode
+	bl	_web_base64_decode
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12423,11 +12413,11 @@ L1763:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1805
-	adrp	x3, _str132@page+8
-	add	x3, x3, _str132@pageoff+8
-	adrp	x2, _str131@page+8
-	add	x2, x2, _str131@pageoff+8
+	bne	L1812
+	adrp	x3, _str130@page+8
+	add	x3, x3, _str130@pageoff+8
+	adrp	x2, _str129@page+8
+	add	x2, x2, _str129@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12438,7 +12428,7 @@ L1763:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1804
+	bne	L1811
 	cmp	x1, #0
 	beq	L1768
 	mov	x2, #8
@@ -12453,8 +12443,8 @@ L1763:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1768:
-	adrp	x1, _str133@page+8
-	add	x1, x1, _str133@pageoff+8
+	adrp	x1, _str131@page+8
+	add	x1, x1, _str131@pageoff+8
 	mov	x19, x0
 	bl	_web_base64_encode
 	mov	x20, x0
@@ -12465,11 +12455,11 @@ L1768:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1803
-	adrp	x3, _str135@page+8
-	add	x3, x3, _str135@pageoff+8
-	adrp	x2, _str134@page+8
-	add	x2, x2, _str134@pageoff+8
+	bne	L1810
+	adrp	x3, _str133@page+8
+	add	x3, x3, _str133@pageoff+8
+	adrp	x2, _str132@page+8
+	add	x2, x2, _str132@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12480,7 +12470,7 @@ L1768:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1802
+	bne	L1809
 	cmp	x1, #0
 	beq	L1773
 	mov	x2, #8
@@ -12495,8 +12485,8 @@ L1768:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1773:
-	adrp	x1, _str136@page+8
-	add	x1, x1, _str136@pageoff+8
+	adrp	x1, _str134@page+8
+	add	x1, x1, _str134@pageoff+8
 	mov	x19, x0
 	bl	_web_base64_encode
 	mov	x20, x0
@@ -12507,11 +12497,11 @@ L1773:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1801
-	adrp	x3, _str138@page+8
-	add	x3, x3, _str138@pageoff+8
-	adrp	x2, _str137@page+8
-	add	x2, x2, _str137@pageoff+8
+	bne	L1808
+	adrp	x3, _str136@page+8
+	add	x3, x3, _str136@pageoff+8
+	adrp	x2, _str135@page+8
+	add	x2, x2, _str135@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12522,7 +12512,7 @@ L1773:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1800
+	bne	L1807
 	cmp	x1, #0
 	beq	L1778
 	mov	x2, #8
@@ -12537,10 +12527,10 @@ L1773:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1778:
-	adrp	x1, _str139@page+8
-	add	x1, x1, _str139@pageoff+8
+	adrp	x1, _str137@page+8
+	add	x1, x1, _str137@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_encode_url
+	bl	_web_base64_encode
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12549,11 +12539,11 @@ L1778:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1799
-	adrp	x3, _str141@page+8
-	add	x3, x3, _str141@pageoff+8
-	adrp	x2, _str140@page+8
-	add	x2, x2, _str140@pageoff+8
+	bne	L1806
+	adrp	x3, _str139@page+8
+	add	x3, x3, _str139@pageoff+8
+	adrp	x2, _str138@page+8
+	add	x2, x2, _str138@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12564,7 +12554,7 @@ L1778:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1798
+	bne	L1805
 	cmp	x1, #0
 	beq	L1783
 	mov	x2, #8
@@ -12579,10 +12569,10 @@ L1778:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1783:
-	adrp	x1, _str142@page+8
-	add	x1, x1, _str142@pageoff+8
+	adrp	x1, _str140@page+8
+	add	x1, x1, _str140@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_decode_url
+	bl	_web_base64_encode_url
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12591,11 +12581,11 @@ L1783:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1797
-	adrp	x3, _str144@page+8
-	add	x3, x3, _str144@pageoff+8
-	adrp	x2, _str143@page+8
-	add	x2, x2, _str143@pageoff+8
+	bne	L1804
+	adrp	x3, _str142@page+8
+	add	x3, x3, _str142@pageoff+8
+	adrp	x2, _str141@page+8
+	add	x2, x2, _str141@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12606,7 +12596,7 @@ L1783:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1796
+	bne	L1803
 	cmp	x1, #0
 	beq	L1788
 	mov	x2, #8
@@ -12621,10 +12611,10 @@ L1783:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1788:
-	adrp	x1, _str145@page+8
-	add	x1, x1, _str145@pageoff+8
+	adrp	x1, _str143@page+8
+	add	x1, x1, _str143@pageoff+8
 	mov	x19, x0
-	bl	_web_base64_encode_hex_url
+	bl	_web_base64_decode_url
 	mov	x20, x0
 	mov	x0, x19
 	mov	x19, x0
@@ -12633,11 +12623,11 @@ L1788:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1795
-	adrp	x3, _str147@page+8
-	add	x3, x3, _str147@pageoff+8
-	adrp	x2, _str146@page+8
-	add	x2, x2, _str146@pageoff+8
+	bne	L1802
+	adrp	x3, _str145@page+8
+	add	x3, x3, _str145@pageoff+8
+	adrp	x2, _str144@page+8
+	add	x2, x2, _str144@pageoff+8
 	mov	x20, x1
 	mov	x19, x0
 	bl	_nox_test_assert_eq_str
@@ -12648,7 +12638,7 @@ L1788:
 	mov	w2, w0
 	mov	x0, x19
 	cmp	w2, #0
-	bne	L1794
+	bne	L1801
 	cmp	x1, #0
 	beq	L1793
 	mov	x2, #8
@@ -12663,12 +12653,54 @@ L1788:
 	bl	_nox_str_free_now
 	mov	x0, x19
 L1793:
+	adrp	x1, _str146@page+8
+	add	x1, x1, _str146@pageoff+8
+	mov	x19, x0
+	bl	_web_base64_encode_hex_url
+	mov	x20, x0
+	mov	x0, x19
+	mov	x19, x0
+	bl	_nox_exception_pending
+	mov	x1, x20
+	mov	w2, w0
+	mov	x0, x19
+	cmp	w2, #0
+	bne	L1800
+	adrp	x3, _str148@page+8
+	add	x3, x3, _str148@pageoff+8
+	adrp	x2, _str147@page+8
+	add	x2, x2, _str147@pageoff+8
+	mov	x20, x1
+	mov	x19, x0
+	bl	_nox_test_assert_eq_str
+	mov	x0, x19
+	mov	x19, x0
+	bl	_nox_exception_pending
+	mov	x1, x20
+	mov	w2, w0
+	mov	x0, x19
+	cmp	w2, #0
+	bne	L1799
+	cmp	x1, #0
+	beq	L1798
+	mov	x2, #8
+	sub	x3, x1, x2
+	ldr	x2, [x3]
+	mov	x4, #1
+	sub	x2, x2, x4
+	str	x2, [x3]
+	cmp	x2, #0
+	bgt	L1798
+	mov	x19, x0
+	bl	_nox_str_free_now
+	mov	x0, x19
+L1798:
 	mov	x1, #16
 	sub	sp, sp, x1
 	mov	x1, #0
 	add	x2, sp, x1
-	adrp	x1, _str148@page+8
-	add	x1, x1, _str148@pageoff+8
+	adrp	x1, _str149@page+8
+	add	x1, x1, _str149@pageoff+8
 	str	x1, [x2]
 	mov	x19, x0
 	adrp	x0, _fmt_str@page
@@ -12679,103 +12711,103 @@ L1793:
 	add	sp, sp, x1
 	bl	_nox_runtime_deinit
 	mov	w0, #0
-	b	L1818
-L1794:
-	bl	_nox_unhandled_exception
-	mov	w0, #0
-	b	L1818
-L1795:
-	bl	_nox_unhandled_exception
-	mov	w0, #0
-	b	L1818
-L1796:
-	bl	_nox_unhandled_exception
-	mov	w0, #0
-	b	L1818
-L1797:
-	bl	_nox_unhandled_exception
-	mov	w0, #0
-	b	L1818
-L1798:
-	bl	_nox_unhandled_exception
-	mov	w0, #0
-	b	L1818
+	b	L1823
 L1799:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1800:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1801:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1802:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1803:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1804:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1805:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1806:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1807:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1808:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1809:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1810:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1811:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1812:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1813:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1814:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1815:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1816:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
-	b	L1818
+	b	L1823
 L1817:
 	bl	_nox_unhandled_exception
 	mov	w0, #0
+	b	L1823
 L1818:
+	bl	_nox_unhandled_exception
+	mov	w0, #0
+	b	L1823
+L1819:
+	bl	_nox_unhandled_exception
+	mov	w0, #0
+	b	L1823
+L1820:
+	bl	_nox_unhandled_exception
+	mov	w0, #0
+	b	L1823
+L1821:
+	bl	_nox_unhandled_exception
+	mov	w0, #0
+	b	L1823
+L1822:
+	bl	_nox_unhandled_exception
+	mov	w0, #0
+L1823:
 	ldr	x19, [x29, 24]
 	ldr	x20, [x29, 16]
 	ldp	x29, x30, [sp], 32
@@ -12802,7 +12834,7 @@ _List_str_release:
 	sub	x2, x2, x4
 	str	x2, [x3]
 	cmp	x2, #0
-	bgt	L1828
+	bgt	L1833
 	ldr	x21, [x1]
 	mov	x2, #8
 	add	x2, x1, x2
@@ -12813,9 +12845,9 @@ _List_str_release:
 	mov	x2, #0
 	str	x2, [x20]
 	mov	x19, #0
-L1822:
+L1827:
 	cmp	x19, x21
-	bge	L1827
+	bge	L1832
 	mov	x24, x1
 	mov	x1, #8
 	mul	x1, x19, x1
@@ -12824,26 +12856,26 @@ L1822:
 	add	x1, x24, x1
 	ldr	x1, [x1]
 	cmp	x1, #0
-	beq	L1825
+	beq	L1830
 	mov	x23, x0
 	bl	_nox_str_release
 	mov	x1, x24
 	mov	x0, x23
-	b	L1826
-L1825:
+	b	L1831
+L1830:
 	mov	x1, x24
-L1826:
+L1831:
 	mov	x2, #1
 	add	x19, x19, x2
 	str	x19, [x20]
-	b	L1822
-L1827:
+	b	L1827
+L1832:
 	mov	x2, #8
 	mul	x2, x22, x2
 	mov	x3, #16
 	add	x2, x2, x3
 	bl	_nox_rc_free_payload
-L1828:
+L1833:
 	ldr	x19, [x29, 56]
 	ldr	x20, [x29, 48]
 	ldr	x21, [x29, 40]
@@ -12875,7 +12907,7 @@ _List_JsonValue_release:
 	sub	x2, x2, x4
 	str	x2, [x3]
 	cmp	x2, #0
-	bgt	L1838
+	bgt	L1843
 	ldr	x21, [x1]
 	mov	x2, #8
 	add	x2, x1, x2
@@ -12886,9 +12918,9 @@ _List_JsonValue_release:
 	mov	x2, #0
 	str	x2, [x20]
 	mov	x19, #0
-L1832:
+L1837:
 	cmp	x19, x21
-	bge	L1837
+	bge	L1842
 	mov	x24, x1
 	mov	x1, #8
 	mul	x1, x19, x1
@@ -12897,26 +12929,26 @@ L1832:
 	add	x1, x24, x1
 	ldr	x1, [x1]
 	cmp	x1, #0
-	beq	L1835
+	beq	L1840
 	mov	x23, x0
 	bl	_JsonValue_release
 	mov	x1, x24
 	mov	x0, x23
-	b	L1836
-L1835:
+	b	L1841
+L1840:
 	mov	x1, x24
-L1836:
+L1841:
 	mov	x2, #1
 	add	x19, x19, x2
 	str	x19, [x20]
-	b	L1832
-L1837:
+	b	L1837
+L1842:
 	mov	x2, #8
 	mul	x2, x22, x2
 	mov	x3, #16
 	add	x2, x2, x3
 	bl	_nox_rc_free_payload
-L1838:
+L1843:
 	ldr	x19, [x29, 56]
 	ldr	x20, [x29, 48]
 	ldr	x21, [x29, 40]
@@ -12943,11 +12975,11 @@ _List_str_eq:
 	ldr	x20, [x1]
 	ldr	x0, [x22]
 	cmp	x20, x0
-	bne	L1846
+	bne	L1851
 	mov	x19, #0
-L1841:
+L1846:
 	cmp	x19, x20
-	bge	L1845
+	bge	L1850
 	mov	x0, #8
 	mul	x0, x19, x0
 	mov	x21, x1
@@ -12961,17 +12993,17 @@ L1841:
 	mov	x2, x22
 	mov	x1, x21
 	cmp	w0, #0
-	bne	L1846
+	bne	L1851
 	mov	x0, #1
 	add	x19, x19, x0
 	mov	x22, x2
-	b	L1841
-L1845:
+	b	L1846
+L1850:
 	mov	w0, #1
-	b	L1847
-L1846:
+	b	L1852
+L1851:
 	mov	w0, #0
-L1847:
+L1852:
 	ldr	x19, [x29, 40]
 	ldr	x20, [x29, 32]
 	ldr	x21, [x29, 24]
@@ -12995,11 +13027,11 @@ _List_JsonValue_eq:
 	ldr	x20, [x1]
 	ldr	x3, [x2]
 	cmp	x20, x3
-	bne	L1857
+	bne	L1862
 	mov	x19, #0
-L1850:
+L1855:
 	cmp	x19, x20
-	bge	L1856
+	bge	L1861
 	mov	x23, x2
 	mov	x2, #8
 	mul	x2, x19, x2
@@ -13016,7 +13048,7 @@ L1850:
 	cset	w4, eq
 	orr	w5, w3, w4
 	cmp	w5, #0
-	bne	L1853
+	bne	L1858
 	mov	x21, x0
 	bl	_JsonValue_eq
 	mov	x2, x23
@@ -13024,24 +13056,24 @@ L1850:
 	mov	w3, w0
 	mov	x0, x21
 	cmp	w3, #0
-	beq	L1857
-	b	L1855
-L1853:
+	beq	L1862
+	b	L1860
+L1858:
 	mov	x2, x23
 	mov	x1, x22
 	and	w3, w3, w4
 	cmp	w3, #0
-	beq	L1857
-L1855:
+	beq	L1862
+L1860:
 	mov	x3, #1
 	add	x19, x19, x3
-	b	L1850
-L1856:
+	b	L1855
+L1861:
 	mov	w0, #1
-	b	L1858
-L1857:
+	b	L1863
+L1862:
 	mov	w0, #0
-L1858:
+L1863:
 	ldr	x19, [x29, 56]
 	ldr	x20, [x29, 48]
 	ldr	x21, [x29, 40]
@@ -13863,7 +13895,7 @@ _str100:
 .balign 8
 _str101:
 	.quad 1073741824
-	.ascii "gecersiz base64url uzunlugu"
+	.ascii "gecersiz base64 uzunlugu"
 	.byte 0
 /* end data */
 
@@ -13895,7 +13927,7 @@ _str104:
 .balign 8
 _str105:
 	.quad 1073741824
-	.ascii ""
+	.ascii "gecersiz base64 padding"
 	.byte 0
 /* end data */
 
@@ -13903,7 +13935,7 @@ _str105:
 .balign 8
 _str106:
 	.quad 1073741824
-	.ascii "str indeksi sinirlarin disinda"
+	.ascii ""
 	.byte 0
 /* end data */
 
@@ -13935,7 +13967,7 @@ _str109:
 .balign 8
 _str110:
 	.quad 1073741824
-	.ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	.ascii "str indeksi sinirlarin disinda"
 	.byte 0
 /* end data */
 
@@ -13943,7 +13975,7 @@ _str110:
 .balign 8
 _str111:
 	.quad 1073741824
-	.ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	.ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 	.byte 0
 /* end data */
 
@@ -13951,7 +13983,7 @@ _str111:
 .balign 8
 _str112:
 	.quad 1073741824
-	.ascii "hello"
+	.ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 	.byte 0
 /* end data */
 
@@ -13959,7 +13991,7 @@ _str112:
 .balign 8
 _str113:
 	.quad 1073741824
-	.ascii "aGVsbG8="
+	.ascii "hello"
 	.byte 0
 /* end data */
 
@@ -13967,7 +13999,7 @@ _str113:
 .balign 8
 _str114:
 	.quad 1073741824
-	.ascii "encode hello"
+	.ascii "aGVsbG8="
 	.byte 0
 /* end data */
 
@@ -13975,7 +14007,7 @@ _str114:
 .balign 8
 _str115:
 	.quad 1073741824
-	.ascii "aGVsbG8="
+	.ascii "encode hello"
 	.byte 0
 /* end data */
 
@@ -13983,7 +14015,7 @@ _str115:
 .balign 8
 _str116:
 	.quad 1073741824
-	.ascii "hello"
+	.ascii "aGVsbG8="
 	.byte 0
 /* end data */
 
@@ -13991,7 +14023,7 @@ _str116:
 .balign 8
 _str117:
 	.quad 1073741824
-	.ascii "decode hello"
+	.ascii "hello"
 	.byte 0
 /* end data */
 
@@ -13999,7 +14031,7 @@ _str117:
 .balign 8
 _str118:
 	.quad 1073741824
-	.ascii "hello"
+	.ascii "decode hello"
 	.byte 0
 /* end data */
 
@@ -14007,7 +14039,7 @@ _str118:
 .balign 8
 _str119:
 	.quad 1073741824
-	.ascii "aGVsbG8"
+	.ascii "hello"
 	.byte 0
 /* end data */
 
@@ -14015,7 +14047,7 @@ _str119:
 .balign 8
 _str120:
 	.quad 1073741824
-	.ascii "encode_url hello"
+	.ascii "aGVsbG8"
 	.byte 0
 /* end data */
 
@@ -14023,7 +14055,7 @@ _str120:
 .balign 8
 _str121:
 	.quad 1073741824
-	.ascii "aGVsbG8"
+	.ascii "encode_url hello"
 	.byte 0
 /* end data */
 
@@ -14031,7 +14063,7 @@ _str121:
 .balign 8
 _str122:
 	.quad 1073741824
-	.ascii "hello"
+	.ascii "aGVsbG8"
 	.byte 0
 /* end data */
 
@@ -14039,7 +14071,7 @@ _str122:
 .balign 8
 _str123:
 	.quad 1073741824
-	.ascii "decode_url hello"
+	.ascii "hello"
 	.byte 0
 /* end data */
 
@@ -14047,7 +14079,7 @@ _str123:
 .balign 8
 _str124:
 	.quad 1073741824
-	.ascii ""
+	.ascii "decode_url hello"
 	.byte 0
 /* end data */
 
@@ -14063,7 +14095,7 @@ _str125:
 .balign 8
 _str126:
 	.quad 1073741824
-	.ascii "encode empty"
+	.ascii ""
 	.byte 0
 /* end data */
 
@@ -14071,7 +14103,7 @@ _str126:
 .balign 8
 _str127:
 	.quad 1073741824
-	.ascii ""
+	.ascii "encode empty"
 	.byte 0
 /* end data */
 
@@ -14087,7 +14119,7 @@ _str128:
 .balign 8
 _str129:
 	.quad 1073741824
-	.ascii "decode empty"
+	.ascii ""
 	.byte 0
 /* end data */
 
@@ -14095,7 +14127,7 @@ _str129:
 .balign 8
 _str130:
 	.quad 1073741824
-	.ascii "f"
+	.ascii "decode empty"
 	.byte 0
 /* end data */
 
@@ -14103,7 +14135,7 @@ _str130:
 .balign 8
 _str131:
 	.quad 1073741824
-	.ascii "Zg=="
+	.ascii "f"
 	.byte 0
 /* end data */
 
@@ -14111,7 +14143,7 @@ _str131:
 .balign 8
 _str132:
 	.quad 1073741824
-	.ascii "encode f"
+	.ascii "Zg=="
 	.byte 0
 /* end data */
 
@@ -14119,7 +14151,7 @@ _str132:
 .balign 8
 _str133:
 	.quad 1073741824
-	.ascii "fo"
+	.ascii "encode f"
 	.byte 0
 /* end data */
 
@@ -14127,7 +14159,7 @@ _str133:
 .balign 8
 _str134:
 	.quad 1073741824
-	.ascii "Zm8="
+	.ascii "fo"
 	.byte 0
 /* end data */
 
@@ -14135,7 +14167,7 @@ _str134:
 .balign 8
 _str135:
 	.quad 1073741824
-	.ascii "encode fo"
+	.ascii "Zm8="
 	.byte 0
 /* end data */
 
@@ -14143,7 +14175,7 @@ _str135:
 .balign 8
 _str136:
 	.quad 1073741824
-	.ascii "foo"
+	.ascii "encode fo"
 	.byte 0
 /* end data */
 
@@ -14151,7 +14183,7 @@ _str136:
 .balign 8
 _str137:
 	.quad 1073741824
-	.ascii "Zm9v"
+	.ascii "foo"
 	.byte 0
 /* end data */
 
@@ -14159,7 +14191,7 @@ _str137:
 .balign 8
 _str138:
 	.quad 1073741824
-	.ascii "encode foo"
+	.ascii "Zm9v"
 	.byte 0
 /* end data */
 
@@ -14167,7 +14199,7 @@ _str138:
 .balign 8
 _str139:
 	.quad 1073741824
-	.ascii "{}"
+	.ascii "encode foo"
 	.byte 0
 /* end data */
 
@@ -14175,7 +14207,7 @@ _str139:
 .balign 8
 _str140:
 	.quad 1073741824
-	.ascii "e30"
+	.ascii "{}"
 	.byte 0
 /* end data */
 
@@ -14183,7 +14215,7 @@ _str140:
 .balign 8
 _str141:
 	.quad 1073741824
-	.ascii "encode_url empty object"
+	.ascii "e30"
 	.byte 0
 /* end data */
 
@@ -14191,7 +14223,7 @@ _str141:
 .balign 8
 _str142:
 	.quad 1073741824
-	.ascii "e30"
+	.ascii "encode_url empty object"
 	.byte 0
 /* end data */
 
@@ -14199,7 +14231,7 @@ _str142:
 .balign 8
 _str143:
 	.quad 1073741824
-	.ascii "{}"
+	.ascii "e30"
 	.byte 0
 /* end data */
 
@@ -14207,7 +14239,7 @@ _str143:
 .balign 8
 _str144:
 	.quad 1073741824
-	.ascii "decode_url empty object"
+	.ascii "{}"
 	.byte 0
 /* end data */
 
@@ -14215,7 +14247,7 @@ _str144:
 .balign 8
 _str145:
 	.quad 1073741824
-	.ascii "4d616e"
+	.ascii "decode_url empty object"
 	.byte 0
 /* end data */
 
@@ -14223,7 +14255,7 @@ _str145:
 .balign 8
 _str146:
 	.quad 1073741824
-	.ascii "TWFu"
+	.ascii "4d616e"
 	.byte 0
 /* end data */
 
@@ -14231,13 +14263,21 @@ _str146:
 .balign 8
 _str147:
 	.quad 1073741824
-	.ascii "encode_hex_url Man"
+	.ascii "TWFu"
 	.byte 0
 /* end data */
 
 .data
 .balign 8
 _str148:
+	.quad 1073741824
+	.ascii "encode_hex_url Man"
+	.byte 0
+/* end data */
+
+.data
+.balign 8
+_str149:
 	.quad 1073741824
 	.ascii "base64_test ok"
 	.byte 0
