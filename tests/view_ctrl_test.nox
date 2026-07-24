@@ -1,0 +1,22 @@
+import nox.test
+import nox.fs
+import nyx.view
+import nyx.ctrl
+from nox.http import HttpResponse
+
+path: str = "/tmp/nyx_view_test.html"
+nox.fs.write_string(path, "<h1>{{ title }}</h1>")
+ctx: dict[str, str] = {}
+ctx["title"] = "Merhaba"
+html: str = nyx.view.render(path, ctx)
+nox.test.assert_eq_str(html, "<h1>Merhaba</h1>", "render")
+
+resp: HttpResponse = nyx.ctrl.redirect("/x")
+nox.test.assert_eq_int(resp.status, 302, "redirect status")
+nox.test.assert_eq_str(resp.headers["Location"], "/x", "redirect loc")
+
+r2: HttpResponse = nyx.ctrl.render(200, path, ctx)
+nox.test.assert_eq_int(r2.status, 200, "ctrl render")
+nox.test.assert_eq_str(r2.body, "<h1>Merhaba</h1>", "ctrl body")
+
+print("view_ctrl_test ok")

@@ -1,0 +1,32 @@
+import nox.test
+import nyx.db
+import nyx.model
+from nox.sqlite import Connection
+from nyx.model import Record
+
+db: Connection = nyx.db.open(":memory:")
+db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT NOT NULL)")
+
+uid: int = nyx.model.create(db, "users", "{\"email\":\"a@b.c\",\"name\":\"Alice\"}")
+nox.test.assert_true(uid > 0, "create id")
+
+found: Record | None = nyx.model.find(db, "users", uid)
+nox.test.assert_true(found != None, "find")
+if found != None:
+    nox.test.assert_eq_str(found.get("email"), "a@b.c", "email")
+    nox.test.assert_eq_str(found.get("name"), "Alice", "name")
+
+nyx.model.update(db, "users", uid, "{\"name\":\"Alicia\"}")
+found2: Record | None = nyx.model.find(db, "users", uid)
+if found2 != None:
+    nox.test.assert_eq_str(found2.get("name"), "Alicia", "updated name")
+
+rows: list[Record] = nyx.model.where(db, "users", "email", "a@b.c")
+nox.test.assert_eq_int(len(rows), 1, "where count")
+
+nyx.model.destroy(db, "users", uid)
+gone: Record | None = nyx.model.find(db, "users", uid)
+nox.test.assert_true(gone == None, "destroyed")
+
+db.close()
+print("model_test ok")

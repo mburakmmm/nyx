@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{{ title }}</title></head>
+<body>
+  <h1>Posts</h1>
+  <p>{{ notice }}</p>
+  <ul>{{ posts_html }}</ul>
+  <h2>Yeni yazı</h2>
+  <form action="/posts" method="POST">
+    {{ csrf_field }}
+    <p>Baslik: {{ title_field }}</p>
+    <p>Govde: {{ body_field }}</p>
+    {{ submit }}
+  </form>
+</body>
+</html>

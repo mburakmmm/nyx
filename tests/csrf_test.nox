@@ -1,0 +1,10 @@
+import nox.test
+import nyx.csrf
+
+secret: str = "csrf-secret-key-32-characters!!"
+tok: str = nyx.csrf.token(secret)
+nox.test.assert_true(nyx.csrf.check(secret, tok), "valid token")
+nox.test.assert_true(not nyx.csrf.check("wrong-secret-key-32-characters!", tok), "wrong secret")
+nox.test.assert_true(not nyx.csrf.check(secret, "bad.token"), "bad token")
+
+print("csrf_test ok")

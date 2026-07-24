@@ -1,0 +1,39 @@
+# {{APP_NAME}} — nyx uygulama girişi
+# noxc run main.nox
+
+import nox.http
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Router, Context
+import nyx.db
+import nyx.ctrl
+import nyx.cors
+from nyx.cors import CorsConfig
+from nox.sqlite import Connection
+
+def secret() -> str:
+    return "change-me-{{APP_NAME}}-secret-key-32b!"
+
+def build_router(db: Connection) -> Router:
+    router: Router = Router()
+    cfg: CorsConfig = nyx.cors.default_config()
+    router.use_before(nyx.cors.before_handler(cfg))
+    router.use_after(nyx.cors.after_handler(cfg))
+
+    def home(ctx: Context) -> HttpResponse:
+        context: dict[str, str] = {}
+        context["title"] = "{{APP_NAME}}"
+        return nyx.ctrl.render(200, "app/views/home.html", context)
+
+    router.get("/", home)
+    return router
+
+def handle(req: HttpRequest) -> HttpResponse:
+    db: Connection = nyx.db.open("db/app.sqlite")
+    nyx.db.migrate(db, "db/migrate")
+    router: Router = build_router(db)
+    resp: HttpResponse = router.dispatch(req)
+    db.close()
+    return resp
+
+print("{{APP_NAME}} listening on :8080")
+nox.http.serve(8080, handle)

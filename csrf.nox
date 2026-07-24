@@ -1,0 +1,55 @@
+# nyx.csrf — HMAC tabanlı CSRF jetonu.
+#
+# import nyx.csrf
+# t: str = nyx.csrf.token(secret)
+# ok: bool = nyx.csrf.check(secret, t)
+
+import nox.crypto
+import nox.time
+import nox.strings
+import nyx.base64
+from nyx.base64 import Base64Error
+
+class CsrfError:
+    def __init__(self: CsrfError, message: str) -> None:
+        self.message = message
+
+def _sign(secret: str, payload: str) -> str:
+    return nyx.base64.encode_hex_url(nox.crypto.hmac_sha256(secret, payload))
+
+def token(secret: str) -> str:
+    return token_ttl(secret, 3600)
+
+def token_ttl(secret: str, ttl_sec: int) -> str:
+    if len(secret) == 0:
+        raise CsrfError("secret bos")
+    if ttl_sec <= 0:
+        raise CsrfError("ttl pozitif olmali")
+    exp: int = (nox.time.now_ms() // 1000) + ttl_sec
+    payload: str = str(exp)
+    payload_b64: str = nyx.base64.encode_url(payload)
+    mac: str = _sign(secret, payload_b64)
+    return payload_b64 + "." + mac
+
+def check(secret: str, tok: str) -> bool:
+    if len(secret) == 0 or len(tok) == 0:
+        return False
+    parts: list[str] = nox.strings.split(tok, ".")
+    if len(parts) != 2:
+        return False
+    payload_b64: str = parts[0]
+    mac: str = parts[1]
+    expected: str = _sign(secret, payload_b64)
+    if not nox.crypto.constant_time_eq(mac, expected):
+        return False
+    try:
+        payload: str = nyx.base64.decode_url(payload_b64)
+        exp: int = int(payload)
+        now: int = nox.time.now_ms() // 1000
+        if now >= exp:
+            return False
+        return True
+    except Base64Error:
+        return False
+    except ValueError:
+        return False

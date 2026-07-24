@@ -1,10 +1,10 @@
 {
-  "name": "nyx-web-example",
+  "name": "{{APP_NAME}}",
   "entry": "main.nox",
   "requires": [
     {
       "alias": "nyx",
-      "repo": "/Users/melihburakmemis/Documents/nyx",
+      "repo": "github.com/mburakmmm/nyx",
       "ref": "v0.2.0"
     }
   ]

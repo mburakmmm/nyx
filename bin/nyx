@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# nyx — iskelet ve generator CLI
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TEMPLATES="$ROOT/templates"
+
+usage() {
+  cat <<EOF
+nyx — Nox web framework yardımcısı
+
+Kullanım:
+  nyx new <app_name>              yeni uygulama iskeleti
+  nyx generate model <Name>       model dosyası + migration
+  nyx generate controller <Name>  controller iskeleti
+  nyx version                     sürüm
+EOF
+}
+
+version() {
+  if [[ -f "$ROOT/VERSION" ]]; then
+    cat "$ROOT/VERSION"
+  else
+    echo "0.2.0"
+  fi
+}
+
+cmd_new() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "nyx new <app_name>" >&2
+    exit 1
+  fi
+  if [[ -e "$name" ]]; then
+    echo "zaten var: $name" >&2
+    exit 1
+  fi
+  mkdir -p "$name"
+  cp -R "$TEMPLATES/app/." "$name/"
+  # {{APP_NAME}} yer tutucularını değiştir
+  if [[ "$(uname)" == "Darwin" ]]; then
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i '' "s/{{APP_NAME}}/$name/g" {} +
+  else
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i "s/{{APP_NAME}}/$name/g" {} +
+  fi
+  # Yerel geliştirme: nyx yolunu mutlak yap (isteğe bağlı)
+  echo "olusturuldu: $name/"
+  echo "  cd $name && noxc fetch && noxc run main.nox"
+}
+
+snake() {
+  # Posts -> posts, BlogPost -> blog_post (basit)
+  echo "$1" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]'
+}
+
+cmd_generate_model() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "nyx generate model <Name>" >&2
+    exit 1
+  fi
+  local table
+  table="$(snake "$name")s"
+  mkdir -p app/models db/migrate
+  local model_file="app/models/$(snake "$name").nox"
+  local ts
+  ts="$(date +%Y%m%d%H%M%S)"
+  local mig="db/migrate/${ts}_create_${table}.sql"
+  cat > "$model_file" <<EOF
+# $name model — nyx.model ile kullanın
+# import nyx.model
+# nyx.model.find(db, "$table", id)
+
+def table_name() -> str:
+    return "$table"
+EOF
+  cat > "$mig" <<EOF
+CREATE TABLE IF NOT EXISTS "$table" (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+EOF
+  echo "olusturuldu: $model_file"
+  echo "olusturuldu: $mig"
+}
+
+cmd_generate_controller() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "nyx generate controller <Name>" >&2
+    exit 1
+  fi
+  local sn
+  sn="$(snake "$name")"
+  mkdir -p app/controllers app/views/"$sn"
+  local file="app/controllers/${sn}_controller.nox"
+  cat > "$file" <<EOF
+# ${name}Controller — rotaları main.nox içinde router'a bağlayın
+from nox.http import HttpResponse
+from nox.router import Context
+import nyx.ctrl
+
+def index(ctx: Context) -> HttpResponse:
+    context: dict[str, str] = {}
+    context["title"] = "$name"
+    return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
+EOF
+  cat > "app/views/$sn/index.html" <<EOF
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>{{ title }}</title></head>
+<body><h1>{{ title }}</h1></body></html>
+EOF
+  echo "olusturuldu: $file"
+  echo "olusturuldu: app/views/$sn/index.html"
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    new)
+      shift
+      cmd_new "$@"
+      ;;
+    generate|g)
+      shift
+      local what="${1:-}"
+      shift || true
+      case "$what" in
+        model) cmd_generate_model "$@" ;;
+        controller) cmd_generate_controller "$@" ;;
+        *) echo "bilinmeyen generate: $what" >&2; usage; exit 1 ;;
+      esac
+      ;;
+    version|-V|--version)
+      version
+      ;;
+    ""|-h|--help|help)
+      usage
+      ;;
+    *)
+      echo "bilinmeyen komut: $cmd" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

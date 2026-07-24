@@ -1,0 +1,17 @@
+import nox.test
+import nyx.flash
+
+s1: str = "{}"
+s2: str = nyx.flash.set(s1, "notice", "ok")
+msg: str | None = nyx.flash.get(s2, "notice")
+nox.test.assert_true(msg != None, "get notice")
+if msg != None:
+    nox.test.assert_eq_str(msg, "ok", "notice value")
+
+s3: str = nyx.flash.clear(s2, "notice")
+nox.test.assert_true(nyx.flash.get(s3, "notice") == None, "cleared")
+
+s4: str = nyx.flash.set("{\"user\":\"a\"}", "alert", "x")
+nox.test.assert_true(nyx.flash.get(s4, "alert") != None, "keep other keys")
+
+print("flash_test ok")

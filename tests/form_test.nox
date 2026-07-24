@@ -1,0 +1,12 @@
+import nox.test
+import nox.strings
+import nyx.form
+
+t: str = nyx.form.text("title", "Hello <x>")
+nox.test.assert_true(nox.strings.contains(t, "name=\"title\""), "name")
+nox.test.assert_true(nox.strings.contains(t, "&lt;"), "escaped")
+
+h: str = nyx.form.hidden("_csrf", "abc")
+nox.test.assert_true(nox.strings.contains(h, "type=\"hidden\""), "hidden")
+
+print("form_test ok")

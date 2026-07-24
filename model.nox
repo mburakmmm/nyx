@@ -1,0 +1,202 @@
+# nyx.model — SQLite satır yardımcıları (basit, Rails-tarzı his).
+#
+# import nyx.model
+# from nox.sqlite import Connection
+#
+# u: Record | None = nyx.model.find(db, "users", 1)
+# id: int = nyx.model.create(db, "users", "{\"email\":\"a@b.c\",\"name\":\"A\"}")
+# nyx.model.update(db, "users", id, "{\"name\":\"B\"}")
+# rows: list[Record] = nyx.model.where(db, "users", "email", "a@b.c")
+# nyx.model.destroy(db, "users", id)
+
+import nox.sqlite
+import nox.json
+import nox.strings
+from nox.sqlite import Connection, Row, Statement
+
+class ModelError:
+    def __init__(self: ModelError, message: str) -> None:
+        self.message = message
+
+class Record:
+    def __init__(self: Record, row: Row) -> None:
+        self.row = row
+
+    def get(self: Record, name: str) -> str:
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                if self.row.is_null(i):
+                    return ""
+                return self.row.get_str(i)
+            i = i + 1
+        raise ModelError("sutun yok: " + name)
+
+    def get_int(self: Record, name: str) -> int:
+        return int(self.get(name))
+
+    def has(self: Record, name: str) -> bool:
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                return True
+            i = i + 1
+        return False
+
+def _check_ident(name: str) -> None:
+    if len(name) == 0:
+        raise ModelError("bos kimlik")
+    i: int = 0
+    while i < len(name):
+        b: int = nox.strings.byte_at(name, i)
+        ok: bool = False
+        if b >= 48 and b <= 57:
+            ok = i > 0
+        if b >= 65 and b <= 90:
+            ok = True
+        if b >= 97 and b <= 122:
+            ok = True
+        if b == 95:
+            ok = True
+        if not ok:
+            raise ModelError("gecersiz kimlik: " + name)
+        i = i + 1
+
+def _quote_ident(name: str) -> str:
+    _check_ident(name)
+    return "\"" + name + "\""
+
+def _rows_to_records(rows: list[Row]) -> list[Record]:
+    out: list[Record] = []
+    i: int = 0
+    while i < len(rows):
+        out.append(Record(rows[i]))
+        i = i + 1
+    return out
+
+def find(db: Connection, table: str, id: int) -> Record | None:
+    _check_ident(table)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE \"id\" = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, id)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return None
+    return Record(rows[0])
+
+def all(db: Connection, table: str) -> list[Record]:
+    _check_ident(table)
+    sql: str = "SELECT * FROM " + _quote_ident(table)
+    rows: list[Row] = db.query(sql)
+    return _rows_to_records(rows)
+
+# Tek eşitlik filtresi: WHERE col = ?
+def where(db: Connection, table: str, col: str, value: str) -> list[Record]:
+    _check_ident(table)
+    _check_ident(col)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE " + _quote_ident(col) + " = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_str(0, value)
+    return _rows_to_records(stmt.query())
+
+def where_int(db: Connection, table: str, col: str, value: int) -> list[Record]:
+    _check_ident(table)
+    _check_ident(col)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE " + _quote_ident(col) + " = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, value)
+    return _rows_to_records(stmt.query())
+
+def destroy(db: Connection, table: str, id: int) -> None:
+    _check_ident(table)
+    sql: str = "DELETE FROM " + _quote_ident(table) + " WHERE \"id\" = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, id)
+    stmt.execute()
+
+def _json_keys_vals(attrs_json: str) -> list[str]:
+    # Düzleştirilmiş [k0,v0,k1,v1,...] — değerler her zaman string bağlanır
+    # (sayılar da metin olarak). JSON number → str(as_number) / int cast.
+    v: JsonValue = nox.json.decode(attrs_json)
+    if not nox.json.is_object(v):
+        raise ModelError("attrs bir JSON nesnesi olmali")
+    flat: list[str] = []
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        key: str = nox.json.object_key(v, i)
+        _check_ident(key)
+        val: JsonValue = nox.json.object_value(v, i)
+        flat.append(key)
+        if nox.json.is_null(val):
+            flat.append("")
+        elif nox.json.is_string(val):
+            flat.append(nox.json.as_string(val))
+        elif nox.json.is_number(val):
+            # Tam sayıysa noktasız yaz
+            num: float = nox.json.as_number(val)
+            as_i: int = int(num)
+            if float(as_i) == num:
+                flat.append(str(as_i))
+            else:
+                flat.append(str(num))
+        elif nox.json.is_bool(val):
+            if nox.json.as_bool(val):
+                flat.append("1")
+            else:
+                flat.append("0")
+        else:
+            raise ModelError("desteklenmeyen attrs tipi: " + key)
+        i = i + 1
+    return flat
+
+def create(db: Connection, table: str, attrs_json: str) -> int:
+    _check_ident(table)
+    flat: list[str] = _json_keys_vals(attrs_json)
+    if len(flat) == 0:
+        raise ModelError("bos attrs")
+    cols: str = ""
+    placeholders: str = ""
+    i: int = 0
+    while i < len(flat):
+        if i > 0:
+            cols = cols + ", "
+            placeholders = placeholders + ", "
+        cols = cols + _quote_ident(flat[i])
+        placeholders = placeholders + "?"
+        i = i + 2
+    sql: str = "INSERT INTO " + _quote_ident(table) + " (" + cols + ") VALUES (" + placeholders + ")"
+    stmt: Statement = db.prepare(sql)
+    bind_i: int = 0
+    j: int = 1
+    while j < len(flat):
+        stmt.bind_str(bind_i, flat[j])
+        bind_i = bind_i + 1
+        j = j + 2
+    stmt.execute()
+    return db.last_insert_rowid()
+
+def update(db: Connection, table: str, id: int, attrs_json: str) -> None:
+    _check_ident(table)
+    flat: list[str] = _json_keys_vals(attrs_json)
+    if len(flat) == 0:
+        raise ModelError("bos attrs")
+    sets: str = ""
+    i: int = 0
+    while i < len(flat):
+        if i > 0:
+            sets = sets + ", "
+        sets = sets + _quote_ident(flat[i]) + " = ?"
+        i = i + 2
+    sql: str = "UPDATE " + _quote_ident(table) + " SET " + sets + " WHERE \"id\" = ?"
+    stmt: Statement = db.prepare(sql)
+    bind_i: int = 0
+    j: int = 1
+    while j < len(flat):
+        stmt.bind_str(bind_i, flat[j])
+        bind_i = bind_i + 1
+        j = j + 2
+    stmt.bind_int(bind_i, id)
+    stmt.execute()

@@ -1,0 +1,32 @@
+# nyx.form — HTML form alanı yardımcıları (kaçışlı).
+#
+# import nyx.form
+# nyx.form.text("title", value)
+# nyx.form.hidden("_csrf", token)
+# nyx.form.submit("Kaydet")
+
+import nox.template
+
+def _esc(s: str) -> str:
+    return nox.template.escape_html(s)
+
+def text(name: str, value: str) -> str:
+    return "<input type=\"text\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\">"
+
+def password(name: str) -> str:
+    return "<input type=\"password\" name=\"" + _esc(name) + "\">"
+
+def hidden(name: str, value: str) -> str:
+    return "<input type=\"hidden\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\">"
+
+def textarea(name: str, value: str) -> str:
+    return "<textarea name=\"" + _esc(name) + "\">" + _esc(value) + "</textarea>"
+
+def submit(label: str) -> str:
+    return "<button type=\"submit\">" + _esc(label) + "</button>"
+
+def form_start(action: str, method: str) -> str:
+    return "<form action=\"" + _esc(action) + "\" method=\"" + _esc(method) + "\">"
+
+def form_end() -> str:
+    return "</form>"

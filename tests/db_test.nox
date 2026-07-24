@@ -1,0 +1,22 @@
+import nox.test
+import nox.fs
+import nyx.db
+from nox.sqlite import Connection
+
+dir_path: str = "/tmp/nyx_migrate_test"
+if nox.fs.exists(dir_path):
+    # onceki kosudan kalmis olabilir
+    x: int = 0
+else:
+    nox.fs.create_dir(dir_path)
+
+nox.fs.write_string(dir_path + "/001_a.sql", "CREATE TABLE IF NOT EXISTS t_a (id INTEGER PRIMARY KEY);")
+nox.fs.write_string(dir_path + "/002_b.sql", "CREATE TABLE IF NOT EXISTS t_b (id INTEGER PRIMARY KEY);")
+
+db: Connection = nyx.db.open(":memory:")
+n1: int = nyx.db.migrate(db, dir_path)
+nox.test.assert_eq_int(n1, 2, "first migrate applies 2")
+n2: int = nyx.db.migrate(db, dir_path)
+nox.test.assert_eq_int(n2, 0, "second migrate noop")
+db.close()
+print("db_test ok")

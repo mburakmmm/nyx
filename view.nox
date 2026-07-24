@@ -1,0 +1,23 @@
+# nyx.view — dosyadan şablon render.
+#
+# import nyx.view
+# html: str = nyx.view.render("app/views/home.html", ctx)
+
+import nox.fs
+import nox.template
+
+class ViewError:
+    def __init__(self: ViewError, message: str) -> None:
+        self.message = message
+
+def render(path: str, context: dict[str, str]) -> str:
+    if not nox.fs.exists(path):
+        raise ViewError("sablon yok: " + path)
+    tmpl: str = nox.fs.read_to_string(path)
+    return nox.template.render(tmpl, context)
+
+def render_unescaped(path: str, context: dict[str, str]) -> str:
+    if not nox.fs.exists(path):
+        raise ViewError("sablon yok: " + path)
+    tmpl: str = nox.fs.read_to_string(path)
+    return nox.template.render_unescaped(tmpl, context)

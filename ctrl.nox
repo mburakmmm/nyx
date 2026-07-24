@@ -1,0 +1,37 @@
+# nyx.ctrl — controller yanıt kısayolları (nox.http tarzı sadelik).
+#
+# import nyx.ctrl
+# return nyx.ctrl.redirect("/posts")
+# return nyx.ctrl.html(200, body)
+# return nyx.ctrl.render(200, "app/views/x.html", ctx)
+
+from nox.http import HttpResponse
+import nyx.response
+import nyx.view
+
+def redirect(location: str) -> HttpResponse:
+    return nyx.response.redirect(location, 302)
+
+def redirect_back(fallback: str) -> HttpResponse:
+    return redirect(fallback)
+
+def html(status: int, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "text/html; charset=utf-8"
+    return HttpResponse(status, body, headers)
+
+def json(status: int, body: str) -> HttpResponse:
+    return nyx.response.json(status, body)
+
+def text(status: int, body: str) -> HttpResponse:
+    return nyx.response.text(status, body)
+
+def render(status: int, path: str, context: dict[str, str]) -> HttpResponse:
+    body: str = nyx.view.render(path, context)
+    return html(status, body)
+
+def not_found() -> HttpResponse:
+    return html(404, "<h1>Not Found</h1>")
+
+def forbidden() -> HttpResponse:
+    return html(403, "<h1>Forbidden</h1>")

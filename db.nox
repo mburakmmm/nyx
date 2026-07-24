@@ -1,0 +1,89 @@
+# nyx.db — SQLite açma + migration runner.
+#
+# import nyx.db
+#
+# db: Connection = nyx.db.open("db/app.sqlite")
+# nyx.db.migrate(db, "db/migrate")
+
+import nox.sqlite
+import nox.fs
+import nox.path
+import nox.strings
+from nox.sqlite import Connection, Statement, Row
+
+class DbError:
+    def __init__(self: DbError, message: str) -> None:
+        self.message = message
+
+def open(path: str) -> Connection:
+    parent: str = nox.path.dirname(path)
+    if len(parent) > 0 and parent != "." and not nox.fs.exists(parent):
+        nox.fs.create_dir(parent)
+    return nox.sqlite.open(path)
+
+def _ends_with_sql(name: str) -> bool:
+    return nox.strings.ends_with(name, ".sql")
+
+def _sort_names(names: list[str]) -> list[str]:
+    # Basit insertion sort — migration dosya adları kısa.
+    out: list[str] = []
+    i: int = 0
+    while i < len(names):
+        n: str = names[i]
+        out.append(n)
+        j: int = len(out) - 1
+        while j > 0:
+            prev: str = out[j - 1]
+            cur: str = out[j]
+            if prev < cur:
+                j = 0
+            else:
+                out[j - 1] = cur
+                out[j] = prev
+                j = j - 1
+        i = i + 1
+    return out
+
+def _ensure_migrations_table(db: Connection) -> None:
+    db.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
+
+def _already_applied(db: Connection, version: str) -> bool:
+    stmt: Statement = db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
+    stmt.bind_str(0, version)
+    rows: list[Row] = stmt.query()
+    return len(rows) > 0
+
+def _record_applied(db: Connection, version: str) -> None:
+    stmt: Statement = db.prepare("INSERT INTO schema_migrations (version) VALUES (?)")
+    stmt.bind_str(0, version)
+    stmt.execute()
+
+# `dir_path` altındaki `*.sql` dosyalarını ada göre sırayla uygular.
+# Her dosya bir kez çalışır; `schema_migrations` tablosunda izlenir.
+def migrate(db: Connection, dir_path: str) -> int:
+    if not nox.fs.exists(dir_path):
+        raise DbError("migration dizini yok: " + dir_path)
+    if not nox.fs.is_dir(dir_path):
+        raise DbError("migration yolu dizin degil: " + dir_path)
+    _ensure_migrations_table(db)
+    entries: list[str] = nox.fs.read_dir(dir_path)
+    sql_files: list[str] = []
+    i: int = 0
+    while i < len(entries):
+        name: str = entries[i]
+        if _ends_with_sql(name):
+            sql_files.append(name)
+        i = i + 1
+    ordered: list[str] = _sort_names(sql_files)
+    applied: int = 0
+    j: int = 0
+    while j < len(ordered):
+        version: str = ordered[j]
+        if not _already_applied(db, version):
+            full: str = nox.path.join(dir_path, version)
+            sql: str = nox.fs.read_to_string(full)
+            db.execute(sql)
+            _record_applied(db, version)
+            applied = applied + 1
+        j = j + 1
+    return applied

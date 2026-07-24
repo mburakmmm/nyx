@@ -1,0 +1,113 @@
+# Nyx blog ornegi — posts listesi + olusturma
+# cd examples/blog && noxc fetch && noxc run main.nox
+
+import nox.http
+import nox.strings
+import nox.json
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Router, Context
+from nox.sqlite import Connection
+import nyx.db
+import nyx.model
+import nyx.ctrl
+import nyx.form
+import nyx.csrf
+from nyx.model import Record
+
+def app_secret() -> str:
+    return "blog-example-secret-key-32chars!!!"
+
+def build_posts_html(rows: list[Record]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        r: Record = rows[i]
+        out = out + "<li><strong>" + r.get("title") + "</strong>: " + r.get("body") + "</li>"
+        i = i + 1
+    if len(out) == 0:
+        return "<li>Henuz yazi yok.</li>"
+    return out
+
+def parse_form(body: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    parts: list[str] = nox.strings.split(body, "&")
+    i: int = 0
+    while i < len(parts):
+        p: str = parts[i]
+        eq: int = nox.strings.index_of(p, "=")
+        if eq >= 0:
+            k: str = nox.strings.trim(_substr(p, 0, eq))
+            v: str = nox.strings.trim(_substr(p, eq + 1, len(p)))
+            result[k] = _url_decode(v)
+        i = i + 1
+    return result
+
+def _substr(s: str, start: int, end: int) -> str:
+    out: str = ""
+    i: int = start
+    while i < end:
+        out = out + s[i]
+        i = i + 1
+    return out
+
+def _url_decode(s: str) -> str:
+    return nox.strings.replace(s, "+", " ")
+
+def _json_str(s: str) -> str:
+    return nox.json.encode_string(s)
+
+def build_router(db: Connection) -> Router:
+    router: Router = Router()
+    secret: str = app_secret()
+
+    def index(ctx: Context) -> HttpResponse:
+        rows: list[Record] = nyx.model.all(db, "posts")
+        context: dict[str, str] = {}
+        context["title"] = "Nyx Blog"
+        context["notice"] = ""
+        context["posts_html"] = build_posts_html(rows)
+        context["csrf_field"] = nyx.form.hidden("_csrf", nyx.csrf.token(secret))
+        context["title_field"] = nyx.form.text("title", "")
+        context["body_field"] = nyx.form.textarea("body", "")
+        context["submit"] = nyx.form.submit("Kaydet")
+        return nyx.ctrl.render(200, "app/views/posts.html", context)
+
+    def create(ctx: Context) -> HttpResponse:
+        form: dict[str, str] = parse_form(ctx.request.body)
+        token: str = ""
+        title: str = ""
+        body: str = ""
+        try:
+            token = form["_csrf"]
+        except KeyError:
+            return nyx.ctrl.forbidden()
+        try:
+            title = form["title"]
+        except KeyError:
+            title = ""
+        try:
+            body = form["body"]
+        except KeyError:
+            body = ""
+        if not nyx.csrf.check(secret, token):
+            return nyx.ctrl.forbidden()
+        if len(title) == 0:
+            return nyx.ctrl.redirect("/")
+        attrs: str = "{\"title\":" + _json_str(title) + ",\"body\":" + _json_str(body) + "}"
+        nyx.model.create(db, "posts", attrs)
+        return nyx.ctrl.redirect("/")
+
+    router.get("/", index)
+    router.post("/posts", create)
+    return router
+
+def handle(req: HttpRequest) -> HttpResponse:
+    db: Connection = nyx.db.open("db/app.sqlite")
+    nyx.db.migrate(db, "db/migrate")
+    router: Router = build_router(db)
+    resp: HttpResponse = router.dispatch(req)
+    db.close()
+    return resp
+
+print("nyx blog on :8080")
+nox.http.serve(8080, handle)

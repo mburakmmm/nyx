@@ -1,6 +1,6 @@
 {
-  "name": "nyx",
-  "entry": "examples/blog/main.nox",
+  "name": "nyx-blog",
+  "entry": "main.nox",
   "requires": [
     {
       "alias": "nyx",
