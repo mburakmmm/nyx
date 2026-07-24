@@ -1,0 +1,109 @@
+# web.auth — Router `use_before` kimlik doğrulama ara katmanları.
+#
+# import web.auth
+
+from nox.http import HttpResponse
+from nox.router import Context
+import nox.strings
+import web.jwt
+import web.session
+import web.cookie
+import web.response
+from web.jwt import JwtError
+from web.cookie import CookieError
+
+def _header_get(headers: dict[str, str], name: str) -> str | None:
+    # HTTP başlıkları büyük/küçük harf duyarsız — yaygın biçimleri dene.
+    try:
+        return headers[name]
+    except KeyError:
+        x: int = 0
+    lower: str = nox.strings.lower(name)
+    try:
+        return headers[lower]
+    except KeyError:
+        y: int = 0
+    # Title-Case (Authorization)
+    if name == "Authorization" or lower == "authorization":
+        try:
+            return headers["Authorization"]
+        except KeyError:
+            z: int = 0
+        try:
+            return headers["authorization"]
+        except KeyError:
+            w: int = 0
+    if name == "Cookie" or lower == "cookie":
+        try:
+            return headers["Cookie"]
+        except KeyError:
+            a: int = 0
+        try:
+            return headers["cookie"]
+        except KeyError:
+            b: int = 0
+    return None
+
+def _unauthorized(msg: str) -> HttpResponse:
+    return web.response.json(401, "{\"error\":\"" + msg + "\"}")
+
+def _drop_prefix(s: str, n: int) -> str:
+    out: str = ""
+    i: int = n
+    while i < len(s):
+        out = out + s[i]
+        i = i + 1
+    return out
+
+# Tüm eşleşen rotalarda Bearer JWT zorunlu kılar.
+def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        auth: str | None = _header_get(ctx.request.headers, "Authorization")
+        if auth == None:
+            return _unauthorized("missing_authorization")
+        if not nox.strings.starts_with(auth, "Bearer "):
+            return _unauthorized("invalid_authorization")
+        token: str = _drop_prefix(auth, 7)
+        try:
+            payload: str = web.jwt.decode(secret, token)
+            # payload doğrulandı; handler tekrar decode edebilir.
+            if len(payload) == 0:
+                return _unauthorized("empty_payload")
+            return None
+        except JwtError:
+            return _unauthorized("invalid_token")
+    return handler
+
+# `exempt_path` dışındaki rotalarda Bearer JWT zorunlu kılar (ör. "/login").
+def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        if ctx.request.target == exempt_path:
+            return None
+        # Query'siz path eşlemesi: target "/login" veya "/login?x=1"
+        if nox.strings.starts_with(ctx.request.target, exempt_path):
+            rest_start: int = len(exempt_path)
+            if rest_start == len(ctx.request.target):
+                return None
+            if ctx.request.target[rest_start] == "?":
+                return None
+        inner: (Context) -> HttpResponse | None = require_bearer(secret)
+        return inner(ctx)
+    return handler
+
+def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        raw: str | None = _header_get(ctx.request.headers, "Cookie")
+        if raw == None:
+            return _unauthorized("missing_cookie")
+        try:
+            cookies: dict[str, str] = web.cookie.parse(raw)
+            val: str = cookies[cookie_name]
+            data: str | None = web.session.load(secret, val)
+            if data == None:
+                return _unauthorized("invalid_session")
+            return None
+        except KeyError:
+            return _unauthorized("missing_session_cookie")
+        except CookieError:
+            return _unauthorized("bad_cookie")
+    return handler

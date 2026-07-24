@@ -1,0 +1,49 @@
+# web.response — HTTP yanıt kalıpları.
+#
+# import web.response
+
+from nox.http import HttpResponse
+
+def json(status: int, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/json; charset=utf-8"
+    return HttpResponse(status, body, headers)
+
+def text(status: int, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "text/plain; charset=utf-8"
+    return HttpResponse(status, body, headers)
+
+def redirect(location: str, status: int) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Location"] = location
+    return HttpResponse(status, "", headers)
+
+def _try_copy(dst: dict[str, str], src: dict[str, str], key: str) -> None:
+    try:
+        dst[key] = src[key]
+    except KeyError:
+        x: int = 0
+
+# Nox dict'te anahtar iterasyonu olmadığı için bilinen yanıt başlıklarını
+# aktarır; ardından `key`/`value` yazar.
+def with_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
+    out: dict[str, str] = {}
+    _try_copy(out, resp.headers, "Content-Type")
+    _try_copy(out, resp.headers, "Location")
+    _try_copy(out, resp.headers, "Set-Cookie")
+    _try_copy(out, resp.headers, "Cache-Control")
+    _try_copy(out, resp.headers, "WWW-Authenticate")
+    _try_copy(out, resp.headers, "Access-Control-Allow-Origin")
+    _try_copy(out, resp.headers, "Access-Control-Allow-Methods")
+    _try_copy(out, resp.headers, "Access-Control-Allow-Headers")
+    _try_copy(out, resp.headers, "Access-Control-Allow-Credentials")
+    _try_copy(out, resp.headers, "Access-Control-Max-Age")
+    _try_copy(out, resp.headers, "Vary")
+    _try_copy(out, resp.headers, "Authorization")
+    out[key] = value
+    return HttpResponse(resp.status, resp.body, out)
+
+# Tam başlık haritası ile yanıt (CORS gibi birden fazla başlık için).
+def with_status_body_headers(status: int, body: str, headers: dict[str, str]) -> HttpResponse:
+    return HttpResponse(status, body, headers)

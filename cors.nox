@@ -1,0 +1,46 @@
+# web.cors — Router before/after CORS ara katmanları.
+#
+# import web.cors
+
+from nox.http import HttpResponse
+from nox.router import Context
+import web.response
+
+class CorsConfig:
+    def __init__(self: CorsConfig, origin: str, methods: str, headers: str, credentials: bool) -> None:
+        self.origin = origin
+        self.methods = methods
+        self.headers = headers
+        self.credentials = credentials
+
+def default_config() -> CorsConfig:
+    return CorsConfig("*", "GET,POST,PUT,DELETE,OPTIONS", "Authorization,Content-Type", False)
+
+def _apply_cors_headers(cfg: CorsConfig, resp: HttpResponse) -> HttpResponse:
+    r1: HttpResponse = web.response.with_header(resp, "Access-Control-Allow-Origin", cfg.origin)
+    r2: HttpResponse = web.response.with_header(r1, "Access-Control-Allow-Methods", cfg.methods)
+    r3: HttpResponse = web.response.with_header(r2, "Access-Control-Allow-Headers", cfg.headers)
+    r4: HttpResponse = web.response.with_header(r3, "Vary", "Origin")
+    if cfg.credentials:
+        return web.response.with_header(r4, "Access-Control-Allow-Credentials", "true")
+    return r4
+
+def before_handler(cfg: CorsConfig) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        if ctx.request.method == "OPTIONS":
+            headers: dict[str, str] = {}
+            headers["Access-Control-Allow-Origin"] = cfg.origin
+            headers["Access-Control-Allow-Methods"] = cfg.methods
+            headers["Access-Control-Allow-Headers"] = cfg.headers
+            headers["Access-Control-Max-Age"] = "86400"
+            headers["Vary"] = "Origin"
+            if cfg.credentials:
+                headers["Access-Control-Allow-Credentials"] = "true"
+            return HttpResponse(204, "", headers)
+        return None
+    return handler
+
+def after_handler(cfg: CorsConfig) -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        return _apply_cors_headers(cfg, resp)
+    return handler

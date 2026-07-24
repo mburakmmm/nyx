@@ -1,0 +1,81 @@
+# web.cookie — Cookie / Set-Cookie yardımcısı (saf Nox).
+#
+# import web.cookie
+
+import nox.strings
+
+class CookieError:
+    def __init__(self: CookieError, message: str) -> None:
+        self.message = message
+
+def _is_forbidden_byte(b: int) -> bool:
+    if b < 33:
+        return True
+    if b == 59:
+        return True
+    if b == 127:
+        return True
+    return False
+
+def _validate_token(kind: str, s: str) -> None:
+    if len(s) == 0:
+        raise CookieError(kind + " bos olamaz")
+    i: int = 0
+    n: int = len(s)
+    while i < n:
+        b: int = nox.strings.byte_at(s, i)
+        if _is_forbidden_byte(b):
+            raise CookieError(kind + " gecersiz karakter iceriyor")
+        if b == 44:
+            raise CookieError(kind + " virgul iceremez")
+        i = i + 1
+
+def _trim(s: str) -> str:
+    return nox.strings.trim(s)
+
+# `Cookie:` başlık değerini `dict[str, str]` olarak ayrıştırır.
+def parse(header: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    parts: list[str] = nox.strings.split(header, ";")
+    i: int = 0
+    while i < len(parts):
+        part: str = _trim(parts[i])
+        if len(part) > 0:
+            eq: int = nox.strings.index_of(part, "=")
+            if eq < 0:
+                raise CookieError("esittir eksik: " + part)
+            name: str = _trim(_substr(part, 0, eq))
+            value: str = _trim(_substr(part, eq + 1, len(part)))
+            _validate_token("cookie adi", name)
+            result[name] = value
+        i = i + 1
+    return result
+
+def _substr(s: str, start: int, end: int) -> str:
+    out: str = ""
+    i: int = start
+    while i < end:
+        out = out + s[i]
+        i = i + 1
+    return out
+
+# `Set-Cookie` satırı üretir. `same_site`: "" | "Strict" | "Lax" | "None".
+def serialize(name: str, value: str, path: str, max_age: int, http_only: bool, same_site: str, secure: bool) -> str:
+    _validate_token("cookie adi", name)
+    _validate_token("cookie degeri", value)
+    out: str = name + "=" + value
+    if len(path) > 0:
+        if nox.strings.contains(path, ";"):
+            raise CookieError("path noktali virgul iceremez")
+        out = out + "; Path=" + path
+    if max_age >= 0:
+        out = out + "; Max-Age=" + str(max_age)
+    if http_only:
+        out = out + "; HttpOnly"
+    if secure:
+        out = out + "; Secure"
+    if len(same_site) > 0:
+        if same_site != "Strict" and same_site != "Lax" and same_site != "None":
+            raise CookieError("gecersiz SameSite: " + same_site)
+        out = out + "; SameSite=" + same_site
+    return out
