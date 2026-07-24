@@ -3,6 +3,7 @@
 #   cd examples/app && noxc run main.nox
 #
 # Demo kullanıcı: alice / secret123
+# `nox.http.serve` handle'ı derleme-zamanı üst düzey fonksiyon adı olmalı.
 
 import nox.http
 import nox.validate
@@ -18,17 +19,20 @@ import web.cors
 import web.response
 from web.cors import CorsConfig
 
-class AppState:
-    def __init__(self: AppState, user: str, password_hash: str, secret: str) -> None:
-        self.user = user
-        self.password_hash = password_hash
-        self.secret = secret
+# Önceden üretilmiş: web.password.hash("secret123")
+def demo_password_hash() -> str:
+    return "$argon2id$v=19$m=19456,t=2,p=1$u0TfSRMYacNa94sSvfb+x0Vc9+nGeUT24pSb+IbjEkc$33scSHjeCCcdvgqAr8e/aRA4xnLcIFbhVjgqxTFpMI4"
 
-def build_router(state: AppState) -> Router:
+def demo_secret() -> str:
+    return "example-app-secret-key-32chars!!"
+
+def build_router() -> Router:
+    secret: str = demo_secret()
+    password_hash: str = demo_password_hash()
     router: Router = Router()
     cfg: CorsConfig = CorsConfig("http://localhost:3000", "GET,POST,OPTIONS", "Authorization,Content-Type", True)
     router.use_before(web.cors.before_handler(cfg))
-    router.use_before(web.auth.require_bearer_unless(state.secret, "/login"))
+    router.use_before(web.auth.require_bearer_unless(secret, "/login"))
     router.use_after(web.cors.after_handler(cfg))
 
     def login(ctx: Context) -> HttpResponse:
@@ -50,10 +54,10 @@ def build_router(state: AppState) -> Router:
             if k == "password" and nox.json.is_string(v):
                 password = nox.json.as_string(v)
             i = i + 1
-        if user != state.user or not web.password.verify(state.password_hash, password):
+        if user != "alice" or not web.password.verify(password_hash, password):
             return web.response.json(401, "{\"error\":\"invalid_credentials\"}")
         exp: int = (nox.time.now_ms() // 1000) + 3600
-        token: str = web.jwt.encode(state.secret, "{\"sub\":\"" + user + "\"}", exp)
+        token: str = web.jwt.encode(secret, "{\"sub\":\"" + user + "\"}", exp)
         return web.response.json(200, "{\"token\":\"" + token + "\"}")
 
     def me(ctx: Context) -> HttpResponse:
@@ -63,22 +67,16 @@ def build_router(state: AppState) -> Router:
         while j < len(auth):
             token = token + auth[j]
             j = j + 1
-        payload: str = web.jwt.decode(state.secret, token)
+        payload: str = web.jwt.decode(secret, token)
         return web.response.json(200, payload)
 
     router.post("/login", login)
     router.get("/me", me)
     return router
 
-def start() -> None:
-    secret: str = "example-app-secret-key-32chars!!"
-    state: AppState = AppState("alice", web.password.hash("secret123"), secret)
-    router: Router = build_router(state)
+def handle(req: HttpRequest) -> HttpResponse:
+    router: Router = build_router()
+    return router.dispatch(req)
 
-    def handle(req: HttpRequest) -> HttpResponse:
-        return router.dispatch(req)
-
-    print("listening on :8080  POST /login  GET /me")
-    nox.http.serve(8080, handle)
-
-start()
+print("listening on :8080  POST /login  GET /me")
+nox.http.serve(8080, handle)
