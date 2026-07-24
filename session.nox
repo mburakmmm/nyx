@@ -69,14 +69,17 @@ def load(secret: str, cookie_value: str) -> str | None:
             if key == "d":
                 data_v = nox.json.object_value(env, i)
             i = i + 1
-        if exp_v == None or data_v == None:
+        if exp_v == None:
+            return None
+        if data_v == None:
             return None
         if not nox.json.is_number(exp_v):
             return None
-        exp_i: int = int(nox.json.as_number(exp_v))
-        if _now_unix() >= exp_i:
-            return None
-        return nox.json.encode(data_v)
+        else:
+            exp_i: int = int(nox.json.as_number(exp_v))
+            if _now_unix() >= exp_i:
+                return None
+            return nox.json.encode(data_v)
     except JsonError:
         return None
     except Base64Error:

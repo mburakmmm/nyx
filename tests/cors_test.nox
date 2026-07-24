@@ -13,9 +13,9 @@ req: HttpRequest = HttpRequest("OPTIONS", "/x", "", headers)
 ctx: Context = Context(req, {})
 pre: HttpResponse | None = before(ctx)
 nox.test.assert_true(pre != None, "preflight response")
-pre_resp: HttpResponse = pre
-nox.test.assert_eq_int(pre_resp.status, 204, "preflight status")
-nox.test.assert_eq_str(pre_resp.headers["Access-Control-Allow-Origin"], "*", "preflight acao")
+if pre != None:
+    nox.test.assert_eq_int(pre.status, 204, "preflight status")
+    nox.test.assert_eq_str(pre.headers["Access-Control-Allow-Origin"], "*", "preflight acao")
 
 req2: HttpRequest = HttpRequest("GET", "/x", "", headers)
 ctx2: Context = Context(req2, {})

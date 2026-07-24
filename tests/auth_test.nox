@@ -16,8 +16,8 @@ req0: HttpRequest = HttpRequest("GET", "/me", "", h0)
 ctx0: Context = Context(req0, {})
 r0: HttpResponse | None = mw(ctx0)
 nox.test.assert_true(r0 != None, "missing auth")
-missing: HttpResponse = r0
-nox.test.assert_eq_int(missing.status, 401, "missing status")
+if r0 != None:
+    nox.test.assert_eq_int(r0.status, 401, "missing status")
 
 h1: dict[str, str] = {}
 h1["Authorization"] = "Bearer " + token

@@ -71,28 +71,29 @@ def _check_time_claims(payload: JsonValue) -> None:
     exp_v: JsonValue | None = _find_object_field(payload, "exp")
     if exp_v == None:
         raise JwtError("exp eksik")
-    exp_val: JsonValue = exp_v
-    if not nox.json.is_number(exp_val):
-        raise JwtError("exp sayi olmali")
-    exp_i: int = int(nox.json.as_number(exp_val))
-    if now >= exp_i:
-        raise JwtError("token suresi dolmus")
+    else:
+        if not nox.json.is_number(exp_v):
+            raise JwtError("exp sayi olmali")
+        else:
+            exp_i: int = int(nox.json.as_number(exp_v))
+            if now >= exp_i:
+                raise JwtError("token suresi dolmus")
     nbf_v: JsonValue | None = _find_object_field(payload, "nbf")
     if nbf_v != None:
-        nbf_val: JsonValue = nbf_v
-        if not nox.json.is_number(nbf_val):
+        if not nox.json.is_number(nbf_v):
             raise JwtError("nbf sayi olmali")
-        nbf_i: int = int(nox.json.as_number(nbf_val))
-        if now < nbf_i:
-            raise JwtError("token henuz gecerli degil (nbf)")
+        else:
+            nbf_i: int = int(nox.json.as_number(nbf_v))
+            if now < nbf_i:
+                raise JwtError("token henuz gecerli degil (nbf)")
     iat_v: JsonValue | None = _find_object_field(payload, "iat")
     if iat_v != None:
-        iat_val: JsonValue = iat_v
-        if not nox.json.is_number(iat_val):
+        if not nox.json.is_number(iat_v):
             raise JwtError("iat sayi olmali")
-        iat_i: int = int(nox.json.as_number(iat_val))
-        if iat_i > now + 60:
-            raise JwtError("iat gelecekte")
+        else:
+            iat_i: int = int(nox.json.as_number(iat_v))
+            if iat_i > now + 60:
+                raise JwtError("iat gelecekte")
 
 def decode(secret: str, token: str) -> str:
     if len(secret) == 0:
@@ -110,11 +111,12 @@ def decode(secret: str, token: str) -> str:
     alg_v: JsonValue | None = _find_object_field(header, "alg")
     if alg_v == None:
         raise JwtError("alg eksik")
-    alg_val: JsonValue = alg_v
-    if not nox.json.is_string(alg_val):
-        raise JwtError("alg eksik")
-    if nox.json.as_string(alg_val) != "HS256":
-        raise JwtError("yalnizca HS256 desteklenir")
+    else:
+        if not nox.json.is_string(alg_v):
+            raise JwtError("alg eksik")
+        else:
+            if nox.json.as_string(alg_v) != "HS256":
+                raise JwtError("yalnizca HS256 desteklenir")
     payload_json: str = web.base64.decode_url(p_b64)
     payload: JsonValue = nox.json.decode(payload_json)
     if not nox.json.is_object(payload):
