@@ -61,3 +61,46 @@ def _get_int(name: str, default: int) -> int:
 
 def is_active() -> bool:
     return _get_bool("ACTIVE", False)
+
+def reset() -> None:
+    _put_bool("ACTIVE", False)
+    _put("SESSION_JSON", "{}")
+    _put_bool("SESSION_DIRTY", False)
+    _put_bool("HAS_SESSION", False)
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+    _put("LOCALE", "")
+    _put("REQUEST_ID", "")
+    _put("STARTED_MS", "0")
+
+def begin(request_id: str, started_ms: int, locale: str) -> RequestBag:
+    _put_bool("ACTIVE", True)
+    _put("SESSION_JSON", "{}")
+    _put_bool("SESSION_DIRTY", False)
+    _put_bool("HAS_SESSION", False)
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+    _put("LOCALE", locale)
+    _put("REQUEST_ID", request_id)
+    _put("STARTED_MS", str(started_ms))
+    return current()
+
+def end() -> None:
+    reset()
+
+def current() -> RequestBag:
+    if not is_active():
+        _put_bool("ACTIVE", True)
+    return RequestBag(
+        _get("SESSION_JSON", "{}"),
+        _get_bool("SESSION_DIRTY", False),
+        _get_bool("HAS_SESSION", False),
+        _get("USER_ID", ""),
+        _get("USER_PAYLOAD", ""),
+        _get_bool("HAS_USER", False),
+        _get("LOCALE", ""),
+        _get("REQUEST_ID", ""),
+        _get_int("STARTED_MS", 0)
+    )
