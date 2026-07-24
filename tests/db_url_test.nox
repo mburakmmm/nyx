@@ -1,0 +1,20 @@
+import nox.test
+import nyx.db
+from nox.sqlite import Connection
+from nyx.db import DbError
+
+db: Connection = nyx.db.open_url(":memory:")
+db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+db.close()
+
+db2: Connection = nyx.db.open_url("sqlite::memory:")
+db2.execute("CREATE TABLE t2 (id INTEGER PRIMARY KEY);")
+db2.close()
+
+try:
+    nyx.db.open_url("postgresql://user:pass@localhost:5432/app")
+    nox.test.assert_true(False, "should raise")
+except DbError:
+    nox.test.assert_true(True, "postgres blocked")
+
+print("db_url_test ok")

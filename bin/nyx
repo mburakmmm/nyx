@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nyx — iskelet ve generator CLI
+# nyx — Rails-style scaffold, generator, and db CLI
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -7,13 +7,21 @@ TEMPLATES="$ROOT/templates"
 
 usage() {
   cat <<EOF
-nyx — Nox web framework yardımcısı
+nyx — Nox web framework helper
 
-Kullanım:
-  nyx new <app_name>              yeni uygulama iskeleti
-  nyx generate model <Name>       model dosyası + migration
-  nyx generate controller <Name>  controller iskeleti
-  nyx version                     sürüm
+Usage:
+  nyx new <app_name>                         create a new app skeleton
+  nyx generate model <Name> [field:type ...] model + migration (+ down)
+  nyx generate controller <Name>             controller + views
+  nyx generate scaffold <Name> [field:type]  model + controller + views + route hint
+  nyx generate migration <name>              empty up/down migration
+  nyx db migrate                             apply pending migrations
+  nyx db rollback                            roll back the last migration
+  nyx db schema                              dump db/schema.sql
+  nyx db seed                                run db/seeds.nox
+  nyx console                                run db/console.nox (no REPL)
+  nyx server                                 run noxc run main.nox
+  nyx version                                print version
 EOF
 }
 
@@ -21,82 +29,129 @@ version() {
   if [[ -f "$ROOT/VERSION" ]]; then
     cat "$ROOT/VERSION"
   else
-    echo "0.2.0"
+    echo "0.3.0"
   fi
+}
+
+snake() {
+  echo "$1" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]'
+}
+
+pluralize() {
+  local s
+  s="$(snake "$1")"
+  if [[ "$s" == *s ]]; then
+    echo "${s}es"
+  elif [[ "$s" == *y ]]; then
+    echo "${s%y}ies"
+  else
+    echo "${s}s"
+  fi
+}
+
+sql_type() {
+  case "$1" in
+    string|text) echo "TEXT" ;;
+    integer|int) echo "INTEGER" ;;
+    float|real) echo "REAL" ;;
+    boolean|bool) echo "INTEGER" ;;
+    datetime|timestamp) echo "TEXT" ;;
+    *) echo "TEXT" ;;
+  esac
 }
 
 cmd_new() {
   local name="${1:-}"
   if [[ -z "$name" ]]; then
-    echo "nyx new <app_name>" >&2
+    echo "usage: nyx new <app_name>" >&2
     exit 1
   fi
   if [[ -e "$name" ]]; then
-    echo "zaten var: $name" >&2
+    echo "already exists: $name" >&2
     exit 1
   fi
   local app_label
   app_label="$(basename "$name")"
   mkdir -p "$name"
   cp -R "$TEMPLATES/app/." "$name/"
-  # {{APP_NAME}} yer tutucularını değiştir
   if [[ "$(uname)" == "Darwin" ]]; then
-    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i '' "s#{{APP_NAME}}#$app_label#g" {} +
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' -o -name '*.sql' \) -exec sed -i '' "s#{{APP_NAME}}#$app_label#g" {} +
   else
-    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i "s#{{APP_NAME}}#$app_label#g" {} +
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' -o -name '*.sql' \) -exec sed -i "s#{{APP_NAME}}#$app_label#g" {} +
   fi
-  echo "olusturuldu: $name/"
-  echo "  cd $name && noxc fetch && noxc run main.nox"
+  echo "created: $name/"
+  echo "  cd $name && noxc fetch && NYX_ENV=development noxc run main.nox"
 }
 
-snake() {
-  # Posts -> posts, BlogPost -> blog_post (basit)
-  echo "$1" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]'
+write_migration_pair() {
+  local table="$1"
+  shift
+  local ts
+  ts="$(date +%Y%m%d%H%M%S)"
+  local mig="db/migrate/${ts}_create_${table}.sql"
+  local down="db/migrate/${ts}_create_${table}.down.sql"
+  local cols=""
+  local f
+  for f in "$@"; do
+    if [[ "$f" == *:* ]]; then
+      local fname="${f%%:*}"
+      local fty="${f#*:}"
+      cols="${cols}
+  \"${fname}\" $(sql_type "$fty"),"
+    fi
+  done
+  mkdir -p db/migrate
+  cat > "$mig" <<EOF
+CREATE TABLE IF NOT EXISTS "$table" (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,${cols}
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+EOF
+  cat > "$down" <<EOF
+DROP TABLE IF EXISTS "$table";
+EOF
+  echo "created: $mig"
+  echo "created: $down"
 }
 
 cmd_generate_model() {
   local name="${1:-}"
   if [[ -z "$name" ]]; then
-    echo "nyx generate model <Name>" >&2
+    echo "usage: nyx generate model <Name> [field:type ...]" >&2
     exit 1
   fi
+  shift
   local table
-  table="$(snake "$name")s"
-  mkdir -p app/models db/migrate
+  table="$(pluralize "$name")"
+  mkdir -p app/models
   local model_file="app/models/$(snake "$name").nox"
-  local ts
-  ts="$(date +%Y%m%d%H%M%S)"
-  local mig="db/migrate/${ts}_create_${table}.sql"
   cat > "$model_file" <<EOF
-# $name model — nyx.model ile kullanın
-# import nyx.model
+# $name — nyx.model
 # nyx.model.find(db, "$table", id)
 
 def table_name() -> str:
     return "$table"
 EOF
-  cat > "$mig" <<EOF
-CREATE TABLE IF NOT EXISTS "$table" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-EOF
-  echo "olusturuldu: $model_file"
-  echo "olusturuldu: $mig"
+  write_migration_pair "$table" "$@"
+  echo "created: $model_file"
 }
 
 cmd_generate_controller() {
   local name="${1:-}"
   if [[ -z "$name" ]]; then
-    echo "nyx generate controller <Name>" >&2
+    echo "usage: nyx generate controller <Name>" >&2
     exit 1
   fi
   local sn
   sn="$(snake "$name")"
+  local table
+  table="$(pluralize "$name")"
   mkdir -p app/controllers app/views/"$sn"
   local file="app/controllers/${sn}_controller.nox"
   cat > "$file" <<EOF
-# ${name}Controller — rotaları main.nox içinde router'a bağlayın
+# ${name}Controller — register handlers inside setup(application) closures
+# so they can capture application.db (Router handlers take Context only).
 from nox.http import HttpResponse
 from nox.router import Context
 import nyx.ctrl
@@ -105,14 +160,181 @@ def index(ctx: Context) -> HttpResponse:
     context: dict[str, str] = {}
     context["title"] = "$name"
     return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
+
+def show(ctx: Context) -> HttpResponse:
+    id: int = int(ctx.param("id"))
+    context: dict[str, str] = {}
+    context["title"] = "$name " + str(id)
+    return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
+
+def new_action(ctx: Context) -> HttpResponse:
+    context: dict[str, str] = {}
+    context["title"] = "New $name"
+    return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
+
+def create(ctx: Context) -> HttpResponse:
+    return nyx.ctrl.redirect("/$table")
+
+def edit(ctx: Context) -> HttpResponse:
+    id: int = int(ctx.param("id"))
+    context: dict[str, str] = {}
+    context["title"] = "Edit $name"
+    context["id"] = str(id)
+    return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
+
+def update(ctx: Context) -> HttpResponse:
+    id: int = int(ctx.param("id"))
+    return nyx.ctrl.redirect("/$table/" + str(id))
+
+def destroy(ctx: Context) -> HttpResponse:
+    return nyx.ctrl.redirect("/$table")
 EOF
-  cat > "app/views/$sn/index.html" <<EOF
+  for v in index show new edit; do
+    cat > "app/views/$sn/${v}.html" <<EOF
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{{ title }}</title></head>
 <body><h1>{{ title }}</h1></body></html>
 EOF
-  echo "olusturuldu: $file"
-  echo "olusturuldu: app/views/$sn/index.html"
+  done
+  echo "created: $file"
+  echo "created: app/views/$sn/"
+  echo "wire in main.nox: nyx.routes.resources(router, \"$table\", ...)"
+}
+
+cmd_generate_migration() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "usage: nyx generate migration <name>" >&2
+    exit 1
+  fi
+  local sn
+  sn="$(snake "$name")"
+  local ts
+  ts="$(date +%Y%m%d%H%M%S)"
+  mkdir -p db/migrate
+  local mig="db/migrate/${ts}_${sn}.sql"
+  local down="db/migrate/${ts}_${sn}.down.sql"
+  echo "-- up" > "$mig"
+  echo "-- down" > "$down"
+  echo "created: $mig"
+  echo "created: $down"
+}
+
+cmd_generate_scaffold() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "usage: nyx generate scaffold <Name> [field:type ...]" >&2
+    exit 1
+  fi
+  shift
+  cmd_generate_model "$name" "$@"
+  cmd_generate_controller "$name"
+  local table
+  table="$(pluralize "$name")"
+  local sn
+  sn="$(snake "$name")"
+  mkdir -p config
+  cat >> "config/routes.hint" <<EOF
+# Scaffold $name — add to build_router in main.nox:
+# import nyx.routes
+# nyx.routes.resources(router, "$table", index, show, new_action, create, edit, update, destroy)
+EOF
+  echo "created: config/routes.hint"
+}
+
+write_db_runner() {
+  local mode="$1"
+  local tmp
+  tmp="$(mktemp /tmp/nyx_db_XXXX.nox)"
+  cat > "$tmp" <<EOF
+import nyx.db
+import nyx.config
+from nyx.config import Config
+from nox.sqlite import Connection
+
+cfg: Config = nyx.config.load()
+db: Connection = nyx.db.open(cfg.db_path)
+EOF
+  if [[ "$mode" == "migrate" ]]; then
+    cat >> "$tmp" <<EOF
+n: int = nyx.db.migrate(db, cfg.migrate_path)
+print("applied=" + str(n))
+db.close()
+EOF
+  elif [[ "$mode" == "rollback" ]]; then
+    cat >> "$tmp" <<EOF
+v: str = nyx.db.rollback(db, cfg.migrate_path)
+print("rolled_back=" + v)
+db.close()
+EOF
+  elif [[ "$mode" == "schema" ]]; then
+    cat >> "$tmp" <<EOF
+nyx.db.schema_dump(db, "db/schema.sql")
+print("wrote db/schema.sql")
+db.close()
+EOF
+  fi
+  echo "$tmp"
+}
+
+cmd_db() {
+  local what="${1:-}"
+  case "$what" in
+    migrate)
+      local f
+      f="$(write_db_runner migrate)"
+      noxc run "$f"
+      rm -f "$f"
+      ;;
+    rollback)
+      local f
+      f="$(write_db_runner rollback)"
+      noxc run "$f"
+      rm -f "$f"
+      ;;
+    schema)
+      mkdir -p db
+      local f
+      f="$(write_db_runner schema)"
+      noxc run "$f"
+      rm -f "$f"
+      ;;
+    seed)
+      if [[ ! -f db/seeds.nox ]]; then
+        echo "missing db/seeds.nox" >&2
+        exit 1
+      fi
+      noxc run db/seeds.nox
+      ;;
+    *)
+      echo "usage: nyx db migrate|rollback|schema|seed" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_console() {
+  if [[ -f db/console.nox ]]; then
+    noxc run db/console.nox
+  else
+    cat > /tmp/nyx_console.nox <<EOF
+import nyx.config
+import nyx.db
+from nyx.config import Config
+from nox.sqlite import Connection
+
+cfg: Config = nyx.config.load()
+db: Connection = nyx.db.open(cfg.db_path)
+print("nyx console — env=" + cfg.env + " db=" + cfg.db_path)
+print("Nox has no REPL; db is open for this run. Put queries in db/console.nox.")
+db.close()
+EOF
+    noxc run /tmp/nyx_console.nox
+  fi
+}
+
+cmd_server() {
+  noxc run main.nox
 }
 
 main() {
@@ -129,8 +351,20 @@ main() {
       case "$what" in
         model) cmd_generate_model "$@" ;;
         controller) cmd_generate_controller "$@" ;;
-        *) echo "bilinmeyen generate: $what" >&2; usage; exit 1 ;;
+        migration) cmd_generate_migration "$@" ;;
+        scaffold) cmd_generate_scaffold "$@" ;;
+        *) echo "unknown generate target: $what" >&2; usage; exit 1 ;;
       esac
+      ;;
+    db)
+      shift
+      cmd_db "$@"
+      ;;
+    console)
+      cmd_console
+      ;;
+    server|s)
+      cmd_server
       ;;
     version|-V|--version)
       version
@@ -139,7 +373,7 @@ main() {
       usage
       ;;
     *)
-      echo "bilinmeyen komut: $cmd" >&2
+      echo "unknown command: $cmd" >&2
       usage
       exit 1
       ;;

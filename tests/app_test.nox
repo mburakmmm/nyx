@@ -1,0 +1,44 @@
+import nox.test
+import nox.fs
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+from nyx.app import Application
+from nyx.config import Config
+from nyx.db import DbError
+import nyx.db
+
+dir_path: str = "/tmp/nyx_app_mig_test"
+if not nox.fs.exists(dir_path):
+    nox.fs.create_dir(dir_path)
+nox.fs.write_string(dir_path + "/001_t.sql", "CREATE TABLE IF NOT EXISTS t_app (id INTEGER PRIMARY KEY);")
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.db_path = ":memory:"
+cfg.migrate_path = dir_path
+cfg.csrf_enabled = False
+cfg.log_requests = False
+
+application: Application = nyx.app.boot(cfg, setup)
+req: HttpRequest = HttpRequest("GET", "/", "", {})
+resp: HttpResponse = nyx.app.dispatch(application, req)
+nox.test.assert_eq_int(resp.status, 200, "status")
+nox.test.assert_eq_str(resp.body, "ok", "body")
+application.db.close()
+
+# postgres URL must fail clearly
+try:
+    nyx.db.open_url("postgres://localhost/db")
+    nox.test.assert_true(False, "postgres should raise")
+except DbError:
+    nox.test.assert_true(True, "postgres error")
+
+print("app_test ok")

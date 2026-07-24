@@ -1,0 +1,17 @@
+import nox.test
+import nox.os
+import nyx.config
+from nyx.config import Config
+
+cfg: Config = nyx.config.defaults("development")
+nox.test.assert_eq_str(cfg.env, "development", "env")
+nox.test.assert_true(cfg.is_development(), "is_dev")
+nox.test.assert_true(len(cfg.secret_key) >= 16, "secret len")
+
+t: Config = nyx.config.defaults("test")
+nox.test.assert_eq_str(t.db_path, ":memory:", "test db")
+nox.test.assert_true(t.is_test(), "is_test")
+
+loaded: Config = nyx.config.load()
+nox.test.assert_true(len(loaded.env) > 0, "load env")
+print("config_test ok")

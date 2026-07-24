@@ -1,0 +1,20 @@
+import nox.test
+import nyx.params
+from nox.http import HttpRequest
+
+nox.test.assert_eq_str(nyx.params.decode("hello+world"), "hello world", "plus")
+nox.test.assert_eq_str(nyx.params.decode("a%20b"), "a b", "pct20")
+nox.test.assert_eq_str(nyx.params.decode("%2B"), "+", "pct2b")
+
+q: dict[str, str] = nyx.params.parse_qs("title=Hi&body=There")
+nox.test.assert_eq_str(q["title"], "Hi", "title")
+nox.test.assert_eq_str(q["body"], "There", "body")
+
+headers: dict[str, str] = {}
+headers["Content-Type"] = "application/x-www-form-urlencoded"
+req: HttpRequest = HttpRequest("POST", "/posts?src=web", "title=Ok&body=Yes", headers)
+form: dict[str, str] = nyx.params.from_request(req)
+nox.test.assert_eq_str(form["src"], "web", "query merge")
+nox.test.assert_eq_str(form["title"], "Ok", "form title")
+nox.test.assert_eq_str(nyx.params.path_only("/a?b=1"), "/a", "path_only")
+print("params_test ok")

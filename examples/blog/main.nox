@@ -1,64 +1,41 @@
-# Nyx blog ornegi — posts listesi + olusturma
-# cd examples/blog && noxc fetch && noxc run main.nox
+# Nyx blog example — posts list + create via nyx.app
+# cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
 
 import nox.http
-import nox.strings
 import nox.json
+import nox.template
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
 from nox.sqlite import Connection
-import nyx.db
+import nyx.app
+import nyx.config
 import nyx.model
 import nyx.ctrl
 import nyx.form
 import nyx.csrf
+import nyx.params
+import nyx.view
+from nyx.app import Application
+from nyx.config import Config
 from nyx.model import Record
-
-def app_secret() -> str:
-    return "blog-example-secret-key-32chars!!!"
 
 def build_posts_html(rows: list[Record]) -> str:
     out: str = ""
     i: int = 0
     while i < len(rows):
         r: Record = rows[i]
-        out = out + "<li><strong>" + r.get("title") + "</strong>: " + r.get("body") + "</li>"
+        title: str = nox.template.escape_html(r.get("title"))
+        body: str = nox.template.escape_html(r.get("body"))
+        out = out + "<li><strong>" + title + "</strong>: " + body + "</li>"
         i = i + 1
     if len(out) == 0:
-        return "<li>Henuz yazi yok.</li>"
+        return "<li>No posts yet.</li>"
     return out
 
-def parse_form(body: str) -> dict[str, str]:
-    result: dict[str, str] = {}
-    parts: list[str] = nox.strings.split(body, "&")
-    i: int = 0
-    while i < len(parts):
-        p: str = parts[i]
-        eq: int = nox.strings.index_of(p, "=")
-        if eq >= 0:
-            k: str = nox.strings.trim(_substr(p, 0, eq))
-            v: str = nox.strings.trim(_substr(p, eq + 1, len(p)))
-            result[k] = _url_decode(v)
-        i = i + 1
-    return result
-
-def _substr(s: str, start: int, end: int) -> str:
-    out: str = ""
-    i: int = start
-    while i < end:
-        out = out + s[i]
-        i = i + 1
-    return out
-
-def _url_decode(s: str) -> str:
-    return nox.strings.replace(s, "+", " ")
-
-def _json_str(s: str) -> str:
-    return nox.json.encode_string(s)
-
-def build_router(db: Connection) -> Router:
-    router: Router = Router()
-    secret: str = app_secret()
+def setup(application: Application) -> None:
+    router: Router = application.router
+    db: Connection = application.db
+    secret: str = application.config.secret_key
 
     def index(ctx: Context) -> HttpResponse:
         rows: list[Record] = nyx.model.all(db, "posts")
@@ -66,47 +43,38 @@ def build_router(db: Connection) -> Router:
         context["title"] = "Nyx Blog"
         context["notice"] = ""
         context["posts_html"] = build_posts_html(rows)
-        context["csrf_field"] = nyx.form.hidden("_csrf", nyx.csrf.token(secret))
+        context["csrf_field"] = nyx.csrf.field(secret)
         context["title_field"] = nyx.form.text("title", "")
         context["body_field"] = nyx.form.textarea("body", "")
-        context["submit"] = nyx.form.submit("Kaydet")
-        return nyx.ctrl.render(200, "app/views/posts.html", context)
+        context["submit"] = nyx.form.submit("Save")
+        return nyx.ctrl.html(200, nyx.view.render_unescaped("app/views/posts.html", context))
 
     def create(ctx: Context) -> HttpResponse:
-        form: dict[str, str] = parse_form(ctx.request.body)
-        token: str = ""
-        title: str = ""
-        body: str = ""
-        try:
-            token = form["_csrf"]
-        except KeyError:
-            return nyx.ctrl.forbidden()
-        try:
-            title = form["title"]
-        except KeyError:
-            title = ""
-        try:
-            body = form["body"]
-        except KeyError:
-            body = ""
-        if not nyx.csrf.check(secret, token):
-            return nyx.ctrl.forbidden()
+        form: dict[str, str] = nyx.params.from_request(ctx.request)
+        title: str = nyx.params.get(form, "title", "")
+        body: str = nyx.params.get(form, "body", "")
         if len(title) == 0:
             return nyx.ctrl.redirect("/")
-        attrs: str = "{\"title\":" + _json_str(title) + ",\"body\":" + _json_str(body) + "}"
+        attrs: str = "{\"title\":" + nox.json.encode_string(title) + ",\"body\":" + nox.json.encode_string(body) + "}"
         nyx.model.create(db, "posts", attrs)
         return nyx.ctrl.redirect("/")
 
     router.get("/", index)
     router.post("/posts", create)
-    return router
 
 def handle(req: HttpRequest) -> HttpResponse:
-    db: Connection = nyx.db.open("db/app.sqlite")
-    nyx.db.migrate(db, "db/migrate")
-    router: Router = build_router(db)
-    resp: HttpResponse = router.dispatch(req)
-    db.close()
+    cfg: Config = nyx.config.load()
+    cfg.secret_key = "blog-example-secret-key-32chars!!!"
+    cfg.db_path = "db/app.sqlite"
+    cfg.migrate_path = "db/migrate"
+    cfg.csrf_enabled = True
+    cfg.log_requests = True
+    application: Application = nyx.app.boot(cfg, setup)
+    resp: HttpResponse = HttpResponse(500, "", {})
+    try:
+        resp = nyx.app.dispatch(application, req)
+    finally:
+        application.db.close()
     return resp
 
 print("nyx blog on :8080")

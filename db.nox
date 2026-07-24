@@ -15,7 +15,38 @@ class DbError:
     def __init__(self: DbError, message: str) -> None:
         self.message = message
 
+def _drop_prefix(s: str, n: int) -> str:
+    out: str = ""
+    i: int = n
+    while i < len(s):
+        out = out + s[i]
+        i = i + 1
+    return out
+
+# `path` düz dosya yolu, `:memory:`, veya URL:
+#   sqlite:///absolute/path   sqlite://relative/path   sqlite::memory:
+# Postgres URL'leri net hata verir — Nox stdlib'de henüz sürücü yok.
 def open(path: str) -> Connection:
+    return open_url(path)
+
+def open_url(url: str) -> Connection:
+    if url == ":memory:" or url == "sqlite::memory:":
+        return nox.sqlite.open(":memory:")
+    if nox.strings.starts_with(url, "postgres://") or nox.strings.starts_with(url, "postgresql://"):
+        raise DbError(
+            "Postgres is not available yet (needs nox.postgres in the Nox stdlib). Use SQLite: NYX_DB_PATH or sqlite:///path/to.db"
+        )
+    path: str = url
+    if nox.strings.starts_with(url, "sqlite://"):
+        rest: str = _drop_prefix(url, 9)
+        if nox.strings.starts_with(rest, "/"):
+            # sqlite:///abs → /abs  |  sqlite://rel → rel (after one slash strip below)
+            if nox.strings.starts_with(rest, "//"):
+                path = _drop_prefix(rest, 1)
+            else:
+                path = rest
+        else:
+            path = rest
     parent: str = nox.path.dirname(path)
     if len(parent) > 0 and parent != "." and not nox.fs.exists(parent):
         nox.fs.create_dir(parent)

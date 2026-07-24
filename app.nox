@@ -1,31 +1,24 @@
-# nyx.app — Application boot + istek yasam dongusu.
+# nyx.app — Application boot + request lifecycle.
 #
-# def build_router(db: Connection) -> Router:
-#     router: Router = Router()
-#     router.get("/", some_handler)
-#     return router
+# def setup(application: Application) -> None:
+#     router: Router = application.router
+#     db: Connection = application.db
+#     router.get("/", home)
 #
 # def handle(req: HttpRequest) -> HttpResponse:
 #     cfg: Config = nyx.config.load()
-#     app: Application = nyx.app.boot(cfg, build_router)
-#     return nyx.app.dispatch(app, req)
+#     application: Application = nyx.app.boot(cfg, setup)
+#     try:
+#         return nyx.app.dispatch(application, req)
+#     finally:
+#         application.db.close()
 #
 # nox.http.serve(8080, handle)
 #
-# NOT: Nox'ta (a) modul-duzeyi degiskenler HICBIR fonksiyon govdesinden
-# (top-level dahil) GORULEMEZ VE (b) `nox.http.serve`in ikinci argumani
-# SOZDIZIMSEL olarak DOGRUDAN bir ust-duzey fonksiyon ADI olmalidir (bir
-# closure DONDUREN baska bir cagrinin SONUCU DEGIL — "metod/lambda henuz
-# desteklenmiyor" derleyici kisiti). Bu IKI kisit BIRLIKTE, `Application`in
-# (acik DB baglantisi + Router KAPANISLARI icerir) istekler ARASI KALICI
-# bir SINGLETON olarak saklanmasini IMKANSIZ kilar. Bu yuzden `nyx.app`
-# `serve()` SUNMAZ — cagiran (`main.nox`) KENDI ust-duzey `handle`
-# fonksiyonunu tanimlar; bu fonksiyon HER istekte `nyx.app.boot`u YENIDEN
-# cagirip (examples/blog/main.nox'daki KANITLANMIS "istek-basi yeniden
-# olustur" modeliyle AYNI) TAZE bir DB baglantisi + router kurar. `boot()`
-# HER cagrida DB'yi acar/migration calistirir — bu YUZDEN uzun-omurlu bir
-# surecte cagirici `db.close()`i KENDISI cagirmalidir (bkz. `dispatch`in
-# DB'yi KAPATMADIGI notu).
+# Nox limits: (a) module-level vars are invisible inside functions, and
+# (b) nox.http.serve requires a bare top-level function name. Together these
+# prevent a process-wide Application singleton — boot per request (migrate
+# is idempotent / cheap when already applied). Caller must db.close().
 
 import nox.http
 import nox.log
@@ -74,27 +67,25 @@ def db(application: Application) -> Connection:
 def config(application: Application) -> Config:
     return application.config
 
-# Config'i dogrular, DB'yi acar, migration'lari calistirir, `router_builder`i
-# cagirip framework ara katmanlarini takar. Donen `Application`i cagiran
-# (main.nox'un ust-duzey `handle` fonksiyonu) `nyx.app.dispatch`e ACIKCA
-# gecirir (bkz. modul basindaki not).
-def boot(cfg: Config, router_builder: (Application) -> Router) -> Application:
+# Validates config, opens DB, runs migrations, installs framework middleware
+# first, then calls `setup` so app routes/middleware register after session/CSRF.
+def boot(cfg: Config, setup: (Application) -> None) -> Application:
     if len(cfg.secret_key) < 16:
-        raise AppError("secret_key en az 16 karakter olmali")
+        raise AppError("secret_key must be at least 16 characters")
     if cfg.is_production() and len(cfg.secret_key) < 32:
-        raise AppError("production secret_key en az 32 karakter olmali")
+        raise AppError("production secret_key must be at least 32 characters")
     conn: Connection = nyx.db.open(cfg.db_path)
     if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
         try:
             nyx.db.migrate(conn, cfg.migrate_path)
         except DbError:
-            raise AppError("migration basarisiz: " + cfg.migrate_path)
+            raise AppError("migration failed: " + cfg.migrate_path)
     else:
         if cfg.is_production():
-            raise AppError("migration dizini yok: " + cfg.migrate_path)
+            raise AppError("migration directory missing: " + cfg.migrate_path)
     application: Application = Application(cfg, conn, Router())
-    application.router = router_builder(application)
     _install_framework_middleware(application)
+    setup(application)
     return application
 
 def _install_framework_middleware(application: Application) -> None:
@@ -196,7 +187,10 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
     path: str = _strip_query(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
-    resp: HttpResponse = application.router.dispatch(routed)
-    nyx.runtime.end()
+    resp: HttpResponse = HttpResponse(500, "", {})
+    try:
+        resp = application.router.dispatch(routed)
+    finally:
+        nyx.runtime.end()
     return resp
 

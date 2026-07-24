@@ -4,8 +4,8 @@
   "requires": [
     {
       "alias": "nyx",
-      "repo": "/Users/melihburakmemis/Documents/nyx",
-      "ref": "master"
+      "repo": "github.com/mburakmmm/nyx",
+      "ref": "v0.3.0"
     }
   ]
 }

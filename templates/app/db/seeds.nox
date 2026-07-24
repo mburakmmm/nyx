@@ -1,0 +1,11 @@
+# db/seeds.nox — run with: nyx db seed
+import nyx.config
+import nyx.db
+from nyx.config import Config
+from nox.sqlite import Connection
+
+cfg: Config = nyx.config.load()
+db: Connection = nyx.db.open(cfg.db_path)
+nyx.db.migrate(db, cfg.migrate_path)
+print("seed: nothing to insert yet — edit db/seeds.nox")
+db.close()

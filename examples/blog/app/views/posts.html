@@ -5,11 +5,11 @@
   <h1>Posts</h1>
   <p>{{ notice }}</p>
   <ul>{{ posts_html }}</ul>
-  <h2>Yeni yazı</h2>
+  <h2>New post</h2>
   <form action="/posts" method="POST">
     {{ csrf_field }}
-    <p>Baslik: {{ title_field }}</p>
-    <p>Govde: {{ body_field }}</p>
+    <p>Title: {{ title_field }}</p>
+    <p>Body: {{ body_field }}</p>
     {{ submit }}
   </form>
 </body>

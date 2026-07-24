@@ -89,7 +89,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def _validate_env(env: str) -> None:
     if env != "development" and env != "test" and env != "production":
-        raise ConfigError("gecersiz NYX_ENV: " + env + " (development|test|production)")
+        raise ConfigError("invalid NYX_ENV: " + env + " (development|test|production)")
 
 def defaults(env: str) -> Config:
     _validate_env(env)
@@ -118,7 +118,7 @@ def defaults(env: str) -> Config:
         csrf,
         secure,
         log_req,
-        "tr",
+        "en",
         "config/locales",
         "tmp/cache.sqlite",
         "storage",
@@ -134,9 +134,14 @@ def from_env() -> Config:
     cfg: Config = defaults(env)
     secret: str = _env_or("NYX_SECRET_KEY", cfg.secret_key)
     if cfg.is_production() and len(secret) < 32:
-        raise ConfigError("production icin NYX_SECRET_KEY en az 32 karakter olmali")
+        raise ConfigError("production requires NYX_SECRET_KEY with at least 32 characters")
     cfg.secret_key = secret
-    cfg.db_path = _env_or("NYX_DB_PATH", cfg.db_path)
+    # DATABASE_URL wins over NYX_DB_PATH when set (sqlite:///... or path)
+    db_url: str = _env_or("DATABASE_URL", "")
+    if len(db_url) > 0:
+        cfg.db_path = db_url
+    else:
+        cfg.db_path = _env_or("NYX_DB_PATH", cfg.db_path)
     cfg.migrate_path = _env_or("NYX_MIGRATE_PATH", cfg.migrate_path)
     cfg.host = _env_or("NYX_HOST", cfg.host)
     cfg.port = _env_int("NYX_PORT", cfg.port)

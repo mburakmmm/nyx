@@ -1,38 +1,47 @@
-# {{APP_NAME}} — nyx uygulama girişi
-# noxc run main.nox
+# {{APP_NAME}} — nyx application entry
+# noxc fetch && NYX_ENV=development noxc run main.nox
 
 import nox.http
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
-import nyx.db
+from nox.sqlite import Connection
+import nyx.app
+import nyx.config
 import nyx.ctrl
 import nyx.cors
+from nyx.app import Application
+from nyx.config import Config
 from nyx.cors import CorsConfig
-from nox.sqlite import Connection
 
-def secret() -> str:
-    return "change-me-{{APP_NAME}}-secret-key-32b!"
-
-def build_router(db: Connection) -> Router:
-    router: Router = Router()
-    cfg: CorsConfig = nyx.cors.default_config()
-    router.use_before(nyx.cors.before_handler(cfg))
-    router.use_after(nyx.cors.after_handler(cfg))
+def setup(application: Application) -> None:
+    router: Router = application.router
+    db: Connection = application.db
+    cors: CorsConfig = nyx.cors.default_config()
+    router.use_before(nyx.cors.before_handler(cors))
+    router.use_after(nyx.cors.after_handler(cors))
 
     def home(ctx: Context) -> HttpResponse:
         context: dict[str, str] = {}
         context["title"] = "{{APP_NAME}}"
-        return nyx.ctrl.render(200, "app/views/home.html", context)
+        return nyx.ctrl.render_layout(
+            200,
+            "app/views/layouts/application.html",
+            "app/views/home.html",
+            context
+        )
 
     router.get("/", home)
-    return router
 
 def handle(req: HttpRequest) -> HttpResponse:
-    db: Connection = nyx.db.open("db/app.sqlite")
-    nyx.db.migrate(db, "db/migrate")
-    router: Router = build_router(db)
-    resp: HttpResponse = router.dispatch(req)
-    db.close()
+    cfg: Config = nyx.config.load()
+    if len(cfg.secret_key) < 16:
+        cfg.secret_key = "change-me-{{APP_NAME}}-secret-key-32b!"
+    application: Application = nyx.app.boot(cfg, setup)
+    resp: HttpResponse = HttpResponse(500, "", {})
+    try:
+        resp = nyx.app.dispatch(application, req)
+    finally:
+        application.db.close()
     return resp
 
 print("{{APP_NAME}} listening on :8080")
