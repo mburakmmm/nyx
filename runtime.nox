@@ -33,3 +33,31 @@ def _get(name: str, default: str) -> str:
 
 def _put(name: str, value: str) -> None:
     nox.os.set_var(name, value)
+
+class RuntimeError:
+    def __init__(self: RuntimeError, message: str) -> None:
+        self.message = message
+
+def _key(name: str) -> str:
+    return "NYX_RT_" + name
+
+def _get_bool(name: str, default: bool) -> bool:
+    raw: str = _get(name, "")
+    if len(raw) == 0:
+        return default
+    return raw == "1"
+
+def _put_bool(name: str, value: bool) -> None:
+    if value:
+        _put(name, "1")
+    else:
+        _put(name, "0")
+
+def _get_int(name: str, default: int) -> int:
+    raw: str = _get(name, "")
+    if len(raw) == 0:
+        return default
+    return int(raw)
+
+def is_active() -> bool:
+    return _get_bool("ACTIVE", False)
