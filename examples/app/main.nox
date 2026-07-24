@@ -70,7 +70,7 @@ def build_router(state: AppState) -> Router:
     router.get("/me", me)
     return router
 
-def main() -> None:
+def start() -> None:
     secret: str = "example-app-secret-key-32chars!!"
     state: AppState = AppState("alice", web.password.hash("secret123"), secret)
     router: Router = build_router(state)
@@ -81,4 +81,4 @@ def main() -> None:
     print("listening on :8080  POST /login  GET /me")
     nox.http.serve(8080, handle)
 
-main()
+start()

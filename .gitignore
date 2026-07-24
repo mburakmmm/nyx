@@ -3,3 +3,4 @@ nox.lock
 *.o
 /zig-out/
 /tmp/
+.nox/

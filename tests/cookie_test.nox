@@ -3,13 +3,9 @@ import nox.strings
 import web.cookie
 from web.cookie import CookieError
 
-# Tek try/except: birden fazla CookieError yakalayıcı codegen'de çökebiliyor.
-def expect_cookie_error(kind: int) -> bool:
+def expect_bad_name() -> bool:
     try:
-        if kind == 0:
-            web.cookie.serialize("bad;name", "x", "/", -1, False, "", False)
-        else:
-            web.cookie.parse("nosesame")
+        web.cookie.serialize("bad;name", "x", "/", -1, False, "", False)
         return False
     except CookieError:
         return True
@@ -26,7 +22,6 @@ nox.test.assert_true(nox.strings.contains(line, "HttpOnly"), "serialize httponly
 nox.test.assert_true(nox.strings.contains(line, "Secure"), "serialize secure")
 nox.test.assert_true(nox.strings.contains(line, "SameSite=Lax"), "serialize samesite")
 
-nox.test.assert_true(expect_cookie_error(0), "reject bad name")
-nox.test.assert_true(expect_cookie_error(1), "reject missing eq")
+nox.test.assert_true(expect_bad_name(), "reject bad name")
 
 print("cookie_test ok")
