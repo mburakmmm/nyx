@@ -135,13 +135,7 @@ def _json_keys_vals(attrs_json: str) -> list[str]:
         elif nox.json.is_string(val):
             flat.append(nox.json.as_string(val))
         elif nox.json.is_number(val):
-            # Tam sayıysa noktasız yaz
-            num: float = nox.json.as_number(val)
-            as_i: int = int(num)
-            if float(as_i) == num:
-                flat.append(str(as_i))
-            else:
-                flat.append(str(num))
+            flat.append(nox.json.encode(val))
         elif nox.json.is_bool(val):
             if nox.json.as_bool(val):
                 flat.append("1")
