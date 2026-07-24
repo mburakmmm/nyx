@@ -104,3 +104,52 @@ def current() -> RequestBag:
         _get("REQUEST_ID", ""),
         _get_int("STARTED_MS", 0)
     )
+
+def load_session(data_json: str) -> None:
+    _put("SESSION_JSON", data_json)
+    _put_bool("HAS_SESSION", True)
+
+def set_session(data_json: str) -> None:
+    _put("SESSION_JSON", data_json)
+    _put_bool("HAS_SESSION", True)
+    _put_bool("SESSION_DIRTY", True)
+
+def session_json() -> str:
+    return _get("SESSION_JSON", "{}")
+
+def has_session() -> bool:
+    return _get_bool("HAS_SESSION", False)
+
+def is_session_dirty() -> bool:
+    return _get_bool("SESSION_DIRTY", False)
+
+def touch_session() -> None:
+    _put_bool("SESSION_DIRTY", True)
+
+def set_user(user_id: str, payload_json: str) -> None:
+    _put("USER_ID", user_id)
+    _put("USER_PAYLOAD", payload_json)
+    _put_bool("HAS_USER", True)
+
+def clear_user() -> None:
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+
+def current_user_id() -> str:
+    return _get("USER_ID", "")
+
+def current_user_payload() -> str:
+    return _get("USER_PAYLOAD", "")
+
+def signed_in() -> bool:
+    return _get_bool("HAS_USER", False)
+
+def request_id() -> str:
+    return _get("REQUEST_ID", "")
+
+def started_ms() -> int:
+    return _get_int("STARTED_MS", 0)
+
+def locale() -> str:
+    return _get("LOCALE", "")
