@@ -1,4 +1,4 @@
-# nox-lib — Nox Web Kütüphanesi
+# nyx — Nox Web Kütüphanesi
 
 Nox stdlib HTTP katmanını (`nox.http`, `nox.router`, `nox.validate`, `nox.crypto`) tamamlayan production-ready web monoreposu.
 
@@ -6,20 +6,20 @@ Nox stdlib HTTP katmanını (`nox.http`, `nox.router`, `nox.validate`, `nox.cryp
 **Lisans:** MIT  
 **Alias (zorunlu):** `web`
 
-> Paket içi çapraz importlar `import web.*` kullandığı için tüketicinin `nox.json` alias'ı **mutlaka** `web` olmalıdır.
+> Paket içi çapraz importlar `import nyx.*` kullandığı için tüketicinin `nox.json` alias'ı **mutlaka** `nyx` olmalıdır.
 
 ## Modüller
 
 | Modül | Açıklama |
 |---|---|
-| `web.base64` | Base64 / base64url + HMAC hex → base64url |
-| `web.cookie` | `Cookie` parse / `Set-Cookie` serialize |
-| `web.response` | JSON / text / redirect / header yardımcıları |
-| `web.jwt` | HS256 JWT encode/decode (`exp`/`nbf`/`iat`) |
-| `web.password` | argon2id hash/verify (`nox.crypto` sarmalayıcı) |
-| `web.session` | HMAC-imzalı cookie oturumu |
-| `web.cors` | Router before/after CORS ara katmanları |
-| `web.auth` | Bearer JWT / session `use_before` koruması |
+| `nyx.base64` | Base64 / base64url + HMAC hex → base64url |
+| `nyx.cookie` | `Cookie` parse / `Set-Cookie` serialize |
+| `nyx.response` | JSON / text / redirect / header yardımcıları |
+| `nyx.jwt` | HS256 JWT encode/decode (`exp`/`nbf`/`iat`) |
+| `nyx.password` | argon2id hash/verify (`nox.crypto` sarmalayıcı) |
+| `nyx.session` | HMAC-imzalı cookie oturumu |
+| `nyx.cors` | Router before/after CORS ara katmanları |
+| `nyx.auth` | Bearer JWT / session `use_before` koruması |
 
 ## Kurulum
 
@@ -31,8 +31,8 @@ Nox stdlib HTTP katmanını (`nox.http`, `nox.router`, `nox.validate`, `nox.cryp
   "entry": "main.nox",
   "requires": [
     {
-      "alias": "web",
-      "repo": "github.com/mburakmmm/nox-lib",
+      "alias": "nyx",
+      "repo": "github.com/mburakmmm/nyx",
       "ref": "v0.1.0"
     }
   ]
@@ -43,8 +43,8 @@ Yerel geliştirme (bu repo):
 
 ```json
 {
-  "alias": "web",
-  "repo": "/ABS/PATH/TO/nox-lib",
+  "alias": "nyx",
+  "repo": "/ABS/PATH/TO/nyx",
   "ref": "v0.1.0"
 }
 ```
@@ -60,27 +60,27 @@ noxc test
 import nox.http
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
-import web.jwt
-import web.auth
-import web.cors
-import web.response
-from web.cors import CorsConfig
+import nyx.jwt
+import nyx.auth
+import nyx.cors
+import nyx.response
+from nyx.cors import CorsConfig
 
 secret: str = "change-me-to-a-long-random-secret!!"
 
 def build() -> Router:
     router: Router = Router()
-    cfg: CorsConfig = web.cors.default_config()
-    router.use_before(web.cors.before_handler(cfg))
-    router.use_before(web.auth.require_bearer_unless(secret, "/login"))
-    router.use_after(web.cors.after_handler(cfg))
+    cfg: CorsConfig = nyx.cors.default_config()
+    router.use_before(nyx.cors.before_handler(cfg))
+    router.use_before(nyx.auth.require_bearer_unless(secret, "/login"))
+    router.use_after(nyx.cors.after_handler(cfg))
 
     def login(ctx: Context) -> HttpResponse:
-        token: str = web.jwt.encode(secret, "{\"sub\":\"user\"}", 9999999999)
-        return web.response.json(200, "{\"token\":\"" + token + "\"}")
+        token: str = nyx.jwt.encode(secret, "{\"sub\":\"user\"}", 9999999999)
+        return nyx.response.json(200, "{\"token\":\"" + token + "\"}")
 
     def me(ctx: Context) -> HttpResponse:
-        return web.response.json(200, "{\"ok\":true}")
+        return nyx.response.json(200, "{\"ok\":true}")
 
     router.post("/login", login)
     router.get("/me", me)
@@ -100,8 +100,8 @@ noxc run main.nox
 
 - Saf Nox — ek Zig/runtime shim yok.
 - Modül-global mutable state yok; sırlar parametre / `AppState` ile taşınır.
-- `web.base64.decode` çıktısı ASCII (0..127); JWT claim JSON'u ASCII tutun (`\uXXXX` kaçışları).
-- JWT imzası: `nox.crypto.hmac_sha256` (hex) → `web.base64.encode_hex_url`.
+- `nyx.base64.decode` çıktısı ASCII (0..127); JWT claim JSON'u ASCII tutun (`\uXXXX` kaçışları).
+- JWT imzası: `nox.crypto.hmac_sha256` (hex) → `nyx.base64.encode_hex_url`.
 
 ## v1 dışı (bilinçli)
 

@@ -1,6 +1,6 @@
-# web.cookie — Cookie / Set-Cookie yardımcısı (saf Nox).
+# nyx.cookie — Cookie / Set-Cookie yardımcısı (saf Nox).
 #
-# import web.cookie
+# import nyx.cookie
 
 import nox.strings
 

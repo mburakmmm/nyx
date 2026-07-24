@@ -1,12 +1,12 @@
 import nox.test
 import nox.time
 import nox.strings
-import web.jwt
-from web.jwt import JwtError
+import nyx.jwt
+from nyx.jwt import JwtError
 
 def expect_jwt_error(secret: str, token: str) -> bool:
     try:
-        payload: str = web.jwt.decode(secret, token)
+        payload: str = nyx.jwt.decode(secret, token)
         if len(payload) >= 0:
             return False
         return False
@@ -17,17 +17,17 @@ secret: str = "test-secret-key-32chars-minimum!!"
 now: int = nox.time.now_ms() // 1000
 exp: int = now + 3600
 
-token: str = web.jwt.encode(secret, "{\"sub\":\"alice\"}", exp)
+token: str = nyx.jwt.encode(secret, "{\"sub\":\"alice\"}", exp)
 parts: list[str] = nox.strings.split(token, ".")
 nox.test.assert_eq_int(len(parts), 3, "token parts")
 
-payload: str = web.jwt.decode(secret, token)
+payload: str = nyx.jwt.decode(secret, token)
 nox.test.assert_true(nox.strings.contains(payload, "alice"), "payload sub")
 nox.test.assert_true(nox.strings.contains(payload, "exp"), "payload exp")
 
 nox.test.assert_true(expect_jwt_error("wrong-secret-key-32chars-minimum!", token), "reject wrong secret")
 
-expired: str = web.jwt.encode(secret, "{\"sub\":\"bob\"}", now - 10)
+expired: str = nyx.jwt.encode(secret, "{\"sub\":\"bob\"}", now - 10)
 nox.test.assert_true(expect_jwt_error(secret, expired), "reject expired")
 
 tampered: str = parts[0] + "." + parts[1] + ".AAAA"

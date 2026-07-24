@@ -3,8 +3,8 @@
   "entry": "main.nox",
   "requires": [
     {
-      "alias": "web",
-      "repo": "/Users/melihburakmemis/Documents/nox-lib",
+      "alias": "nyx",
+      "repo": "/Users/melihburakmemis/Documents/nyx",
       "ref": "v0.1.0"
     }
   ]

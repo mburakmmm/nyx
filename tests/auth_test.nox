@@ -2,14 +2,14 @@ import nox.test
 import nox.time
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Context
-import web.auth
-import web.jwt
+import nyx.auth
+import nyx.jwt
 
 secret: str = "auth-secret-key-32chars-minimum!!!"
 now: int = nox.time.now_ms() // 1000
-token: str = web.jwt.encode(secret, "{\"sub\":\"u1\"}", now + 3600)
+token: str = nyx.jwt.encode(secret, "{\"sub\":\"u1\"}", now + 3600)
 
-mw: (Context) -> HttpResponse | None = web.auth.require_bearer(secret)
+mw: (Context) -> HttpResponse | None = nyx.auth.require_bearer(secret)
 
 h0: dict[str, str] = {}
 req0: HttpRequest = HttpRequest("GET", "/me", "", h0)
@@ -32,7 +32,7 @@ ctx2: Context = Context(req2, {})
 r2: HttpResponse | None = mw(ctx2)
 nox.test.assert_true(r2 != None, "invalid token")
 
-skip: (Context) -> HttpResponse | None = web.auth.require_bearer_unless(secret, "/login")
+skip: (Context) -> HttpResponse | None = nyx.auth.require_bearer_unless(secret, "/login")
 h3: dict[str, str] = {}
 req3: HttpRequest = HttpRequest("POST", "/login", "", h3)
 ctx3: Context = Context(req3, {})

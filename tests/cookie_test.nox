@@ -1,20 +1,20 @@
 import nox.test
 import nox.strings
-import web.cookie
-from web.cookie import CookieError
+import nyx.cookie
+from nyx.cookie import CookieError
 
 def expect_bad_name() -> bool:
     try:
-        web.cookie.serialize("bad;name", "x", "/", -1, False, "", False)
+        nyx.cookie.serialize("bad;name", "x", "/", -1, False, "", False)
         return False
     except CookieError:
         return True
 
-parsed: dict[str, str] = web.cookie.parse("a=1; b=two")
+parsed: dict[str, str] = nyx.cookie.parse("a=1; b=two")
 nox.test.assert_eq_str(parsed["a"], "1", "parse a")
 nox.test.assert_eq_str(parsed["b"], "two", "parse b")
 
-line: str = web.cookie.serialize("sid", "abc", "/", 3600, True, "Lax", True)
+line: str = nyx.cookie.serialize("sid", "abc", "/", 3600, True, "Lax", True)
 nox.test.assert_true(nox.strings.contains(line, "sid=abc"), "serialize name")
 nox.test.assert_true(nox.strings.contains(line, "Path=/"), "serialize path")
 nox.test.assert_true(nox.strings.contains(line, "Max-Age=3600"), "serialize max-age")

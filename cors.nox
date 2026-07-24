@@ -1,10 +1,10 @@
-# web.cors — Router before/after CORS ara katmanları.
+# nyx.cors — Router before/after CORS ara katmanları.
 #
-# import web.cors
+# import nyx.cors
 
 from nox.http import HttpResponse
 from nox.router import Context
-import web.response
+import nyx.response
 
 class CorsConfig:
     def __init__(self: CorsConfig, origin: str, methods: str, headers: str, credentials: bool) -> None:
@@ -17,12 +17,12 @@ def default_config() -> CorsConfig:
     return CorsConfig("*", "GET,POST,PUT,DELETE,OPTIONS", "Authorization,Content-Type", False)
 
 def _apply_cors_headers(cfg: CorsConfig, resp: HttpResponse) -> HttpResponse:
-    r1: HttpResponse = web.response.with_header(resp, "Access-Control-Allow-Origin", cfg.origin)
-    r2: HttpResponse = web.response.with_header(r1, "Access-Control-Allow-Methods", cfg.methods)
-    r3: HttpResponse = web.response.with_header(r2, "Access-Control-Allow-Headers", cfg.headers)
-    r4: HttpResponse = web.response.with_header(r3, "Vary", "Origin")
+    r1: HttpResponse = nyx.response.with_header(resp, "Access-Control-Allow-Origin", cfg.origin)
+    r2: HttpResponse = nyx.response.with_header(r1, "Access-Control-Allow-Methods", cfg.methods)
+    r3: HttpResponse = nyx.response.with_header(r2, "Access-Control-Allow-Headers", cfg.headers)
+    r4: HttpResponse = nyx.response.with_header(r3, "Vary", "Origin")
     if cfg.credentials:
-        return web.response.with_header(r4, "Access-Control-Allow-Credentials", "true")
+        return nyx.response.with_header(r4, "Access-Control-Allow-Credentials", "true")
     return r4
 
 def before_handler(cfg: CorsConfig) -> (Context) -> HttpResponse | None:

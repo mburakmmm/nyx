@@ -1,6 +1,6 @@
-# web.response — HTTP yanıt kalıpları.
+# nyx.response — HTTP yanıt kalıpları.
 #
-# import web.response
+# import nyx.response
 
 from nox.http import HttpResponse
 

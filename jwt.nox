@@ -1,15 +1,15 @@
-# web.jwt — HS256 JWT (RFC 7519 alt kümesi).
+# nyx.jwt — HS256 JWT (RFC 7519 alt kümesi).
 #
-# import web.jwt
+# import nyx.jwt
 #
-# İmza: nox.crypto.hmac_sha256 (hex) → web.base64.encode_hex_url.
-# Alias ZORUNLU: web
+# İmza: nox.crypto.hmac_sha256 (hex) → nyx.base64.encode_hex_url.
+# Alias ZORUNLU: nyx
 
 import nox.crypto
 import nox.json
 import nox.time
 import nox.strings
-import web.base64
+import nyx.base64
 
 class JwtError:
     def __init__(self: JwtError, message: str) -> None:
@@ -46,7 +46,7 @@ def _with_exp(payload_json: str, exp_unix: int) -> str:
 
 def _sign(secret: str, signing_input: str) -> str:
     mac_hex: str = nox.crypto.hmac_sha256(secret, signing_input)
-    return web.base64.encode_hex_url(mac_hex)
+    return nyx.base64.encode_hex_url(mac_hex)
 
 def encode(secret: str, payload_json: str, exp_unix: int) -> str:
     if len(secret) == 0:
@@ -54,8 +54,8 @@ def encode(secret: str, payload_json: str, exp_unix: int) -> str:
     if exp_unix <= 0:
         raise JwtError("exp_unix pozitif olmali")
     payload: str = _with_exp(payload_json, exp_unix)
-    h_b64: str = web.base64.encode_url(_header_json())
-    p_b64: str = web.base64.encode_url(payload)
+    h_b64: str = nyx.base64.encode_url(_header_json())
+    p_b64: str = nyx.base64.encode_url(payload)
     signing_input: str = h_b64 + "." + p_b64
     sig: str = _sign(secret, signing_input)
     return signing_input + "." + sig
@@ -106,7 +106,7 @@ def decode(secret: str, token: str) -> str:
     expected: str = _sign(secret, signing_input)
     if not nox.crypto.constant_time_eq(sig, expected):
         raise JwtError("gecersiz imza")
-    header_json: str = web.base64.decode_url(h_b64)
+    header_json: str = nyx.base64.decode_url(h_b64)
     header: JsonValue = nox.json.decode(header_json)
     alg_v: JsonValue | None = _find_object_field(header, "alg")
     if alg_v == None:
@@ -117,7 +117,7 @@ def decode(secret: str, token: str) -> str:
         else:
             if nox.json.as_string(alg_v) != "HS256":
                 raise JwtError("yalnizca HS256 desteklenir")
-    payload_json: str = web.base64.decode_url(p_b64)
+    payload_json: str = nyx.base64.decode_url(p_b64)
     payload: JsonValue = nox.json.decode(payload_json)
     if not nox.json.is_object(payload):
         raise JwtError("payload nesne olmali")

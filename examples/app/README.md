@@ -3,7 +3,7 @@
 Demo kullanıcı: `alice` / `secret123`
 
 ```sh
-# nox-lib kökünde önce bağımlılığı getirin (veya bu dizinden):
+# nyx kökünde önce bağımlılığı getirin (veya bu dizinden):
 noxc fetch
 noxc run main.nox
 ```
