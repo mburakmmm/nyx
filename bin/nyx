@@ -35,15 +35,16 @@ cmd_new() {
     echo "zaten var: $name" >&2
     exit 1
   fi
+  local app_label
+  app_label="$(basename "$name")"
   mkdir -p "$name"
   cp -R "$TEMPLATES/app/." "$name/"
   # {{APP_NAME}} yer tutucularını değiştir
   if [[ "$(uname)" == "Darwin" ]]; then
-    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i '' "s/{{APP_NAME}}/$name/g" {} +
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i '' "s#{{APP_NAME}}#$app_label#g" {} +
   else
-    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i "s/{{APP_NAME}}/$name/g" {} +
+    find "$name" -type f \( -name '*.nox' -o -name '*.json' -o -name '*.html' -o -name '*.md' \) -exec sed -i "s#{{APP_NAME}}#$app_label#g" {} +
   fi
-  # Yerel geliştirme: nyx yolunu mutlak yap (isteğe bağlı)
   echo "olusturuldu: $name/"
   echo "  cd $name && noxc fetch && noxc run main.nox"
 }
