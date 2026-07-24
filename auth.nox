@@ -61,17 +61,17 @@ def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
         auth: str | None = _header_get(ctx.request.headers, "Authorization")
         if auth == None:
             return _unauthorized("missing_authorization")
-        if not nox.strings.starts_with(auth, "Bearer "):
-            return _unauthorized("invalid_authorization")
-        token: str = _drop_prefix(auth, 7)
-        try:
-            payload: str = web.jwt.decode(secret, token)
-            # payload doğrulandı; handler tekrar decode edebilir.
-            if len(payload) == 0:
-                return _unauthorized("empty_payload")
-            return None
-        except JwtError:
-            return _unauthorized("invalid_token")
+        else:
+            if not nox.strings.starts_with(auth, "Bearer "):
+                return _unauthorized("invalid_authorization")
+            token: str = _drop_prefix(auth, 7)
+            try:
+                payload: str = web.jwt.decode(secret, token)
+                if len(payload) == 0:
+                    return _unauthorized("empty_payload")
+                return None
+            except JwtError:
+                return _unauthorized("invalid_token")
     return handler
 
 # `exempt_path` dışındaki rotalarda Bearer JWT zorunlu kılar (ör. "/login").
@@ -79,7 +79,6 @@ def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpRes
     def handler(ctx: Context) -> HttpResponse | None:
         if ctx.request.target == exempt_path:
             return None
-        # Query'siz path eşlemesi: target "/login" veya "/login?x=1"
         if nox.strings.starts_with(ctx.request.target, exempt_path):
             rest_start: int = len(exempt_path)
             if rest_start == len(ctx.request.target):
@@ -95,15 +94,16 @@ def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse 
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
         if raw == None:
             return _unauthorized("missing_cookie")
-        try:
-            cookies: dict[str, str] = web.cookie.parse(raw)
-            val: str = cookies[cookie_name]
-            data: str | None = web.session.load(secret, val)
-            if data == None:
-                return _unauthorized("invalid_session")
-            return None
-        except KeyError:
-            return _unauthorized("missing_session_cookie")
-        except CookieError:
-            return _unauthorized("bad_cookie")
+        else:
+            try:
+                cookies: dict[str, str] = web.cookie.parse(raw)
+                val: str = cookies[cookie_name]
+                data: str | None = web.session.load(secret, val)
+                if data == None:
+                    return _unauthorized("invalid_session")
+                return None
+            except KeyError:
+                return _unauthorized("missing_session_cookie")
+            except CookieError:
+                return _unauthorized("bad_cookie")
     return handler

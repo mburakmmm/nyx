@@ -154,20 +154,25 @@ def _decode_to_ascii_impl(data: str, alphabet: str, pad: bool) -> str:
             raw = _drop_last(raw)
             pad_bytes = pad_bytes + 1
     n_orig: int = _byte_len(raw)
-    if not pad:
-        rem: int = n_orig % 4
-        if rem == 1:
-            raise Base64Error("gecersiz base64url uzunlugu")
-        if rem == 2:
+    rem: int = n_orig % 4
+    if rem == 1:
+        raise Base64Error("gecersiz base64 uzunlugu")
+    if rem == 2:
+        # 1 çıktı baytı → 2 karakter; 2 pad baytı
+        if pad_bytes == 0:
             pad_bytes = 2
-            raw = raw + "AA"
-        elif rem == 3:
+        raw = raw + "AA"
+    elif rem == 3:
+        # 2 çıktı baytı → 3 karakter; 1 pad baytı
+        if pad_bytes == 0:
             pad_bytes = 1
-            raw = raw + "A"
+        raw = raw + "A"
     n: int = _byte_len(raw)
     if n % 4 != 0:
         raise Base64Error("gecersiz base64 uzunlugu")
     total_out: int = (n // 4) * 3 - pad_bytes
+    if total_out < 0:
+        raise Base64Error("gecersiz base64 padding")
     out: str = ""
     produced: int = 0
     i: int = 0

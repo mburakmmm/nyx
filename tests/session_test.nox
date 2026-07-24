@@ -9,7 +9,8 @@ nox.test.assert_eq_int(len(parts), 2, "session parts")
 
 loaded: str | None = web.session.load(secret, val)
 nox.test.assert_true(loaded != None, "load ok")
-nox.test.assert_true(nox.strings.contains(loaded, "alice"), "load user")
+if loaded != None:
+    nox.test.assert_true(nox.strings.contains(loaded, "alice"), "load user")
 
 nox.test.assert_true(web.session.load("wrong-secret-key-32chars-min!!!", val) == None, "wrong secret")
 

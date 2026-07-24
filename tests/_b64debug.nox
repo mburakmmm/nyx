@@ -1,0 +1,8 @@
+import web.base64
+from web.base64 import Base64Error
+print("enc=" + web.base64.encode("hello"))
+try:
+    print("dec=" + web.base64.decode("aGVsbG8="))
+except Base64Error as e:
+    print("err=" + e.message)
+print("done")
