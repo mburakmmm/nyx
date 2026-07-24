@@ -12,7 +12,8 @@
 import nox.sqlite
 import nox.json
 import nox.strings
-from nox.sqlite import Connection, Row, Statement
+from nox.sqlite import Connection, Row, Statement, SqliteError
+from nox.json import JsonError
 
 class ModelError:
     def __init__(self: ModelError, message: str) -> None:
@@ -194,3 +195,153 @@ def update(db: Connection, table: str, id: int, attrs_json: str) -> None:
         j = j + 2
     stmt.bind_int(bind_i, id)
     stmt.execute()
+
+# `fn`i tek bir SQLite islemi (transaction) icinde calistirir: basariliysa
+# COMMIT, `fn` BILINEN bir framework hatasi firlatirsa ROLLBACK edip AYNI
+# hatayi yeniden firlatir. Nox'ta genel bir "Exception" taban sinifi
+# olmadigindan yalnizca bu listedeki turler yakalanabilir — DIGER hata
+# siniflarini firlatan `fn`ler ROLLBACK ETMEDEN yayilir (cagiran kendi
+# temizligini yapmalidir).
+def transaction(db: Connection, fn: (Connection) -> None) -> None:
+    db.execute("BEGIN")
+    try:
+        fn(db)
+    except ModelError as e:
+        db.execute("ROLLBACK")
+        raise ModelError(e.message)
+    except SqliteError as e:
+        db.execute("ROLLBACK")
+        raise SqliteError(e.message)
+    except JsonError as e:
+        db.execute("ROLLBACK")
+        raise JsonError(e.message)
+    except ValueError as e:
+        db.execute("ROLLBACK")
+        raise ValueError(e.message)
+    except KeyError as e:
+        db.execute("ROLLBACK")
+        raise KeyError(e.message)
+    except IndexError as e:
+        db.execute("ROLLBACK")
+        raise IndexError(e.message)
+    db.execute("COMMIT")
+
+def _count_char(s: str, target: str) -> int:
+    count: int = 0
+    i: int = 0
+    while i < len(s):
+        if s[i] == target:
+            count = count + 1
+        i = i + 1
+    return count
+
+# `where_clause` icinde YALNIZCA harf/rakam/alt cizgi/bosluk/nokta/virgul/
+# parantez/`?`/karsilastirma operatorleri (`= < > !`) kabul edilir — tirnak
+# isareti, noktali virgul, yorum satiri gibi SQL enjeksiyonuna acik
+# karakterler REDDEDILIR. Degerler HER ZAMAN `?` ile baglanir (asla dogrudan
+# string birlestirme ile SQL'e gomulmez).
+def _check_where_clause(clause: str) -> None:
+    if len(clause) == 0:
+        raise ModelError("where_clause bos olamaz")
+    i: int = 0
+    n: int = len(clause)
+    while i < n:
+        b: int = nox.strings.byte_at(clause, i)
+        ok: bool = False
+        if b >= 48 and b <= 57:
+            ok = True
+        if b >= 65 and b <= 90:
+            ok = True
+        if b >= 97 and b <= 122:
+            ok = True
+        if b == 95:
+            ok = True
+        if b == 32:
+            ok = True
+        if b == 40 or b == 41:
+            ok = True
+        if b == 63:
+            ok = True
+        if b == 46:
+            ok = True
+        if b == 44:
+            ok = True
+        if b == 61 or b == 60 or b == 62 or b == 33:
+            ok = True
+        if not ok:
+            raise ModelError("where_clause icinde izin verilmeyen karakter: " + clause)
+        i = i + 1
+
+# `where_clause` icindeki HER `?` yerine `binds`teki degeri sirayla baglar
+# (SQL enjeksiyonuna karsi guvenli — degerler asla metne gomulmez). Ornek:
+# `where_sql(db, "posts", "user_id = ? AND published = ?", ["1", "1"])`.
+def where_sql(db: Connection, table: str, where_clause: str, binds: list[str]) -> list[Record]:
+    _check_ident(table)
+    _check_where_clause(where_clause)
+    placeholder_count: int = _count_char(where_clause, "?")
+    if placeholder_count != len(binds):
+        raise ModelError("bind sayisi '?' sayisiyla eslesmiyor")
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE " + where_clause
+    stmt: Statement = db.prepare(sql)
+    i: int = 0
+    while i < len(binds):
+        stmt.bind_str(i, binds[i])
+        i = i + 1
+    return _rows_to_records(stmt.query())
+
+# `order_col`a gore siralanmis, en fazla `limit` satir doner.
+def order_limit(db: Connection, table: str, order_col: str, desc: bool, limit: int) -> list[Record]:
+    _check_ident(table)
+    _check_ident(order_col)
+    if limit < 0:
+        raise ModelError("limit negatif olamaz")
+    direction: str = "ASC"
+    if desc:
+        direction = "DESC"
+    sql: str = (
+        "SELECT * FROM " + _quote_ident(table) + " ORDER BY " + _quote_ident(order_col) +
+        " " + direction + " LIMIT " + str(limit)
+    )
+    rows: list[Row] = db.query(sql)
+    return _rows_to_records(rows)
+
+def _find_field(v: JsonValue, name: str) -> JsonValue | None:
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        if nox.json.object_key(v, i) == name:
+            return nox.json.object_value(v, i)
+        i = i + 1
+    return None
+
+# `fields`teki her alanin `attrs_json`da MEVCUT, null OLMAYAN ve (metinse)
+# BOS OLMAYAN bir degeri olup olmadigini dogrular. Hata mesajlari listesini
+# doner (bossa gecerli).
+def validate_required(attrs_json: str, fields: list[str]) -> list[str]:
+    errors: list[str] = []
+    v: JsonValue = nox.json.decode(attrs_json)
+    if not nox.json.is_object(v):
+        errors.append("attrs bir JSON nesnesi olmali")
+        return errors
+    i: int = 0
+    while i < len(fields):
+        name: str = fields[i]
+        found: JsonValue | None = _find_field(v, name)
+        if found == None:
+            errors.append("eksik zorunlu alan: " + name)
+        else:
+            if nox.json.is_null(found):
+                errors.append("alan bos olamaz: " + name)
+            else:
+                if nox.json.is_string(found) and len(nox.json.as_string(found)) == 0:
+                    errors.append("alan bos olamaz: " + name)
+        i = i + 1
+    return errors
+
+# `create`in dogrulamali hali (Rails'in `create!`ine benzer): `required_fields`
+# eksik/boşsa ModelError firlatir, aksi halde normal `create`e devreder.
+def create_valid(db: Connection, table: str, attrs_json: str, required_fields: list[str]) -> int:
+    errors: list[str] = validate_required(attrs_json, required_fields)
+    if len(errors) > 0:
+        raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
+    return create(db, table, attrs_json)

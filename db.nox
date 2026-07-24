@@ -105,3 +105,52 @@ def migrate(db: Connection, dir_path: str) -> int:
             applied = applied + 1
         j = j + 1
     return applied
+
+def _drop_last_n(s: str, n: int) -> str:
+    out: str = ""
+    limit: int = len(s) - n
+    i: int = 0
+    while i < limit:
+        out = out + s[i]
+        i = i + 1
+    return out
+
+# "001_create_users.sql" -> "001_create_users.down.sql" (ayni dizinde).
+def _down_name(version: str) -> str:
+    if _ends_with_sql(version):
+        return _drop_last_n(version, 4) + ".down.sql"
+    return version + ".down.sql"
+
+# `dir_path`taki migration'lardan `schema_migrations`a EN SON kaydedileni
+# (rowid'e gore) geri alir: eslesen `<version>.down.sql` dosyasini
+# calistirip `schema_migrations`dan siler. Geri alinan versiyonu doner.
+def rollback(db: Connection, dir_path: str) -> str:
+    _ensure_migrations_table(db)
+    stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        raise DbError("geri alinacak migration yok")
+    version: str = rows[0].get_str(0)
+    down_name: str = _down_name(version)
+    down_path: str = nox.path.join(dir_path, down_name)
+    if not nox.fs.exists(down_path):
+        raise DbError("down migration dosyasi yok: " + down_path)
+    sql: str = nox.fs.read_to_string(down_path)
+    db.execute(sql)
+    del_stmt: Statement = db.prepare("DELETE FROM schema_migrations WHERE version = ?")
+    del_stmt.bind_str(0, version)
+    del_stmt.execute()
+    return version
+
+# Mevcut tum tablolarin CREATE TABLE ifadelerini `path`e yazar (sqlite_master
+# uzerinden) — hizli bir "schema.sql" enstantanesi icin.
+def schema_dump(db: Connection, path: str) -> None:
+    rows: list[Row] = db.query(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL ORDER BY name"
+    )
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        out = out + rows[i].get_str(0) + ";\n\n"
+        i = i + 1
+    nox.fs.write_string(path, out)

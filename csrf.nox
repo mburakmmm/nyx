@@ -1,14 +1,20 @@
-# nyx.csrf — HMAC tabanlı CSRF jetonu.
+# nyx.csrf — HMAC tabanlı CSRF jetonu + protect middleware.
 #
 # import nyx.csrf
 # t: str = nyx.csrf.token(secret)
 # ok: bool = nyx.csrf.check(secret, t)
+# router.use_before(nyx.csrf.protect(secret))
 
 import nox.crypto
 import nox.time
 import nox.strings
 import nyx.base64
+import nyx.params
+import nyx.ctrl
+import nyx.form
 from nyx.base64 import Base64Error
+from nox.http import HttpResponse
+from nox.router import Context
 
 class CsrfError:
     def __init__(self: CsrfError, message: str) -> None:
@@ -53,3 +59,43 @@ def check(secret: str, tok: str) -> bool:
         return False
     except ValueError:
         return False
+
+def _header_get(headers: dict[str, str], name: str) -> str:
+    try:
+        return headers[name]
+    except KeyError:
+        a: int = 0
+    try:
+        return headers[nox.strings.lower(name)]
+    except KeyError:
+        b: int = 0
+    if nox.strings.lower(name) == "x-csrf-token":
+        try:
+            return headers["X-CSRF-Token"]
+        except KeyError:
+            c: int = 0
+        try:
+            return headers["x-csrf-token"]
+        except KeyError:
+            d: int = 0
+    return ""
+
+def _unsafe_method(method: str) -> bool:
+    return method == "POST" or method == "PUT" or method == "PATCH" or method == "DELETE"
+
+# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu.
+def protect(secret: str) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        if not _unsafe_method(ctx.request.method):
+            return None
+        tok: str = _header_get(ctx.request.headers, "X-CSRF-Token")
+        if len(tok) == 0:
+            params: dict[str, str] = nyx.params.from_request(ctx.request)
+            tok = nyx.params.get(params, "_csrf", "")
+        if not check(secret, tok):
+            return nyx.ctrl.forbidden()
+        return None
+    return handler
+
+def field(secret: str) -> str:
+    return nyx.form.hidden("_csrf", token(secret))

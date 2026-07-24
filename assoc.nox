@@ -1,0 +1,33 @@
+# nyx.assoc — nyx.model uzerine belongs_to / has_many / has_one yardimcilari.
+#
+# import nyx.assoc
+#
+# author: Record | None = nyx.assoc.belongs_to(db, "posts", post_id, "users", "user_id")
+# comments: list[Record] = nyx.assoc.has_many(db, "posts", post_id, "comments", "post_id")
+
+import nyx.model
+from nyx.model import Record
+from nox.sqlite import Connection
+
+# `child_table[child_id].fk_col` degerini `parent_table`da arar (Rails'in
+# `belongs_to`siyla ayni yon: cocuk -> ebeveyn). Cocuk kaydin KENDISI YOKSA
+# ya da `fk_col` ebeveynde eslesmiyorsa None doner.
+def belongs_to(db: Connection, child_table: str, child_id: int, parent_table: str, fk_col: str) -> Record | None:
+    child: Record | None = nyx.model.find(db, child_table, child_id)
+    if child == None:
+        return None
+    fk_val: int = child.get_int(fk_col)
+    return nyx.model.find(db, parent_table, fk_val)
+
+# `child_table.fk_col = parent_id` olan TUM satirlari doner (Rails'in
+# `has_many`si).
+def has_many(db: Connection, parent_table: str, parent_id: int, child_table: str, fk_col: str) -> list[Record]:
+    return nyx.model.where_int(db, child_table, fk_col, parent_id)
+
+# `has_many` ile AYNI sorgu ama TEK (ilk) satiri doner (Rails'in
+# `has_one`si) — eslesme yoksa None.
+def has_one(db: Connection, parent_table: str, parent_id: int, child_table: str, fk_col: str) -> Record | None:
+    rows: list[Record] = nyx.model.where_int(db, child_table, fk_col, parent_id)
+    if len(rows) == 0:
+        return None
+    return rows[0]

@@ -1,0 +1,69 @@
+# nyx.routes — resources tarzı rota DSL.
+#
+# import nyx.routes
+# nyx.routes.resources(router, "posts", posts_index, posts_show, posts_new, posts_create, posts_edit, posts_update, posts_destroy)
+
+from nox.http import HttpResponse
+from nox.router import Router, Context
+
+def resources(
+    router: Router,
+    name: str,
+    index: (Context) -> HttpResponse,
+    show: (Context) -> HttpResponse,
+    new_action: (Context) -> HttpResponse,
+    create: (Context) -> HttpResponse,
+    edit: (Context) -> HttpResponse,
+    update: (Context) -> HttpResponse,
+    destroy: (Context) -> HttpResponse
+) -> None:
+    base: str = "/" + name
+    router.get(base, index)
+    router.get(base + "/new", new_action)
+    router.post(base, create)
+    router.get(base + "/:id", show)
+    router.get(base + "/:id/edit", edit)
+    router.post(base + "/:id", update)
+    router.post(base + "/:id/delete", destroy)
+
+def api_resources(
+    router: Router,
+    name: str,
+    index: (Context) -> HttpResponse,
+    show: (Context) -> HttpResponse,
+    create: (Context) -> HttpResponse,
+    update: (Context) -> HttpResponse,
+    destroy: (Context) -> HttpResponse
+) -> None:
+    base: str = "/api/" + name
+    router.get(base, index)
+    router.post(base, create)
+    router.get(base + "/:id", show)
+    router.put(base + "/:id", update)
+    router.delete(base + "/:id", destroy)
+
+def root(router: Router, handler: (Context) -> HttpResponse) -> None:
+    router.get("/", handler)
+
+def get(router: Router, pattern: str, handler: (Context) -> HttpResponse) -> None:
+    router.get(pattern, handler)
+
+def post(router: Router, pattern: str, handler: (Context) -> HttpResponse) -> None:
+    router.post(pattern, handler)
+
+def path_posts() -> str:
+    return "/posts"
+
+def path_post(id: int) -> str:
+    return "/posts/" + str(id)
+
+def path_new_post() -> str:
+    return "/posts/new"
+
+def path_edit_post(id: int) -> str:
+    return "/posts/" + str(id) + "/edit"
+
+def path_for(resource: str, id: int) -> str:
+    if id <= 0:
+        return "/" + resource
+    return "/" + resource + "/" + str(id)

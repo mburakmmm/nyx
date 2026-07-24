@@ -41,6 +41,15 @@ def with_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
     _try_copy(out, resp.headers, "Access-Control-Max-Age")
     _try_copy(out, resp.headers, "Vary")
     _try_copy(out, resp.headers, "Authorization")
+    _try_copy(out, resp.headers, "X-Content-Type-Options")
+    _try_copy(out, resp.headers, "X-Frame-Options")
+    _try_copy(out, resp.headers, "Referrer-Policy")
+    _try_copy(out, resp.headers, "X-XSS-Protection")
+    _try_copy(out, resp.headers, "Strict-Transport-Security")
+    _try_copy(out, resp.headers, "Content-Security-Policy")
+    _try_copy(out, resp.headers, "Content-Disposition")
+    _try_copy(out, resp.headers, "ETag")
+    _try_copy(out, resp.headers, "Last-Modified")
     out[key] = value
     return HttpResponse(resp.status, resp.body, out)
 

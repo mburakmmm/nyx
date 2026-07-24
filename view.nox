@@ -1,10 +1,12 @@
-# nyx.view — dosyadan şablon render.
+# nyx.view — şablon render, layout, partial.
 #
-# import nyx.view
-# html: str = nyx.view.render("app/views/home.html", ctx)
+# nyx.view.render("app/views/home.html", ctx)
+# nyx.view.render_with_layout("app/views/layouts/application.html", "app/views/home.html", ctx)
+# nyx.view.partial("app/views/posts/_item.html", ctx)
 
 import nox.fs
 import nox.template
+import nox.strings
 
 class ViewError:
     def __init__(self: ViewError, message: str) -> None:
@@ -21,3 +23,38 @@ def render_unescaped(path: str, context: dict[str, str]) -> str:
         raise ViewError("sablon yok: " + path)
     tmpl: str = nox.fs.read_to_string(path)
     return nox.template.render_unescaped(tmpl, context)
+
+def partial(path: str, context: dict[str, str]) -> str:
+    return render(path, context)
+
+def partial_unescaped(path: str, context: dict[str, str]) -> str:
+    return render_unescaped(path, context)
+
+# Layout içinde `{{ yield }}` — içerik güvenli HTML olarak enjekte edilir
+# (içerik zaten escape edilmiş render çıktısı olmalı).
+def render_with_layout(layout_path: str, view_path: str, context: dict[str, str]) -> str:
+    body: str = render(view_path, context)
+    layout_ctx: dict[str, str] = {}
+    # context anahtarlarını kopyala — dict iterasyonu yok; bilinen anahtarları
+    # çağıranın layout_ctx'e eklemesi gerekir. Bu yüzden body'yi context'e yazıp
+    # layout'u unescaped render ederiz (yield güvenli HTML).
+    # Pratik: context'e "yield" ekle, layout render_unescaped.
+    # Diğer context alanları layout'ta da lazım — flat merge:
+    # context kopyası için raw template'te kullanılan anahtarlar caller'dan gelir.
+    # Çözüm: layout template string'ini al, {{ yield }} yerine body koy, sonra
+    # kalan {{ }} için normal render.
+    if not nox.fs.exists(layout_path):
+        raise ViewError("layout yok: " + layout_path)
+    layout_tmpl: str = nox.fs.read_to_string(layout_path)
+    merged: str = nox.strings.replace(layout_tmpl, "{{ yield }}", body)
+    merged = nox.strings.replace(merged, "{{yield}}", body)
+    return nox.template.render(merged, context)
+
+def render_with_layout_unescaped(layout_path: str, view_path: str, context: dict[str, str]) -> str:
+    body: str = render_unescaped(view_path, context)
+    if not nox.fs.exists(layout_path):
+        raise ViewError("layout yok: " + layout_path)
+    layout_tmpl: str = nox.fs.read_to_string(layout_path)
+    merged: str = nox.strings.replace(layout_tmpl, "{{ yield }}", body)
+    merged = nox.strings.replace(merged, "{{yield}}", body)
+    return nox.template.render_unescaped(merged, context)

@@ -1,0 +1,153 @@
+# nyx.cache — bellek (L1) + SQLite (L2, kalici) yedekli anahtar/deger onbellegi.
+#
+# import nyx.cache
+#
+# c: Cache = nyx.cache.open("tmp/cache.sqlite")
+# nyx.cache.set(c, "home:posts", posts_json, 60)
+# v: str | None = nyx.cache.get(c, "home:posts")
+# nyx.cache.delete(c, "home:posts")
+# nyx.cache.clear(c)
+
+import nox.sqlite
+import nox.time
+from nox.sqlite import Connection, Statement, Row
+import nyx.db
+
+class CacheError:
+    def __init__(self: CacheError, message: str) -> None:
+        self.message = message
+
+class Cache:
+    mem_keys: list[str]
+    mem_vals: list[str]
+    mem_exp: list[int]
+
+    def __init__(self: Cache, db: Connection) -> None:
+        self.db = db
+        self.mem_keys = []
+        self.mem_vals = []
+        self.mem_exp = []
+
+    def _mem_find(self: Cache, key: str) -> int:
+        i: int = 0
+        keys: list[str] = self.mem_keys
+        while i < len(keys):
+            if keys[i] == key:
+                return i
+            i = i + 1
+        return -1
+
+    def _mem_remove_at(self: Cache, idx: int) -> None:
+        keys: list[str] = self.mem_keys
+        vals: list[str] = self.mem_vals
+        exps: list[int] = self.mem_exp
+        new_keys: list[str] = []
+        new_vals: list[str] = []
+        new_exps: list[int] = []
+        i: int = 0
+        while i < len(keys):
+            if i != idx:
+                new_keys.append(keys[i])
+                new_vals.append(vals[i])
+                new_exps.append(exps[i])
+            i = i + 1
+        self.mem_keys = new_keys
+        self.mem_vals = new_vals
+        self.mem_exp = new_exps
+
+    def _mem_set(self: Cache, key: str, value: str, expires_at_ms: int) -> None:
+        idx: int = self._mem_find(key)
+        if idx >= 0:
+            vals: list[str] = self.mem_vals
+            exps: list[int] = self.mem_exp
+            vals[idx] = value
+            exps[idx] = expires_at_ms
+            self.mem_vals = vals
+            self.mem_exp = exps
+        else:
+            keys: list[str] = self.mem_keys
+            vals2: list[str] = self.mem_vals
+            exps2: list[int] = self.mem_exp
+            keys.append(key)
+            vals2.append(value)
+            exps2.append(expires_at_ms)
+            self.mem_keys = keys
+            self.mem_vals = vals2
+            self.mem_exp = exps2
+
+    def _db_delete(self: Cache, key: str) -> None:
+        stmt: Statement = self.db.prepare("DELETE FROM cache_entries WHERE key = ?")
+        stmt.bind_str(0, key)
+        stmt.execute()
+
+    # Once bellekten (L1), yoksa SQLite'tan (L2) okur; SQLite'ta bulunursa
+    # bellege de yazar (warm-up). Suresi gecmis girdiler her iki katmandan
+    # da SESSIZCE silinir ("expire old on get").
+    def get(self: Cache, key: str) -> str | None:
+        now: int = nox.time.now_ms()
+        idx: int = self._mem_find(key)
+        if idx >= 0:
+            exps: list[int] = self.mem_exp
+            exp: int = exps[idx]
+            if exp >= 0 and now >= exp:
+                self._mem_remove_at(idx)
+                self._db_delete(key)
+                return None
+            vals: list[str] = self.mem_vals
+            return vals[idx]
+        stmt: Statement = self.db.prepare("SELECT value, expires_at_ms FROM cache_entries WHERE key = ?")
+        stmt.bind_str(0, key)
+        rows: list[Row] = stmt.query()
+        if len(rows) == 0:
+            return None
+        row: Row = rows[0]
+        value: str = row.get_str(0)
+        exp2: int = row.get_int(1)
+        if exp2 >= 0 and now >= exp2:
+            self._db_delete(key)
+            return None
+        self._mem_set(key, value, exp2)
+        return value
+
+    # `ttl_sec <= 0` ise girdi SUREZ (asla suresi dolmaz). Aksi halde
+    # `expires_at_ms = simdi + ttl_sec*1000`.
+    def set(self: Cache, key: str, value: str, ttl_sec: int) -> None:
+        now: int = nox.time.now_ms()
+        expires_at_ms: int = -1
+        if ttl_sec > 0:
+            expires_at_ms = now + ttl_sec * 1000
+        stmt: Statement = self.db.prepare(
+            "INSERT INTO cache_entries (key, value, expires_at_ms) VALUES (?, ?, ?) " +
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at_ms = excluded.expires_at_ms"
+        )
+        stmt.bind_str(0, key)
+        stmt.bind_str(1, value)
+        stmt.bind_int(2, expires_at_ms)
+        stmt.execute()
+        self._mem_set(key, value, expires_at_ms)
+
+    def delete(self: Cache, key: str) -> None:
+        idx: int = self._mem_find(key)
+        if idx >= 0:
+            self._mem_remove_at(idx)
+        self._db_delete(key)
+
+    def clear(self: Cache) -> None:
+        self.db.execute("DELETE FROM cache_entries")
+        self.mem_keys = []
+        self.mem_vals = []
+        self.mem_exp = []
+
+def _ensure_schema(db: Connection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS cache_entries (" +
+        "key TEXT PRIMARY KEY NOT NULL, " +
+        "value TEXT NOT NULL, " +
+        "expires_at_ms INTEGER NOT NULL" +
+        ")"
+    )
+
+def open(path: str) -> Cache:
+    db: Connection = nyx.db.open(path)
+    _ensure_schema(db)
+    return Cache(db)

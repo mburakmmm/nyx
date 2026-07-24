@@ -1,0 +1,196 @@
+# nyx.runtime — istek-kapsamli (ambient/thread-local benzeri) durum.
+#
+# ONEMLI DIL KISITI: Nox'ta modul-duzeyi (top-level) degiskenler HICBIR
+# fonksiyon/metod govdesinden GORULEMEZ (yalnizca ust-duzey script
+# ifadelerinden erisilebilirler) — bu yuzden GERCEK bir surec-capinda
+# "su anki istek" durumu burada nox.os.set_var/nox.os.getenv (PROSES ORTAM
+# DEGISKENLERI, gercek bir global depo) UZERINDEN saklanir. `nox.router`in
+# `Context`i de calisma zamaninda yeni alan KAZANAMADIGINDAN (bkz. nyx
+# dil kisitlari), session/current_user'i tasimanin BASKA pratik bir yolu
+# yoktur. Bu tasarim, nyx.app.dispatch'in TEK bir istegi UCTAN UCA senkron
+# isledigi (thread/fiber arasi PAYLASIM olmadigi) varsayimina dayanir.
+#
+# `current()` artik BIR SNAPSHOT (o anki degerlerin KOPYASI) doner —
+# donen `RequestBag` nesnesinin alanlarini DOGRUDAN degistirmek ARTIK
+# KALICI DEGILDIR (env degiskenlerine geri YAZILMAZ). Durumu degistirmek
+# icin bu modulun `set_*`/`load_*`/`touch_*` fonksiyonlarini kullanin.
+
+import nox.os
+from nox.os import OsError
+import nyx.flash
+
+class RequestBag:
+    def __init__(
+        self: RequestBag,
+        session_json: str,
+        session_dirty: bool,
+        has_session: bool,
+        user_id: str,
+        user_payload: str,
+        has_user: bool,
+        locale: str,
+        request_id: str,
+        started_ms: int
+    ) -> None:
+        self.session_json = session_json
+        self.session_dirty = session_dirty
+        self.has_session = has_session
+        self.user_id = user_id
+        self.user_payload = user_payload
+        self.has_user = has_user
+        self.locale = locale
+        self.request_id = request_id
+        self.started_ms = started_ms
+
+class RuntimeError:
+    def __init__(self: RuntimeError, message: str) -> None:
+        self.message = message
+
+def _key(name: str) -> str:
+    return "NYX_RT_" + name
+
+def _get(name: str, default: str) -> str:
+    try:
+        return nox.os.getenv(_key(name))
+    except OsError:
+        return default
+
+def _put(name: str, value: str) -> None:
+    nox.os.set_var(_key(name), value)
+
+def _get_bool(name: str, default: bool) -> bool:
+    raw: str = _get(name, "")
+    if len(raw) == 0:
+        return default
+    return raw == "1"
+
+def _put_bool(name: str, value: bool) -> None:
+    if value:
+        _put(name, "1")
+    else:
+        _put(name, "0")
+
+def _get_int(name: str, default: int) -> int:
+    raw: str = _get(name, "")
+    if len(raw) == 0:
+        return default
+    return int(raw)
+
+def is_active() -> bool:
+    return _get_bool("ACTIVE", False)
+
+# TUM istek durumunu varsayilanlara doner (aktif DEGIL).
+def reset() -> None:
+    _put_bool("ACTIVE", False)
+    _put("SESSION_JSON", "{}")
+    _put_bool("SESSION_DIRTY", False)
+    _put_bool("HAS_SESSION", False)
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+    _put("LOCALE", "")
+    _put("REQUEST_ID", "")
+    _put("STARTED_MS", "0")
+
+# Yeni bir istek icin durumu baslatir (nyx.app.dispatch tarafindan HER
+# istegin basinda cagrilir).
+def begin(request_id: str, started_ms: int, locale: str) -> RequestBag:
+    _put_bool("ACTIVE", True)
+    _put("SESSION_JSON", "{}")
+    _put_bool("SESSION_DIRTY", False)
+    _put_bool("HAS_SESSION", False)
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+    _put("LOCALE", locale)
+    _put("REQUEST_ID", request_id)
+    _put("STARTED_MS", str(started_ms))
+    return current()
+
+def end() -> None:
+    reset()
+
+# `begin()` HIC CAGRILMAMISSA (ör. bir middleware'i `nyx.app.dispatch`
+# DISINDA, dogrudan bir birim testinde cagirirken) BILE cokmemek icin
+# durumu SESSIZCE baslatir — eski davranis (RuntimeError firlatmak)
+# gereksiz KIRILGANDI.
+def current() -> RequestBag:
+    if not is_active():
+        _put_bool("ACTIVE", True)
+    return RequestBag(
+        _get("SESSION_JSON", "{}"),
+        _get_bool("SESSION_DIRTY", False),
+        _get_bool("HAS_SESSION", False),
+        _get("USER_ID", ""),
+        _get("USER_PAYLOAD", ""),
+        _get_bool("HAS_USER", False),
+        _get("LOCALE", ""),
+        _get("REQUEST_ID", ""),
+        _get_int("STARTED_MS", 0)
+    )
+
+# `nyx.app`in cookie'den YUKLEDIGI oturum verisini isaretler — kullanicinin
+# KENDI degisikligi OLMADIGINDAN `session_dirty` DOKUNULMAZ (Set-Cookie
+# gereksiz yere yeniden yazilmasin).
+def load_session(data_json: str) -> None:
+    _put("SESSION_JSON", data_json)
+    _put_bool("HAS_SESSION", True)
+
+def set_session(data_json: str) -> None:
+    _put("SESSION_JSON", data_json)
+    _put_bool("HAS_SESSION", True)
+    _put_bool("SESSION_DIRTY", True)
+
+def session_json() -> str:
+    return _get("SESSION_JSON", "{}")
+
+def has_session() -> bool:
+    return _get_bool("HAS_SESSION", False)
+
+def is_session_dirty() -> bool:
+    return _get_bool("SESSION_DIRTY", False)
+
+def touch_session() -> None:
+    _put_bool("SESSION_DIRTY", True)
+
+def set_user(user_id: str, payload_json: str) -> None:
+    _put("USER_ID", user_id)
+    _put("USER_PAYLOAD", payload_json)
+    _put_bool("HAS_USER", True)
+
+def clear_user() -> None:
+    _put("USER_ID", "")
+    _put("USER_PAYLOAD", "")
+    _put_bool("HAS_USER", False)
+
+def current_user_id() -> str:
+    return _get("USER_ID", "")
+
+def current_user_payload() -> str:
+    return _get("USER_PAYLOAD", "")
+
+def signed_in() -> bool:
+    return _get_bool("HAS_USER", False)
+
+def request_id() -> str:
+    return _get("REQUEST_ID", "")
+
+def started_ms() -> int:
+    return _get_int("STARTED_MS", 0)
+
+def locale() -> str:
+    return _get("LOCALE", "")
+
+def flash_set(key: str, message: str) -> None:
+    updated: str = nyx.flash.set(session_json(), key, message)
+    _put("SESSION_JSON", updated)
+    _put_bool("HAS_SESSION", True)
+    _put_bool("SESSION_DIRTY", True)
+
+def flash_get(key: str) -> str | None:
+    return nyx.flash.get(session_json(), key)
+
+def flash_clear(key: str) -> None:
+    updated: str = nyx.flash.clear(session_json(), key)
+    _put("SESSION_JSON", updated)
+    _put_bool("SESSION_DIRTY", True)

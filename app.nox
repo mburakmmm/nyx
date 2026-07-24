@@ -1,0 +1,194 @@
+# nyx.app — Application boot, paylaşılan DB, istek yaşam döngüsü.
+#
+# cfg: Config = nyx.config.load()
+# app: Application = nyx.app.boot(cfg, build_router)
+# def handle(req: HttpRequest) -> HttpResponse:
+#     return nyx.app.dispatch(app, req)
+# nyx.app.serve(app)
+#
+# NOT: Nox'ta modul-duzeyi degiskenler fonksiyon govdelerinden GORULEMEZ
+# (bkz. nyx.runtime'in belge notu) — bu yuzden `Application` burada bir
+# modul-duzeyi "holder" SINGLETON'INDA DEGIL, `boot()`in dondurdugu ve
+# cagiranin (uygulamanin `main.nox`inin) ACIKCA tasidigi bir DEGER olarak
+# yasar. `serve(app)` bu degeri BIR KAPANIS (closure) PARAMETRESI olarak
+# `nox.http.serve`e gecirir (kapanislar KENDI parametrelerini/yerel
+# degiskenlerini goebilir — modul-duzeyi globaller DEGIL, bu YUZDEN calisir).
+
+import nox.http
+import nox.log
+import nox.time
+import nox.uuid
+import nox.strings
+import nox.fs
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Router, Context
+from nox.sqlite import Connection
+import nyx.config
+import nyx.db
+import nyx.runtime
+import nyx.session
+import nyx.cookie
+import nyx.csrf
+import nyx.response
+import nyx.security
+from nyx.config import Config
+from nyx.runtime import RequestBag
+from nyx.cookie import CookieError
+from nyx.db import DbError
+
+class AppError:
+    def __init__(self: AppError, message: str) -> None:
+        self.message = message
+
+class Application:
+    def __init__(
+        self: Application,
+        config: Config,
+        db: Connection,
+        router: Router
+    ) -> None:
+        self.config = config
+        self.db = db
+        self.router = router
+
+def db(application: Application) -> Connection:
+    return application.db
+
+def config(application: Application) -> Config:
+    return application.config
+
+# Config'i dogrular, DB'yi acar, migration'lari calistirir, `router_builder`i
+# cagirip framework ara katmanlarini takar. Donen `Application`i cagiran
+# (main.nox) tasimalidir — `nyx.app.dispatch`/`nyx.app.serve`e ACIKCA
+# gecirilir (bkz. modul basindaki not).
+def boot(cfg: Config, router_builder: (Application) -> Router) -> Application:
+    if len(cfg.secret_key) < 16:
+        raise AppError("secret_key en az 16 karakter olmali")
+    if cfg.is_production() and len(cfg.secret_key) < 32:
+        raise AppError("production secret_key en az 32 karakter olmali")
+    conn: Connection = nyx.db.open(cfg.db_path)
+    if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
+        try:
+            nyx.db.migrate(conn, cfg.migrate_path)
+        except DbError:
+            raise AppError("migration basarisiz: " + cfg.migrate_path)
+    else:
+        if cfg.is_production():
+            raise AppError("migration dizini yok: " + cfg.migrate_path)
+    application: Application = Application(cfg, conn, Router())
+    application.router = router_builder(application)
+    _install_framework_middleware(application)
+    return application
+
+def _install_framework_middleware(application: Application) -> None:
+    cfg: Config = application.config
+    router: Router = application.router
+    router.use_before(_session_before(cfg))
+    if cfg.csrf_enabled:
+        router.use_before(nyx.csrf.protect(cfg.secret_key))
+    router.use_after(_session_after(cfg))
+    router.use_after(nyx.security.headers_after(cfg))
+    if cfg.log_requests:
+        router.use_after(_log_after())
+
+def _header_get(headers: dict[str, str], name: str) -> str | None:
+    try:
+        return headers[name]
+    except KeyError:
+        a: int = 0
+    lower: str = nox.strings.lower(name)
+    try:
+        return headers[lower]
+    except KeyError:
+        b: int = 0
+    if lower == "cookie":
+        try:
+            return headers["Cookie"]
+        except KeyError:
+            c: int = 0
+        try:
+            return headers["cookie"]
+        except KeyError:
+            d: int = 0
+    return None
+
+def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        raw: str | None = _header_get(ctx.request.headers, "Cookie")
+        if raw == None:
+            nyx.runtime.load_session("{}")
+            return None
+        try:
+            cookies: dict[str, str] = nyx.cookie.parse(raw)
+            val: str = cookies[cfg.session_cookie]
+            data: str | None = nyx.session.load(cfg.secret_key, val)
+            if data == None:
+                nyx.runtime.load_session("{}")
+            else:
+                nyx.runtime.load_session(data)
+            return None
+        except KeyError:
+            nyx.runtime.load_session("{}")
+            return None
+        except CookieError:
+            nyx.runtime.load_session("{}")
+            return None
+    return handler
+
+def _session_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        if not nyx.runtime.is_session_dirty():
+            return resp
+        token: str = nyx.session.create(cfg.secret_key, nyx.runtime.session_json(), cfg.session_max_age)
+        set_cookie: str = nyx.cookie.serialize(
+            cfg.session_cookie,
+            token,
+            "/",
+            cfg.session_max_age,
+            True,
+            "Lax",
+            cfg.secure_cookies
+        )
+        return nyx.response.with_header(resp, "Set-Cookie", set_cookie)
+    return handler
+
+def _log_after() -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        elapsed: int = nox.time.now_ms() - nyx.runtime.started_ms()
+        nox.log.info(
+            ctx.request.method + " " + ctx.request.target + " -> " + str(resp.status) + " " + str(elapsed) + "ms id=" + nyx.runtime.request_id()
+        )
+        return resp
+    return handler
+
+def _strip_query(target: str) -> str:
+    q: int = nox.strings.index_of(target, "?")
+    if q < 0:
+        return target
+    out: str = ""
+    i: int = 0
+    while i < q:
+        out = out + target[i]
+        i = i + 1
+    return out
+
+def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
+    cfg: Config = application.config
+    rid: str = nox.uuid.uuid4()
+    nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
+    path: str = _strip_query(req.target)
+    routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
+    try:
+        return application.router.dispatch(routed)
+    finally:
+        nyx.runtime.end()
+
+def _make_serve_handler(application: Application) -> (HttpRequest) -> HttpResponse:
+    def handler(req: HttpRequest) -> HttpResponse:
+        return dispatch(application, req)
+    return handler
+
+def serve(application: Application) -> None:
+    port: int = application.config.port
+    nox.log.info("nyx listening on :" + str(port) + " env=" + application.config.env)
+    nox.http.serve(port, _make_serve_handler(application))

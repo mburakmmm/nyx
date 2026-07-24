@@ -1,0 +1,175 @@
+# nyx.cable — SSE (Server-Sent Events) + long-poll tabanli gercek-zamanli
+# yayin. Nox stdlib'de WebSocket/soket-duzeyi push YOKTUR — bu yuzden her
+# "canal" (channel) bellekte SINIRLI sayida mesaj tutan bir tampon (buffer)
+# olarak modellenir; istemci ya `sse_response` ile o ana kadar biriken
+# olaylari tek bir HTTP yanitinda (text/event-stream govdesi) alir ya da
+# `stream_poll` ile duzenli araliklarla `since_id`den sonrasini JSON olarak
+# sorgular (long-poll fallback). Gercek, kalici cift-yonlu bir soket
+# baglantisi HTTP katmani SINIRLARI icinde saglanamaz.
+#
+# import nyx.cable
+#
+# hub: Hub = Hub()
+# since: str = nyx.cable.subscribe(hub, "room:1")
+# nyx.cable.broadcast(hub, "room:1", "message", "{\"text\":\"selam\"}")
+# return nyx.cable.sse_response_for(hub, "room:1", int(since))
+
+import nox.json
+import nox.time
+from nox.http import HttpResponse
+
+class CableError:
+    def __init__(self: CableError, message: str) -> None:
+        self.message = message
+
+class Message:
+    def __init__(self: Message, id: int, event: str, data_json: str, ts_ms: int) -> None:
+        self.id = id
+        self.event = event
+        self.data_json = data_json
+        self.ts_ms = ts_ms
+
+class ChannelBuf:
+    messages: list[Message]
+
+    def __init__(self: ChannelBuf, name: str) -> None:
+        self.name = name
+        self.messages = []
+        self.next_id = 1
+
+def default_capacity() -> int:
+    return 200
+
+class Hub:
+    channels: list[ChannelBuf]
+
+    def __init__(self: Hub) -> None:
+        self.channels = []
+        self.capacity = default_capacity()
+
+def _find_channel_idx(hub: Hub, name: str) -> int:
+    i: int = 0
+    channels: list[ChannelBuf] = hub.channels
+    while i < len(channels):
+        if channels[i].name == name:
+            return i
+        i = i + 1
+    return -1
+
+def _get_or_create(hub: Hub, name: str) -> int:
+    idx: int = _find_channel_idx(hub, name)
+    if idx >= 0:
+        return idx
+    buf: ChannelBuf = ChannelBuf(name)
+    channels: list[ChannelBuf] = hub.channels
+    channels.append(buf)
+    hub.channels = channels
+    return len(channels) - 1
+
+# `channel`i (yoksa OLUSTURARAK) kaydeder ve o ANKI son mesaj kimligini
+# metin olarak doner — cagiran taraf bunu ilk `stream_poll`/`sse_response_for`
+# cagrisinda `since_id` olarak kullanip yalnizca ABONELIKTEN SONRAKI
+# olaylari alir.
+def subscribe(hub: Hub, channel: str) -> str:
+    idx: int = _get_or_create(hub, channel)
+    buf: ChannelBuf = hub.channels[idx]
+    return str(buf.next_id - 1)
+
+def _cap(msgs: list[Message], capacity: int) -> list[Message]:
+    if len(msgs) <= capacity:
+        return msgs
+    out: list[Message] = []
+    start: int = len(msgs) - capacity
+    i: int = start
+    while i < len(msgs):
+        out.append(msgs[i])
+        i = i + 1
+    return out
+
+# `channel`e yeni bir olay yayinlar, atanan mesaj kimligini (id) doner.
+def broadcast(hub: Hub, channel: str, event: str, data_json: str) -> int:
+    idx: int = _get_or_create(hub, channel)
+    buf: ChannelBuf = hub.channels[idx]
+    id: int = buf.next_id
+    buf.next_id = id + 1
+    msgs: list[Message] = buf.messages
+    msgs.append(Message(id, event, data_json, nox.time.now_ms()))
+    buf.messages = _cap(msgs, hub.capacity)
+    channels: list[ChannelBuf] = hub.channels
+    channels[idx] = buf
+    hub.channels = channels
+    return id
+
+def last_event_id(hub: Hub, channel: str) -> int:
+    idx: int = _find_channel_idx(hub, channel)
+    if idx < 0:
+        return 0
+    return hub.channels[idx].next_id - 1
+
+def _messages_since(hub: Hub, channel: str, since_id: int) -> list[Message]:
+    idx: int = _find_channel_idx(hub, channel)
+    if idx < 0:
+        return []
+    buf: ChannelBuf = hub.channels[idx]
+    out: list[Message] = []
+    msgs: list[Message] = buf.messages
+    i: int = 0
+    while i < len(msgs):
+        if msgs[i].id > since_id:
+            out.append(msgs[i])
+        i = i + 1
+    return out
+
+def _sse_format(events: list[Message]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(events):
+        e: Message = events[i]
+        out = out + "id: " + str(e.id) + "\n"
+        out = out + "event: " + e.event + "\n"
+        out = out + "data: " + e.data_json + "\n\n"
+        i = i + 1
+    return out
+
+# Verilen olay listesini `text/event-stream` govdeli bir HTTP yanitina
+# cevirir. Uzun-omurlu, kalici bir baglanti DEGILDIR — istemci tarayicisi
+# EventSource API'siyle bu ucu periyodik olarak yeniden acabilir (tarayici
+# `Last-Event-ID` basligini otomatik gonderir).
+def sse_response(events: list[Message]) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    headers["Cache-Control"] = "no-cache"
+    headers["Connection"] = "keep-alive"
+    headers["X-Accel-Buffering"] = "no"
+    return HttpResponse(200, _sse_format(events), headers)
+
+def sse_response_for(hub: Hub, channel: str, since_id: int) -> HttpResponse:
+    return sse_response(_messages_since(hub, channel, since_id))
+
+def _message_json(m: Message) -> str:
+    return (
+        "{\"id\":" + str(m.id) +
+        ",\"event\":" + nox.json.encode_string(m.event) +
+        ",\"data\":" + m.data_json +
+        ",\"ts_ms\":" + str(m.ts_ms) + "}"
+    )
+
+# Long-poll fallback: `since_id`den SONRAKI olaylari duz bir JSON govdesi
+# olarak doner — istemci bu govdedeki en yuksek `id`yi bir SONRAKI
+# `stream_poll` cagrisinda `since_id` olarak kullanir.
+def stream_poll(hub: Hub, channel: str, since_id: int) -> str:
+    events: list[Message] = _messages_since(hub, channel, since_id)
+    out: str = "{\"channel\":" + nox.json.encode_string(channel) + ",\"events\":["
+    i: int = 0
+    while i < len(events):
+        if i > 0:
+            out = out + ","
+        out = out + _message_json(events[i])
+        i = i + 1
+    out = out + "]}"
+    return out
+
+def stream_poll_response(hub: Hub, channel: str, since_id: int) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/json; charset=utf-8"
+    return HttpResponse(200, stream_poll(hub, channel, since_id), headers)

@@ -1,0 +1,160 @@
+# nyx.config — ortam (development/test/production) + uygulama ayarları.
+#
+# import nyx.config
+# cfg: Config = nyx.config.load()
+# cfg: Config = nyx.config.from_env()
+
+import nox.os
+from nox.os import OsError
+
+class ConfigError:
+    def __init__(self: ConfigError, message: str) -> None:
+        self.message = message
+
+class Config:
+    def __init__(
+        self: Config,
+        env: str,
+        secret_key: str,
+        db_path: str,
+        migrate_path: str,
+        host: str,
+        port: int,
+        session_cookie: str,
+        session_max_age: int,
+        csrf_enabled: bool,
+        secure_cookies: bool,
+        log_requests: bool,
+        locale: str,
+        locales_path: str,
+        cache_path: str,
+        storage_path: str,
+        mail_delivery: str,
+        mail_from: str,
+        mail_api_url: str,
+        mail_api_key: str,
+        jobs_db_path: str
+    ) -> None:
+        self.env = env
+        self.secret_key = secret_key
+        self.db_path = db_path
+        self.migrate_path = migrate_path
+        self.host = host
+        self.port = port
+        self.session_cookie = session_cookie
+        self.session_max_age = session_max_age
+        self.csrf_enabled = csrf_enabled
+        self.secure_cookies = secure_cookies
+        self.log_requests = log_requests
+        self.locale = locale
+        self.locales_path = locales_path
+        self.cache_path = cache_path
+        self.storage_path = storage_path
+        self.mail_delivery = mail_delivery
+        self.mail_from = mail_from
+        self.mail_api_url = mail_api_url
+        self.mail_api_key = mail_api_key
+        self.jobs_db_path = jobs_db_path
+
+    def is_development(self: Config) -> bool:
+        return self.env == "development"
+
+    def is_test(self: Config) -> bool:
+        return self.env == "test"
+
+    def is_production(self: Config) -> bool:
+        return self.env == "production"
+
+def _env_or(name: str, default: str) -> str:
+    try:
+        return nox.os.getenv(name)
+    except OsError:
+        return default
+
+def _env_int(name: str, default: int) -> int:
+    raw: str = _env_or(name, "")
+    if len(raw) == 0:
+        return default
+    return int(raw)
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw: str = _env_or(name, "")
+    if len(raw) == 0:
+        return default
+    if raw == "1" or raw == "true" or raw == "TRUE" or raw == "yes" or raw == "on":
+        return True
+    if raw == "0" or raw == "false" or raw == "FALSE" or raw == "no" or raw == "off":
+        return False
+    return default
+
+def _validate_env(env: str) -> None:
+    if env != "development" and env != "test" and env != "production":
+        raise ConfigError("gecersiz NYX_ENV: " + env + " (development|test|production)")
+
+def defaults(env: str) -> Config:
+    _validate_env(env)
+    secret: str = "nyx-dev-secret-change-me-32bytes!!"
+    secure: bool = False
+    csrf: bool = True
+    log_req: bool = True
+    db: str = "db/app.sqlite"
+    if env == "test":
+        secret = "nyx-test-secret-change-me-32bytes!"
+        db = ":memory:"
+        log_req = False
+    if env == "production":
+        secret = ""
+        secure = True
+        log_req = True
+    return Config(
+        env,
+        secret,
+        db,
+        "db/migrate",
+        "0.0.0.0",
+        8080,
+        "nyx_session",
+        86400 * 7,
+        csrf,
+        secure,
+        log_req,
+        "tr",
+        "config/locales",
+        "tmp/cache.sqlite",
+        "storage",
+        "file",
+        "noreply@example.com",
+        "",
+        "",
+        "db/jobs.sqlite"
+    )
+
+def from_env() -> Config:
+    env: str = _env_or("NYX_ENV", "development")
+    cfg: Config = defaults(env)
+    secret: str = _env_or("NYX_SECRET_KEY", cfg.secret_key)
+    if cfg.is_production() and len(secret) < 32:
+        raise ConfigError("production icin NYX_SECRET_KEY en az 32 karakter olmali")
+    cfg.secret_key = secret
+    cfg.db_path = _env_or("NYX_DB_PATH", cfg.db_path)
+    cfg.migrate_path = _env_or("NYX_MIGRATE_PATH", cfg.migrate_path)
+    cfg.host = _env_or("NYX_HOST", cfg.host)
+    cfg.port = _env_int("NYX_PORT", cfg.port)
+    cfg.session_cookie = _env_or("NYX_SESSION_COOKIE", cfg.session_cookie)
+    cfg.session_max_age = _env_int("NYX_SESSION_MAX_AGE", cfg.session_max_age)
+    cfg.csrf_enabled = _env_bool("NYX_CSRF", cfg.csrf_enabled)
+    cfg.secure_cookies = _env_bool("NYX_SECURE_COOKIES", cfg.secure_cookies)
+    cfg.log_requests = _env_bool("NYX_LOG_REQUESTS", cfg.log_requests)
+    cfg.locale = _env_or("NYX_LOCALE", cfg.locale)
+    cfg.locales_path = _env_or("NYX_LOCALES_PATH", cfg.locales_path)
+    cfg.cache_path = _env_or("NYX_CACHE_PATH", cfg.cache_path)
+    cfg.storage_path = _env_or("NYX_STORAGE_PATH", cfg.storage_path)
+    cfg.mail_delivery = _env_or("NYX_MAIL_DELIVERY", cfg.mail_delivery)
+    cfg.mail_from = _env_or("NYX_MAIL_FROM", cfg.mail_from)
+    cfg.mail_api_url = _env_or("NYX_MAIL_API_URL", cfg.mail_api_url)
+    cfg.mail_api_key = _env_or("NYX_MAIL_API_KEY", cfg.mail_api_key)
+    cfg.jobs_db_path = _env_or("NYX_JOBS_DB_PATH", cfg.jobs_db_path)
+    return cfg
+
+def load() -> Config:
+    return from_env()

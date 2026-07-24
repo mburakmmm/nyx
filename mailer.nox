@@ -1,0 +1,133 @@
+# nyx.mailer — ActionMailer-benzeri e-posta gonderimi.
+#
+# import nyx.mailer
+#
+# mail: Mail = nyx.mailer.new_mail("a@b.c", cfg.mail_from, "Merhaba", "govde metni")
+# nyx.mailer.deliver(cfg, mail)
+#
+# Teslimat yontemleri (Config.mail_delivery):
+#   "file" — tmp/mail/ altina bir .eml dosyasi yazar (gelistirme/test icin).
+#   "http" — Config.mail_api_url adresine Bearer Config.mail_api_key ile
+#            JSON govdeli bir POST yapar (SendGrid/Postmark/Mailgun benzeri
+#            HTTP API saglayicilariyla uyumlu, gercek sunucu TLS/SMTP soketi
+#            gerektirmez).
+# Ikisi de GERCEK G/C yapar — mock yoktur.
+
+import nox.fs
+import nox.path
+import nox.time
+import nox.uuid
+import nox.http
+import nox.json
+import nox.strings
+from nox.http import HttpResponse, HttpError
+from nyx.config import Config
+
+class MailerError:
+    def __init__(self: MailerError, message: str) -> None:
+        self.message = message
+
+class Mail:
+    def __init__(self: Mail, to: str, from_addr: str, subject: str, body: str, html_body: str) -> None:
+        self.to = to
+        self.from_addr = from_addr
+        self.subject = subject
+        self.body = body
+        self.html_body = html_body
+
+def new_mail(to: str, from_addr: str, subject: str, body: str) -> Mail:
+    return Mail(to, from_addr, subject, body, "")
+
+def new_html_mail(to: str, from_addr: str, subject: str, body: str, html_body: str) -> Mail:
+    return Mail(to, from_addr, subject, body, html_body)
+
+def _validate(mail: Mail) -> None:
+    if len(mail.to) == 0:
+        raise MailerError("alici (to) bos olamaz")
+    if not nox.strings.contains(mail.to, "@"):
+        raise MailerError("gecersiz alici adresi: " + mail.to)
+    if len(mail.from_addr) == 0:
+        raise MailerError("gonderen (from) bos olamaz")
+    if len(mail.subject) == 0:
+        raise MailerError("konu (subject) bos olamaz")
+
+def _ensure_dir(path: str) -> None:
+    if len(path) == 0 or path == ".":
+        return
+    if nox.fs.exists(path):
+        return
+    parent: str = nox.path.dirname(path)
+    if parent != path and len(parent) > 0:
+        _ensure_dir(parent)
+    if not nox.fs.exists(path):
+        nox.fs.create_dir(path)
+
+def _boundary() -> str:
+    return "==NyxBoundary_" + nox.uuid.uuid4()
+
+# RFC 2822'ye yakin, basit bir .eml govdesi uretir. `html_body` bossa duz
+# metin, doluysa `multipart/alternative` uretilir.
+def to_eml(mail: Mail) -> str:
+    header: str = (
+        "From: " + mail.from_addr + "\r\n" +
+        "To: " + mail.to + "\r\n" +
+        "Subject: " + mail.subject + "\r\n" +
+        "MIME-Version: 1.0\r\n"
+    )
+    if len(mail.html_body) == 0:
+        return header + "Content-Type: text/plain; charset=utf-8\r\n\r\n" + mail.body + "\r\n"
+    boundary: str = _boundary()
+    out: str = header + "Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n"
+    out = out + "--" + boundary + "\r\n"
+    out = out + "Content-Type: text/plain; charset=utf-8\r\n\r\n"
+    out = out + mail.body + "\r\n\r\n"
+    out = out + "--" + boundary + "\r\n"
+    out = out + "Content-Type: text/html; charset=utf-8\r\n\r\n"
+    out = out + mail.html_body + "\r\n\r\n"
+    out = out + "--" + boundary + "--\r\n"
+    return out
+
+def _deliver_file(mail: Mail) -> None:
+    dir_path: str = "tmp/mail"
+    _ensure_dir(dir_path)
+    filename: str = str(nox.time.now_ms()) + "_" + nox.uuid.uuid4() + ".eml"
+    full: str = nox.path.join(dir_path, filename)
+    nox.fs.write_string(full, to_eml(mail))
+
+def _mail_json(cfg: Config, mail: Mail) -> str:
+    out: str = "{"
+    out = out + "\"to\":" + nox.json.encode_string(mail.to) + ","
+    out = out + "\"from\":" + nox.json.encode_string(mail.from_addr) + ","
+    out = out + "\"subject\":" + nox.json.encode_string(mail.subject) + ","
+    out = out + "\"text\":" + nox.json.encode_string(mail.body)
+    if len(mail.html_body) > 0:
+        out = out + ",\"html\":" + nox.json.encode_string(mail.html_body)
+    out = out + "}"
+    return out
+
+def _deliver_http(cfg: Config, mail: Mail) -> None:
+    if len(cfg.mail_api_url) == 0:
+        raise MailerError("mail_api_url yapilandirilmamis")
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/json; charset=utf-8"
+    if len(cfg.mail_api_key) > 0:
+        headers["Authorization"] = "Bearer " + cfg.mail_api_key
+    body: str = _mail_json(cfg, mail)
+    try:
+        resp: HttpResponse = nox.http.post(cfg.mail_api_url, body, headers)
+        if resp.status < 200 or resp.status >= 300:
+            raise MailerError("mail API hata dondu: " + str(resp.status) + " " + resp.body)
+    except HttpError:
+        raise MailerError("mail API istegi basarisiz: " + cfg.mail_api_url)
+
+# Yapilandirilmis teslimat yontemine (Config.mail_delivery) gore postayi
+# gonderir. `from_addr`/`to` bossa veya konu eksikse MailerError firlatir.
+def deliver(cfg: Config, mail: Mail) -> None:
+    _validate(mail)
+    if cfg.mail_delivery == "file":
+        _deliver_file(mail)
+        return
+    if cfg.mail_delivery == "http":
+        _deliver_http(cfg, mail)
+        return
+    raise MailerError("desteklenmeyen mail_delivery: " + cfg.mail_delivery)

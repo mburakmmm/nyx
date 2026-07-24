@@ -4,16 +4,48 @@
 # return nyx.ctrl.redirect("/posts")
 # return nyx.ctrl.html(200, body)
 # return nyx.ctrl.render(200, "app/views/x.html", ctx)
+# return nyx.ctrl.redirect_back(ctx, "/")
 
+import nox.strings
+import nox.json
 from nox.http import HttpResponse
+from nox.router import Context
 import nyx.response
 import nyx.view
 
 def redirect(location: str) -> HttpResponse:
     return nyx.response.redirect(location, 302)
 
-def redirect_back(fallback: str) -> HttpResponse:
-    return redirect(fallback)
+def _header_get(headers: dict[str, str], name: str) -> str | None:
+    try:
+        return headers[name]
+    except KeyError:
+        a: int = 0
+    lower: str = nox.strings.lower(name)
+    try:
+        return headers[lower]
+    except KeyError:
+        b: int = 0
+    if lower == "referer":
+        try:
+            return headers["Referer"]
+        except KeyError:
+            c: int = 0
+    return None
+
+# Istegin `Referer` basligina (varsa) yonlendirir, yoksa `fallback`e.
+def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
+    referer: str | None = _header_get(ctx.request.headers, "Referer")
+    if referer == None or len(referer) == 0:
+        return redirect(fallback)
+    return redirect(referer)
+
+# `Context` olmadan, dogrudan bir `Referer` metniyle cagirmak isteyenler
+# icin (ör. baska bir middleware'den gelen deger).
+def redirect_back_to(referer: str, fallback: str) -> HttpResponse:
+    if len(referer) == 0:
+        return redirect(fallback)
+    return redirect(referer)
 
 def html(status: int, body: str) -> HttpResponse:
     headers: dict[str, str] = {}
@@ -30,8 +62,31 @@ def render(status: int, path: str, context: dict[str, str]) -> HttpResponse:
     body: str = nyx.view.render(path, context)
     return html(status, body)
 
+# Layout icinde `{{ yield }}` konumuna `view`in render edilmis govdesini
+# yerlestirip tek bir HTML yaniti doner (bkz. nyx.view.render_with_layout).
+def render_layout(status: int, layout: str, view: str, context: dict[str, str]) -> HttpResponse:
+    body: str = nyx.view.render_with_layout(layout, view, context)
+    return html(status, body)
+
 def not_found() -> HttpResponse:
     return html(404, "<h1>Not Found</h1>")
 
 def forbidden() -> HttpResponse:
     return html(403, "<h1>Forbidden</h1>")
+
+def unprocessable() -> HttpResponse:
+    return html(422, "<h1>Unprocessable Entity</h1>")
+
+# `nyx.model.validate_required` gibi fonksiyonlardan gelen hata mesaji
+# listesini `{"errors":[...]}` JSON govdeli 422 yaniti olarak doner
+# (JSON API controller'lari icin).
+def unprocessable_json(errors: list[str]) -> HttpResponse:
+    body: str = "{\"errors\":["
+    i: int = 0
+    while i < len(errors):
+        if i > 0:
+            body = body + ","
+        body = body + nox.json.encode_string(errors[i])
+        i = i + 1
+    body = body + "]}"
+    return json(422, body)

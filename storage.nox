@@ -1,0 +1,109 @@
+# nyx.storage — ActiveStorage-benzeri yerel disk depolama.
+#
+# import nyx.storage
+#
+# key: str = nyx.storage.store("storage", "avatar.png", content)
+# content2: str = nyx.storage.read("storage", key)
+# url: str = nyx.storage.url_path(key)
+# nyx.storage.delete("storage", key)
+
+import nox.fs
+import nox.path
+import nox.uuid
+import nox.crypto
+import nox.time
+import nox.json
+
+class StorageError:
+    def __init__(self: StorageError, message: str) -> None:
+        self.message = message
+
+def _ensure_dir(path: str) -> None:
+    if len(path) == 0 or path == ".":
+        return
+    if nox.fs.exists(path):
+        return
+    parent: str = nox.path.dirname(path)
+    if parent != path and len(parent) > 0:
+        _ensure_dir(parent)
+    if not nox.fs.exists(path):
+        nox.fs.create_dir(path)
+
+# Yol gezinme (path traversal) korumasi: cagiran `filename` icinde `../`
+# geciriyor olsa bile yalnizca son bilesen (basename) kullanilir.
+def _sanitize_filename(filename: str) -> str:
+    return nox.path.basename(filename)
+
+def _meta_path(content_path: str) -> str:
+    return content_path + ".meta.json"
+
+# `content_str`i `root` altinda RASTGELE (uuid4) bir alt dizine yazar ve
+# opak bir `key` ("<uuid>/<dosya_adi>") doner. Yaninda sha256 checksum +
+# boyut + olusturulma zamanini iceren bir `.meta.json` sidecar dosyasi
+# tutulur (ActiveStorage'daki `blobs` tablosunun disk-tabanli esdegeri).
+def store(root: str, filename: str, content_str: str) -> str:
+    if len(filename) == 0:
+        raise StorageError("dosya adi bos olamaz")
+    safe_name: str = _sanitize_filename(filename)
+    if len(safe_name) == 0:
+        raise StorageError("gecersiz dosya adi: " + filename)
+    key: str = nox.uuid.uuid4() + "/" + safe_name
+    full: str = nox.path.join(root, key)
+    dir_part: str = nox.path.dirname(full)
+    _ensure_dir(dir_part)
+    nox.fs.write_string(full, content_str)
+    checksum: str = nox.crypto.sha256(content_str)
+    meta: str = (
+        "{\"key\":" + nox.json.encode_string(key) +
+        ",\"filename\":" + nox.json.encode_string(safe_name) +
+        ",\"checksum\":" + nox.json.encode_string(checksum) +
+        ",\"size\":" + str(len(content_str)) +
+        ",\"created_at_ms\":" + str(nox.time.now_ms()) + "}"
+    )
+    nox.fs.write_string(_meta_path(full), meta)
+    return key
+
+def path_for(root: str, key: str) -> str:
+    return nox.path.join(root, key)
+
+def read(root: str, key: str) -> str:
+    full: str = path_for(root, key)
+    if not nox.fs.exists(full):
+        raise StorageError("depolama anahtari yok: " + key)
+    return nox.fs.read_to_string(full)
+
+def metadata_json(root: str, key: str) -> str:
+    meta_path: str = _meta_path(path_for(root, key))
+    if not nox.fs.exists(meta_path):
+        raise StorageError("meta veri yok: " + key)
+    return nox.fs.read_to_string(meta_path)
+
+# Diskteki mevcut icerigin sha256'sini yeniden hesaplayip `store` sirasinda
+# kaydedilen checksum ile karsilastirir — bozulma (corruption) tespiti icin.
+def verify_checksum(root: str, key: str) -> bool:
+    content: str = read(root, key)
+    actual: str = nox.crypto.sha256(content)
+    meta: str = metadata_json(root, key)
+    v: JsonValue = nox.json.decode(meta)
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        if nox.json.object_key(v, i) == "checksum":
+            expected: str = nox.json.as_string(nox.json.object_value(v, i))
+            return expected == actual
+        i = i + 1
+    return False
+
+def exists(root: str, key: str) -> bool:
+    return nox.fs.exists(path_for(root, key))
+
+def delete(root: str, key: str) -> None:
+    full: str = path_for(root, key)
+    if nox.fs.exists(full):
+        nox.fs.remove_file(full)
+    meta_path: str = _meta_path(full)
+    if nox.fs.exists(meta_path):
+        nox.fs.remove_file(meta_path)
+
+def url_path(key: str) -> str:
+    return "/storage/" + key

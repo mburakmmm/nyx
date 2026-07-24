@@ -1,0 +1,26 @@
+# nyx.security — güvenlik yanıt başlıkları + TLS notu (terminate reverse proxy).
+#
+# Sunucu tarafı TLS Nox stdlib'de yok; production'da nginx/caddy/traefik
+# arkasına alın. Bu modül uygulama katmanı güvenlik başlıklarını ekler.
+
+from nox.http import HttpResponse
+from nox.router import Context
+import nyx.response
+from nyx.config import Config
+
+def headers_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        r: HttpResponse = resp
+        r = nyx.response.with_header(r, "X-Content-Type-Options", "nosniff")
+        r = nyx.response.with_header(r, "X-Frame-Options", "SAMEORIGIN")
+        r = nyx.response.with_header(r, "Referrer-Policy", "strict-origin-when-cross-origin")
+        r = nyx.response.with_header(r, "X-XSS-Protection", "0")
+        if cfg.is_production():
+            r = nyx.response.with_header(r, "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+            r = nyx.response.with_header(
+                r,
+                "Content-Security-Policy",
+                "default-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+            )
+        return r
+    return handler

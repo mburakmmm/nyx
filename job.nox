@@ -1,0 +1,282 @@
+# nyx.job — ActiveJob-benzeri SQLite tabanli is (job) kuyrugu.
+#
+# import nyx.job
+#
+# db: Connection = nyx.db.open("db/jobs.sqlite")
+# nyx.job.ensure_schema(db)
+# id: int = nyx.job.enqueue(db, "SendWelcomeEmail", "{\"user_id\":1}", nox.time.now_ms())
+#
+# registry: JobRegistry = JobRegistry()
+# registry.register("SendWelcomeEmail", send_welcome_handler)
+# processed: int = nyx.job.work(db, registry, 10)
+#
+# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur — bu yuzden
+# `process_one` yalnizca framework'un BILINEN hata siniflarini (ModelError/
+# MailerError/SqliteError/DbError/JsonError/HttpError/ValueError) yakalayip
+# job'u `fail()` ile isaretleyebilir. Bunlarin DISINDA ozel bir hata sinifi
+# firlatan handler'lar bu hatayi KENDI icinde yakalayip normal donmelidir —
+# aksi halde istisna `process_one`i de asip `work` dongusunu durdurur.
+
+import nox.sqlite
+import nox.json
+import nox.time
+from nox.sqlite import Connection, Statement, Row, SqliteError
+from nox.json import JsonError
+from nox.http import HttpError
+import nyx.model
+from nyx.model import ModelError
+import nyx.mailer
+from nyx.mailer import MailerError
+import nyx.db
+from nyx.db import DbError
+
+class JobError:
+    def __init__(self: JobError, message: str) -> None:
+        self.message = message
+
+def status_queued() -> str:
+    return "queued"
+
+def status_running() -> str:
+    return "running"
+
+def status_completed() -> str:
+    return "completed"
+
+def status_failed() -> str:
+    return "failed"
+
+def max_attempts() -> int:
+    return 5
+
+def ensure_schema(db: Connection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS jobs (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "job_name TEXT NOT NULL, " +
+        "payload TEXT NOT NULL, " +
+        "status TEXT NOT NULL, " +
+        "run_at_ms INTEGER NOT NULL, " +
+        "attempts INTEGER NOT NULL DEFAULT 0, " +
+        "last_error TEXT NOT NULL DEFAULT '', " +
+        "created_at_ms INTEGER NOT NULL, " +
+        "updated_at_ms INTEGER NOT NULL" +
+        ")"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at ON jobs (status, run_at_ms)")
+
+def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) -> int:
+    if len(job_name) == 0:
+        raise JobError("job_name bos olamaz")
+    # payload_json'un GECERLI bir JSON olup olmadigini dogrula — hatali
+    # veriler kuyruga sessizce girmesin (gecersizse JsonError firlar).
+    nox.json.decode(payload_json)
+    now: int = nox.time.now_ms()
+    stmt: Statement = db.prepare(
+        "INSERT INTO jobs (job_name, payload, status, run_at_ms, attempts, last_error, created_at_ms, updated_at_ms) " +
+        "VALUES (?, ?, 'queued', ?, 0, '', ?, ?)"
+    )
+    stmt.bind_str(0, job_name)
+    stmt.bind_str(1, payload_json)
+    stmt.bind_int(2, run_at_ms)
+    stmt.bind_int(3, now)
+    stmt.bind_int(4, now)
+    stmt.execute()
+    return db.last_insert_rowid()
+
+def _job_json(id: int, job_name: str, payload_json: str, status: str, attempts: int, run_at_ms: int) -> str:
+    return (
+        "{\"id\":" + str(id) +
+        ",\"job_name\":" + nox.json.encode_string(job_name) +
+        ",\"payload\":" + payload_json +
+        ",\"status\":" + nox.json.encode_string(status) +
+        ",\"attempts\":" + str(attempts) +
+        ",\"run_at_ms\":" + str(run_at_ms) + "}"
+    )
+
+def _field(v: JsonValue, name: str) -> JsonValue:
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        if nox.json.object_key(v, i) == name:
+            return nox.json.object_value(v, i)
+        i = i + 1
+    raise JobError("alan yok: " + name)
+
+# Sirada bekleyen (status='queued', run_at_ms gecmis) EN ESKI isi atomik
+# olarak "running" durumuna cekip JSON olarak doner; is yoksa None.
+# `BEGIN IMMEDIATE` ayni SQLite dosyasini paylasan birden fazla worker
+# surecinin AYNI isi iki kez almasini engeller (yazma kilidini hemen alir).
+def reserve(db: Connection) -> str | None:
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        now: int = nox.time.now_ms()
+        stmt: Statement = db.prepare(
+            "SELECT id, job_name, payload, attempts, run_at_ms FROM jobs " +
+            "WHERE status = ? AND run_at_ms <= ? ORDER BY run_at_ms ASC, id ASC LIMIT 1"
+        )
+        stmt.bind_str(0, status_queued())
+        stmt.bind_int(1, now)
+        rows: list[Row] = stmt.query()
+        if len(rows) == 0:
+            db.execute("COMMIT")
+            return None
+        row: Row = rows[0]
+        id: int = row.get_int(0)
+        job_name: str = row.get_str(1)
+        payload: str = row.get_str(2)
+        attempts: int = row.get_int(3)
+        run_at: int = row.get_int(4)
+        upd: Statement = db.prepare("UPDATE jobs SET status = ?, updated_at_ms = ? WHERE id = ?")
+        upd.bind_str(0, status_running())
+        upd.bind_int(1, now)
+        upd.bind_int(2, id)
+        upd.execute()
+        db.execute("COMMIT")
+        return _job_json(id, job_name, payload, status_running(), attempts, run_at)
+    except SqliteError as e:
+        db.execute("ROLLBACK")
+        raise SqliteError(e.message)
+
+def complete(db: Connection, id: int) -> None:
+    now: int = nox.time.now_ms()
+    stmt: Statement = db.prepare("UPDATE jobs SET status = ?, updated_at_ms = ? WHERE id = ?")
+    stmt.bind_str(0, status_completed())
+    stmt.bind_int(1, now)
+    stmt.bind_int(2, id)
+    stmt.execute()
+
+# Basarisiz isi isaretler — `max_attempts()`in altindaysa ussel geri
+# cekilme (backoff) ile yeniden kuyruklar, aksi halde kalici olarak
+# "failed" yapar.
+def fail(db: Connection, id: int, error: str) -> None:
+    now: int = nox.time.now_ms()
+    sel: Statement = db.prepare("SELECT attempts FROM jobs WHERE id = ?")
+    sel.bind_int(0, id)
+    rows: list[Row] = sel.query()
+    if len(rows) == 0:
+        raise JobError("job bulunamadi: " + str(id))
+    attempts: int = rows[0].get_int(0) + 1
+    if attempts < max_attempts():
+        backoff_ms: int = attempts * attempts * 1000
+        stmt: Statement = db.prepare(
+            "UPDATE jobs SET status = ?, attempts = ?, last_error = ?, run_at_ms = ?, updated_at_ms = ? WHERE id = ?"
+        )
+        stmt.bind_str(0, status_queued())
+        stmt.bind_int(1, attempts)
+        stmt.bind_str(2, error)
+        stmt.bind_int(3, now + backoff_ms)
+        stmt.bind_int(4, now)
+        stmt.bind_int(5, id)
+        stmt.execute()
+    else:
+        stmt2: Statement = db.prepare(
+            "UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at_ms = ? WHERE id = ?"
+        )
+        stmt2.bind_str(0, status_failed())
+        stmt2.bind_int(1, attempts)
+        stmt2.bind_str(2, error)
+        stmt2.bind_int(3, now)
+        stmt2.bind_int(4, id)
+        stmt2.execute()
+
+class JobHandlerEntry:
+    def __init__(self: JobHandlerEntry, name: str, handler: (str) -> None) -> None:
+        self.name = name
+        self.handler = handler
+
+class JobRegistry:
+    entries: list[JobHandlerEntry]
+
+    def __init__(self: JobRegistry) -> None:
+        self.entries = []
+
+    def register(self: JobRegistry, name: str, handler: (str) -> None) -> None:
+        entries: list[JobHandlerEntry] = self.entries
+        entries.append(JobHandlerEntry(name, handler))
+        self.entries = entries
+
+    def has(self: JobRegistry, name: str) -> bool:
+        i: int = 0
+        while i < len(self.entries):
+            if self.entries[i].name == name:
+                return True
+            i = i + 1
+        return False
+
+    def get(self: JobRegistry, name: str) -> (str) -> None:
+        i: int = 0
+        while i < len(self.entries):
+            if self.entries[i].name == name:
+                return self.entries[i].handler
+            i = i + 1
+        raise JobError("kayitli handler yok: " + name)
+
+# Sirada bekleyen TEK bir isi alip ilgili handler'i cagirir. Is yoksa
+# False doner. Handler basariliysa `complete`, BILINEN bir framework
+# hatasi firlatirsa `fail` cagrilir.
+def process_one(db: Connection, registry: JobRegistry) -> bool:
+    job_json: str | None = reserve(db)
+    if job_json == None:
+        return False
+    v: JsonValue = nox.json.decode(job_json)
+    id: int = int(nox.json.as_number(_field(v, "id")))
+    job_name: str = nox.json.as_string(_field(v, "job_name"))
+    payload_v: JsonValue = _field(v, "payload")
+    payload_json: str = nox.json.encode(payload_v)
+    if not registry.has(job_name):
+        fail(db, id, "kayitli handler yok: " + job_name)
+        return True
+    handler: (str) -> None = registry.get(job_name)
+    try:
+        handler(payload_json)
+    except ModelError as e:
+        fail(db, id, e.message)
+        return True
+    except MailerError as e:
+        fail(db, id, e.message)
+        return True
+    except SqliteError as e:
+        fail(db, id, e.message)
+        return True
+    except DbError as e:
+        fail(db, id, e.message)
+        return True
+    except JsonError as e:
+        fail(db, id, e.message)
+        return True
+    except HttpError as e:
+        fail(db, id, e.message)
+        return True
+    except ValueError as e:
+        fail(db, id, e.message)
+        return True
+    complete(db, id)
+    return True
+
+# Senkron poll dongusu — en fazla `max_jobs` is isler, kuyruk bosalirsa
+# erken doner. Dondurulen deger GERCEKTEN islenen is sayisidir.
+def work(db: Connection, registry: JobRegistry, max_jobs: int) -> int:
+    ensure_schema(db)
+    processed: int = 0
+    while processed < max_jobs:
+        did: bool = process_one(db, registry)
+        if not did:
+            return processed
+        processed = processed + 1
+    return processed
+
+# Surekli calisan worker dongusu — kuyruk bosaldiginda `poll_interval_ms`
+# kadar bekleyip yeniden dener. `max_iterations <= 0` ise sinirsiz calisir
+# (yalnizca uzun-omurlu worker sureclerinde kullanin).
+def work_forever(db: Connection, registry: JobRegistry, poll_interval_ms: int, max_iterations: int) -> None:
+    ensure_schema(db)
+    iterations: int = 0
+    running: bool = True
+    while running:
+        did: bool = process_one(db, registry)
+        if not did:
+            nox.time.sleep_ms(poll_interval_ms)
+        iterations = iterations + 1
+        if max_iterations > 0 and iterations >= max_iterations:
+            running = False

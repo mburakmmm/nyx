@@ -5,12 +5,15 @@
 from nox.http import HttpResponse
 from nox.router import Context
 import nox.strings
+import nox.json
 import nyx.jwt
 import nyx.session
 import nyx.cookie
 import nyx.response
+import nyx.runtime
 from nyx.jwt import JwtError
 from nyx.cookie import CookieError
+from nox.json import JsonError
 
 def _header_get(headers: dict[str, str], name: str) -> str | None:
     # HTTP başlıkları büyük/küçük harf duyarsız — yaygın biçimleri dene.
@@ -55,6 +58,26 @@ def _drop_prefix(s: str, n: int) -> str:
         i = i + 1
     return out
 
+# `json_str` (bir JSON nesnesi) icinde `field` adinda bir metin alani ararsa
+# onu, yoksa (veya metin degilse/JSON gecersizse) bos string doner.
+def _json_field_str(json_str: str, field: str) -> str:
+    try:
+        v: JsonValue = nox.json.decode(json_str)
+        if not nox.json.is_object(v):
+            return ""
+        i: int = 0
+        n: int = nox.json.object_len(v)
+        while i < n:
+            if nox.json.object_key(v, i) == field:
+                fv: JsonValue = nox.json.object_value(v, i)
+                if nox.json.is_string(fv):
+                    return nox.json.as_string(fv)
+                return ""
+            i = i + 1
+        return ""
+    except JsonError:
+        return ""
+
 # Tüm eşleşen rotalarda Bearer JWT zorunlu kılar.
 def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
@@ -69,6 +92,8 @@ def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
                 payload: str = nyx.jwt.decode(secret, token)
                 if len(payload) == 0:
                     return _unauthorized("empty_payload")
+                sub: str = _json_field_str(payload, "sub")
+                nyx.runtime.set_user(sub, payload)
                 return None
             except JwtError:
                 return _unauthorized("invalid_token")
@@ -101,9 +126,23 @@ def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse 
                 data: str | None = nyx.session.load(secret, val)
                 if data == None:
                     return _unauthorized("invalid_session")
+                uid: str = _json_field_str(data, "user_id")
+                if len(uid) > 0:
+                    nyx.runtime.set_user(uid, data)
                 return None
             except KeyError:
                 return _unauthorized("missing_session_cookie")
             except CookieError:
                 return _unauthorized("bad_cookie")
+    return handler
+
+# Router zincirine `require_bearer`/`require_session`DEN SONRA eklenir:
+# onlar `nyx.runtime.set_user`i CAGIRDIYSA burada `signed_in()` True olur.
+# Dogrudan kullanildiginda (onceki bir kimlik dogrulama katmani OLMADAN)
+# her zaman 401 doner (hicbir kullanici ATANMAMIS olur).
+def require_user() -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        if not nyx.runtime.signed_in():
+            return _unauthorized("unauthenticated")
+        return None
     return handler

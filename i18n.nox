@@ -1,0 +1,113 @@
+# nyx.i18n — config/locales/{locale}.json (duz anahtar -> metin) tabanli
+# basit uluslararasilastirma.
+#
+# import nyx.i18n
+#
+# nyx.i18n.load("config/locales", "tr")
+# nyx.i18n.load("config/locales", "en")
+# nyx.i18n.set_locale("tr")
+# msg: str = nyx.i18n.t("greeting")
+# ctx: dict[str, str] = {}
+# ctx["name"] = "Ada"
+# msg2: str = nyx.i18n.t_with("welcome", ctx)
+#
+# NOT: Nox'ta modul-duzeyi degiskenler fonksiyon govdelerinden GORULEMEZ
+# (bkz. nyx.runtime'in belge notu) — bu yuzden yuklenen her locale'in HAM
+# JSON metni proses ortam degiskenlerinde (`nox.os.set_var`) saklanir;
+# `t()` her cagrida ilgili degeri yeniden coder (kucuk locale dosyalari
+# icin performans sorunu degildir).
+
+import nox.fs
+import nox.path
+import nox.json
+import nox.template
+import nox.os
+from nox.os import OsError
+from nox.json import JsonError
+
+class I18nError:
+    def __init__(self: I18nError, message: str) -> None:
+        self.message = message
+
+def _locale_env_name(locale: str) -> str:
+    return "NYX_I18N_LOCALE_" + locale
+
+def _bundle_raw(locale: str) -> str:
+    try:
+        return nox.os.getenv(_locale_env_name(locale))
+    except OsError:
+        return ""
+
+# `dir_path/{locale}.json` dosyasini okuyup duz (iic ice OLMAYAN, tum
+# degerleri metin) bir nesne oldugunu dogrular ve HAM JSON metnini
+# saklar. Ayni locale tekrar yuklenirse ONCEKI icerik degistirilir
+# (hot-reload dostu).
+def load(dir_path: str, locale: str) -> None:
+    file_path: str = nox.path.join(dir_path, locale + ".json")
+    if not nox.fs.exists(file_path):
+        raise I18nError("locale dosyasi yok: " + file_path)
+    raw: str = nox.fs.read_to_string(file_path)
+    v: JsonValue = nox.json.decode(raw)
+    if not nox.json.is_object(v):
+        raise I18nError("locale JSON bir nesne olmali: " + file_path)
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        val_v: JsonValue = nox.json.object_value(v, i)
+        if not nox.json.is_string(val_v):
+            raise I18nError("locale degeri metin olmali: " + nox.json.object_key(v, i))
+        i = i + 1
+    nox.os.set_var(_locale_env_name(locale), raw)
+
+def is_loaded(locale: str) -> bool:
+    return len(_bundle_raw(locale)) > 0
+
+def set_locale(locale: str) -> None:
+    nox.os.set_var("NYX_I18N_CURRENT", locale)
+
+def current_locale() -> str:
+    try:
+        return nox.os.getenv("NYX_I18N_CURRENT")
+    except OsError:
+        return "en"
+
+def set_default_locale(locale: str) -> None:
+    nox.os.set_var("NYX_I18N_DEFAULT", locale)
+
+def default_locale() -> str:
+    try:
+        return nox.os.getenv("NYX_I18N_DEFAULT")
+    except OsError:
+        return "en"
+
+def _lookup(locale: str, key: str) -> str | None:
+    raw: str = _bundle_raw(locale)
+    if len(raw) == 0:
+        return None
+    v: JsonValue = nox.json.decode(raw)
+    i: int = 0
+    n: int = nox.json.object_len(v)
+    while i < n:
+        if nox.json.object_key(v, i) == key:
+            return nox.json.as_string(nox.json.object_value(v, i))
+        i = i + 1
+    return None
+
+# Aktif locale'de `key` bulunamazsa varsayilan locale'e duser; o da yoksa
+# Rails'in "translation missing: ..." kalibiyla GORULEBILIR (sayfayi
+# CIKARMAYAN) bir yer-tutucu metin doner.
+def t(key: str) -> str:
+    val: str | None = _lookup(current_locale(), key)
+    if val == None:
+        val = _lookup(default_locale(), key)
+    if val == None:
+        return "translation missing: " + current_locale() + "." + key
+    return val
+
+# `{{ degisken }}` yer-tutuculariyla bir ceviriyi `context` ile
+# doldurur (nox.template.render — HTML-kacisli).
+def t_with(key: str, context: dict[str, str]) -> str:
+    return nox.template.render(t(key), context)
+
+def t_with_unescaped(key: str, context: dict[str, str]) -> str:
+    return nox.template.render_unescaped(t(key), context)

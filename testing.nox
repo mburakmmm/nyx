@@ -1,0 +1,97 @@
+# nyx.testing — istek/yanit (request/response) test yardimcilari.
+#
+# import nyx.testing
+#
+# def handle(req: HttpRequest) -> HttpResponse:
+#     return router.dispatch(req)
+#
+# resp: HttpResponse = nyx.testing.get(handle, "/posts")
+# nyx.testing.assert_status(resp, 200)
+# nyx.testing.assert_body_contains(resp, "Merhaba")
+
+import nox.test
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+
+def _try_copy(dst: dict[str, str], src: dict[str, str], key: str) -> None:
+    try:
+        dst[key] = src[key]
+    except KeyError:
+        x: int = 0
+
+def request(handler: (HttpRequest) -> HttpResponse, method: str, path: str, body: str, headers: dict[str, str]) -> HttpResponse:
+    req: HttpRequest = HttpRequest(method, path, body, headers)
+    return handler(req)
+
+def get(handler: (HttpRequest) -> HttpResponse, path: str) -> HttpResponse:
+    empty: dict[str, str] = {}
+    return request(handler, "GET", path, "", empty)
+
+def get_with_headers(handler: (HttpRequest) -> HttpResponse, path: str, headers: dict[str, str]) -> HttpResponse:
+    return request(handler, "GET", path, "", headers)
+
+def post(handler: (HttpRequest) -> HttpResponse, path: str, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    return request(handler, "POST", path, body, headers)
+
+def post_json(handler: (HttpRequest) -> HttpResponse, path: str, json_body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/json"
+    return request(handler, "POST", path, json_body, headers)
+
+def post_with_headers(handler: (HttpRequest) -> HttpResponse, path: str, body: str, headers: dict[str, str]) -> HttpResponse:
+    return request(handler, "POST", path, body, headers)
+
+def put(handler: (HttpRequest) -> HttpResponse, path: str, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    return request(handler, "PUT", path, body, headers)
+
+def patch(handler: (HttpRequest) -> HttpResponse, path: str, body: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    return request(handler, "PATCH", path, body, headers)
+
+def delete(handler: (HttpRequest) -> HttpResponse, path: str) -> HttpResponse:
+    empty: dict[str, str] = {}
+    return request(handler, "DELETE", path, "", empty)
+
+def with_bearer(headers: dict[str, str], token: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    _try_copy(out, headers, "Content-Type")
+    _try_copy(out, headers, "Cookie")
+    out["Authorization"] = "Bearer " + token
+    return out
+
+def with_cookie(headers: dict[str, str], cookie_header: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    _try_copy(out, headers, "Authorization")
+    _try_copy(out, headers, "Content-Type")
+    out["Cookie"] = cookie_header
+    return out
+
+def assert_status(resp: HttpResponse, code: int) -> None:
+    nox.test.assert_eq_int(resp.status, code, "http status")
+
+def assert_body_contains(resp: HttpResponse, s: str) -> None:
+    nox.test.assert_true(nox.strings.contains(resp.body, s), "body icerir: " + s)
+
+def assert_body_eq(resp: HttpResponse, s: str) -> None:
+    nox.test.assert_eq_str(resp.body, s, "http body")
+
+def header(resp: HttpResponse, name: str) -> str | None:
+    try:
+        return resp.headers[name]
+    except KeyError:
+        return None
+
+def assert_header_eq(resp: HttpResponse, name: str, value: str) -> None:
+    actual: str | None = header(resp, name)
+    found: str = ""
+    if actual != None:
+        found = actual
+    nox.test.assert_eq_str(found, value, "http header " + name)
+
+def extract_set_cookie(resp: HttpResponse) -> str | None:
+    return header(resp, "Set-Cookie")
