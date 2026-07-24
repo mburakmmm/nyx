@@ -100,9 +100,9 @@ def t(key: str) -> str:
     val: str | None = _lookup(current_locale(), key)
     if val == None:
         val = _lookup(default_locale(), key)
-    if val == None:
-        return "translation missing: " + current_locale() + "." + key
-    return val
+    if val != None:
+        return val
+    return "translation missing: " + current_locale() + "." + key
 
 # `{{ degisken }}` yer-tutuculariyla bir ceviriyi `context` ile
 # doldurur (nox.template.render — HTML-kacisli).

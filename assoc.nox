@@ -14,10 +14,10 @@ from nox.sqlite import Connection
 # ya da `fk_col` ebeveynde eslesmiyorsa None doner.
 def belongs_to(db: Connection, child_table: str, child_id: int, parent_table: str, fk_col: str) -> Record | None:
     child: Record | None = nyx.model.find(db, child_table, child_id)
-    if child == None:
-        return None
-    fk_val: int = child.get_int(fk_col)
-    return nyx.model.find(db, parent_table, fk_val)
+    if child != None:
+        fk_val: int = child.get_int(fk_col)
+        return nyx.model.find(db, parent_table, fk_val)
+    return None
 
 # `child_table.fk_col = parent_id` olan TUM satirlari doner (Rails'in
 # `has_many`si).

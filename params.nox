@@ -53,7 +53,7 @@ def _read_pct(s: str, i: int) -> int:
     return h1 * 16 + h2
 
 def _utf8_2(b1: int, b2: int) -> str:
-    cp: int = ((b1 & 31) * 64) + (b2 & 63)
+    cp: int = ((b1 % 32) * 64) + (b2 % 64)
     if cp == 192:
         return "À"
     if cp == 193:
@@ -197,7 +197,7 @@ def decode(s: str) -> str:
                                 b3: int = _read_pct(s, i + 6)
                                 if b2b < 0 or b3 < 0:
                                     raise ParamsError("eksik utf-8 devam bayti")
-                                cp: int = ((b & 15) * 4096) + ((b2b & 63) * 64) + (b3 & 63)
+                                cp: int = ((b % 16) * 4096) + ((b2b % 64) * 64) + (b3 % 64)
                                 if cp == 286:
                                     out = out + "Ğ"
                                 else:

@@ -36,9 +36,10 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
 # Istegin `Referer` basligina (varsa) yonlendirir, yoksa `fallback`e.
 def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
     referer: str | None = _header_get(ctx.request.headers, "Referer")
-    if referer == None or len(referer) == 0:
-        return redirect(fallback)
-    return redirect(referer)
+    if referer != None:
+        if len(referer) > 0:
+            return redirect(referer)
+    return redirect(fallback)
 
 # `Context` olmadan, dogrudan bir `Referer` metniyle cagirmak isteyenler
 # icin (ör. baska bir middleware'den gelen deger).

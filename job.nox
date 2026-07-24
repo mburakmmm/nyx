@@ -217,8 +217,11 @@ class JobRegistry:
 # hatasi firlatirsa `fail` cagrilir.
 def process_one(db: Connection, registry: JobRegistry) -> bool:
     job_json: str | None = reserve(db)
-    if job_json == None:
-        return False
+    if job_json != None:
+        return _process_reserved(db, registry, job_json)
+    return False
+
+def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> bool:
     v: JsonValue = nox.json.decode(job_json)
     id: int = int(nox.json.as_number(_field(v, "id")))
     job_name: str = nox.json.as_string(_field(v, "job_name"))
@@ -227,6 +230,7 @@ def process_one(db: Connection, registry: JobRegistry) -> bool:
     if not registry.has(job_name):
         fail(db, id, "kayitli handler yok: " + job_name)
         return True
+
     handler: (str) -> None = registry.get(job_name)
     try:
         handler(payload_json)

@@ -124,12 +124,12 @@ def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse 
                 cookies: dict[str, str] = nyx.cookie.parse(raw)
                 val: str = cookies[cookie_name]
                 data: str | None = nyx.session.load(secret, val)
-                if data == None:
-                    return _unauthorized("invalid_session")
-                uid: str = _json_field_str(data, "user_id")
-                if len(uid) > 0:
-                    nyx.runtime.set_user(uid, data)
-                return None
+                if data != None:
+                    uid: str = _json_field_str(data, "user_id")
+                    if len(uid) > 0:
+                        nyx.runtime.set_user(uid, data)
+                    return None
+                return _unauthorized("invalid_session")
             except KeyError:
                 return _unauthorized("missing_session_cookie")
             except CookieError:
