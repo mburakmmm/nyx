@@ -2,7 +2,14 @@ import nox.test
 import nyx.db
 import nyx.model
 from nox.sqlite import Connection
-from nyx.model import Record
+from nyx.model import Record, ModelError
+
+def _txn_ok(conn: Connection) -> None:
+    nyx.model.create(conn, "users", "{\"email\":\"txn-ok@b.c\",\"name\":\"TxnOk\"}")
+
+def _txn_fail(conn: Connection) -> None:
+    nyx.model.create(conn, "users", "{\"email\":\"txn-fail@b.c\",\"name\":\"TxnFail\"}")
+    raise ModelError("kasitli iptal")
 
 db: Connection = nyx.db.open(":memory:")
 db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT NOT NULL)")
@@ -27,6 +34,64 @@ nox.test.assert_eq_int(len(rows), 1, "where count")
 nyx.model.destroy(db, "users", uid)
 gone: Record | None = nyx.model.find(db, "users", uid)
 nox.test.assert_true(gone == None, "destroyed")
+
+nyx.model.transaction(db, _txn_ok)
+committed: list[Record] = nyx.model.where(db, "users", "email", "txn-ok@b.c")
+nox.test.assert_eq_int(len(committed), 1, "basarili transaction commit edilmeli")
+
+threw_txn: bool = False
+try:
+    nyx.model.transaction(db, _txn_fail)
+except ModelError:
+    threw_txn = True
+nox.test.assert_true(threw_txn, "basarisiz transaction hatayi yeniden firlatmali")
+rolled_back: list[Record] = nyx.model.where(db, "users", "email", "txn-fail@b.c")
+nox.test.assert_eq_int(len(rolled_back), 0, "basarisiz transaction rollback edilmeli")
+
+id_a: int = nyx.model.create(db, "users", "{\"email\":\"where-sql-a@b.c\",\"name\":\"WA\"}")
+id_b: int = nyx.model.create(db, "users", "{\"email\":\"where-sql-b@b.c\",\"name\":\"WB\"}")
+binds: list[str] = []
+binds.append(str(id_a))
+binds.append(str(id_b))
+where_sql_rows: list[Record] = nyx.model.where_sql(db, "users", "id = ? OR id = ?", binds)
+nox.test.assert_eq_int(len(where_sql_rows), 2, "where_sql iki eslesen satir doner")
+
+threw_bind: bool = False
+try:
+    empty_binds: list[str] = []
+    nyx.model.where_sql(db, "users", "id = ?", empty_binds)
+except ModelError:
+    threw_bind = True
+nox.test.assert_true(threw_bind, "eksik bind sayisi ModelError firlatir")
+
+threw_injection: bool = False
+try:
+    no_binds: list[str] = []
+    nyx.model.where_sql(db, "users", "id = 1; DROP TABLE users;--", no_binds)
+except ModelError:
+    threw_injection = True
+nox.test.assert_true(threw_injection, "supheli karakterler icin where_sql ModelError firlatir")
+
+ordered: list[Record] = nyx.model.order_limit(db, "users", "id", True, 2)
+nox.test.assert_eq_int(len(ordered), 2, "order_limit limit kadar satir doner")
+nox.test.assert_true(ordered[0].get_int("id") > ordered[1].get_int("id"), "order_limit desc siralamali")
+
+valid_errors: list[str] = nyx.model.validate_required("{\"email\":\"a@b.c\",\"name\":\"A\"}", ["email", "name"])
+nox.test.assert_eq_int(len(valid_errors), 0, "tum zorunlu alanlar doluysa hata olmamali")
+
+invalid_errors: list[str] = nyx.model.validate_required("{\"email\":\"\"}", ["email", "name"])
+nox.test.assert_eq_int(len(invalid_errors), 2, "bos email + eksik name icin iki hata olmali")
+
+new_id: int = nyx.model.create_valid(db, "users", "{\"email\":\"valid@b.c\",\"name\":\"Valid\"}", ["email", "name"])
+nox.test.assert_true(new_id > 0, "create_valid gecerli veriyle kayit olusturur")
+
+threw_create_valid: bool = False
+try:
+    empty_fields: list[str] = ["email", "name"]
+    nyx.model.create_valid(db, "users", "{\"email\":\"\"}", empty_fields)
+except ModelError:
+    threw_create_valid = True
+nox.test.assert_true(threw_create_valid, "create_valid eksik alanlarda ModelError firlatir")
 
 db.close()
 print("model_test ok")

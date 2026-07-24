@@ -35,7 +35,7 @@ nox.test.assert_eq_int(len(remaining), 1, "rollback sonrasi tek migration kaydi 
 n3: int = nyx.db.migrate(db, dir_path)
 nox.test.assert_eq_int(n3, 1, "rollback sonrasi tekrar migrate 1 uygulamali")
 
-dump_path: str = "/tmp/nyx_migrate_test/schema.sql"
+dump_path: str = "/tmp/nyx_migrate_test_schema_dump.sql"
 nyx.db.schema_dump(db, dump_path)
 dump_content: str = nox.fs.read_to_string(dump_path)
 nox.test.assert_true(nox.strings.contains(dump_content, "t_a"), "schema_dump t_a tablosunu icermeli")

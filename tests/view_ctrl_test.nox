@@ -1,8 +1,10 @@
 import nox.test
 import nox.fs
+import nox.strings
 import nyx.view
 import nyx.ctrl
-from nox.http import HttpResponse
+from nox.http import HttpResponse, HttpRequest
+from nox.router import Context
 
 path: str = "/tmp/nyx_view_test.html"
 nox.fs.write_string(path, "<h1>{{ title }}</h1>")
@@ -18,5 +20,43 @@ nox.test.assert_eq_str(resp.headers["Location"], "/x", "redirect loc")
 r2: HttpResponse = nyx.ctrl.render(200, path, ctx)
 nox.test.assert_eq_int(r2.status, 200, "ctrl render")
 nox.test.assert_eq_str(r2.body, "<h1>Merhaba</h1>", "ctrl body")
+
+layout_path: str = "/tmp/nyx_layout_test.html"
+nox.fs.write_string(layout_path, "<html><body>{{ yield }}</body></html>")
+r3: HttpResponse = nyx.ctrl.render_layout(200, layout_path, path, ctx)
+nox.test.assert_eq_int(r3.status, 200, "render_layout status")
+nox.test.assert_true(nox.strings.contains(r3.body, "<html><body>"), "render_layout govdesi layout icermeli")
+nox.test.assert_true(nox.strings.contains(r3.body, "<h1>Merhaba</h1>"), "render_layout govdesi view icermeli")
+
+no_headers: dict[str, str] = {}
+req_no_referer: HttpRequest = HttpRequest("GET", "/posts", "", no_headers)
+params_empty: dict[str, str] = {}
+ctx_no_referer: Context = Context(req_no_referer, params_empty)
+r4: HttpResponse = nyx.ctrl.redirect_back(ctx_no_referer, "/anasayfa")
+nox.test.assert_eq_int(r4.status, 302, "redirect_back status")
+nox.test.assert_eq_str(r4.headers["Location"], "/anasayfa", "referer yoksa fallback kullanilmali")
+
+with_referer: dict[str, str] = {}
+with_referer["Referer"] = "/onceki-sayfa"
+req_with_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_referer)
+ctx_with_referer: Context = Context(req_with_referer, params_empty)
+r5: HttpResponse = nyx.ctrl.redirect_back(ctx_with_referer, "/anasayfa")
+nox.test.assert_eq_str(r5.headers["Location"], "/onceki-sayfa", "referer varsa ona yonlendirmeli")
+
+r6: HttpResponse = nyx.ctrl.redirect_back_to("", "/fallback")
+nox.test.assert_eq_str(r6.headers["Location"], "/fallback", "redirect_back_to bos referer icin fallback kullanmali")
+
+r7: HttpResponse = nyx.ctrl.redirect_back_to("/direkt", "/fallback")
+nox.test.assert_eq_str(r7.headers["Location"], "/direkt", "redirect_back_to dolu referer kullanmali")
+
+r8: HttpResponse = nyx.ctrl.unprocessable()
+nox.test.assert_eq_int(r8.status, 422, "unprocessable 422 donmeli")
+
+errors: list[str] = []
+errors.append("email bos olamaz")
+errors.append("isim bos olamaz")
+r9: HttpResponse = nyx.ctrl.unprocessable_json(errors)
+nox.test.assert_eq_int(r9.status, 422, "unprocessable_json 422 donmeli")
+nox.test.assert_true(nox.strings.contains(r9.body, "email bos olamaz"), "unprocessable_json hatalari icermeli")
 
 print("view_ctrl_test ok")
