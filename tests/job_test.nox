@@ -1,0 +1,58 @@
+import nox.test
+import nox.time
+import nox.json
+from nox.json import JsonError
+import nyx.db
+import nyx.job
+from nyx.job import JobRegistry, JobError
+from nox.sqlite import Connection
+
+def welcome_handler(payload_json: str) -> None:
+    v: JsonValue = nox.json.decode(payload_json)
+    nox.test.assert_true(nox.json.object_len(v) >= 0, "payload gecerli json")
+
+def failing_handler(payload_json: str) -> None:
+    raise ValueError("kasitli hata")
+
+db: Connection = nyx.db.open(":memory:")
+nyx.job.ensure_schema(db)
+
+id1: int = nyx.job.enqueue(db, "Welcome", "{\"user_id\":1}", nox.time.now_ms())
+nox.test.assert_true(id1 > 0, "enqueue pozitif id doner")
+
+id2: int = nyx.job.enqueue(db, "Welcome", "{\"user_id\":2}", nox.time.now_ms())
+nox.test.assert_true(id2 > id1, "ikinci enqueue artan id")
+
+registry: JobRegistry = JobRegistry()
+registry.register("Welcome", welcome_handler)
+nox.test.assert_true(registry.has("Welcome"), "registry kayitli isi bilir")
+nox.test.assert_true(not registry.has("Bilinmeyen"), "registry bilinmeyen isi bilmez")
+
+processed: int = nyx.job.work(db, registry, 10)
+nox.test.assert_eq_int(processed, 2, "iki is islendi")
+
+processed_again: int = nyx.job.work(db, registry, 10)
+nox.test.assert_eq_int(processed_again, 0, "kuyruk bos, islenen yok")
+
+id3: int = nyx.job.enqueue(db, "Fail", "{}", nox.time.now_ms())
+nox.test.assert_true(id3 > id2, "ucuncu enqueue artan id")
+registry.register("Fail", failing_handler)
+did_fail: bool = nyx.job.process_one(db, registry)
+nox.test.assert_true(did_fail, "basarisiz is yine de 'islendi' sayilir")
+
+threw: bool = False
+try:
+    nyx.job.enqueue(db, "Gecersiz", "{bozuk json", nox.time.now_ms())
+except JsonError:
+    threw = True
+nox.test.assert_true(threw, "gecersiz payload JsonError")
+
+threw2: bool = False
+try:
+    nyx.job.enqueue(db, "", "{}", nox.time.now_ms())
+except JobError:
+    threw2 = True
+nox.test.assert_true(threw2, "bos job_name JobError")
+
+db.close()
+print("job_test ok")

@@ -1,0 +1,47 @@
+import nox.test
+import nox.time
+import nyx.cache
+from nyx.cache import Cache
+
+c: Cache = nyx.cache.open(":memory:")
+
+v0: str | None = c.get("bulunmayan")
+nox.test.assert_true(v0 == None, "olmayan anahtar None doner")
+
+c.set("greeting", "merhaba dunya", 0)
+v1: str | None = c.get("greeting")
+if v1 != None:
+    nox.test.assert_eq_str(v1, "merhaba dunya", "suresiz girdi geri okunur")
+else:
+    nox.test.assert_true(False, "suresiz girdi bulunamadi")
+
+c.set("gecici", "kisa omurlu", 1)
+v2: str | None = c.get("gecici")
+if v2 != None:
+    nox.test.assert_eq_str(v2, "kisa omurlu", "kisa TTL girdisi hemen okunur")
+else:
+    nox.test.assert_true(False, "kisa TTL girdisi bulunamadi")
+
+nox.time.sleep_ms(1100)
+v3: str | None = c.get("gecici")
+nox.test.assert_true(v3 == None, "suresi dolan girdi None doner")
+
+c.set("silinecek", "deger", 0)
+c.delete("silinecek")
+v4: str | None = c.get("silinecek")
+nox.test.assert_true(v4 == None, "silinen girdi None doner")
+
+c.set("guncellenecek", "eski", 0)
+c.set("guncellenecek", "yeni", 0)
+v5: str | None = c.get("guncellenecek")
+if v5 != None:
+    nox.test.assert_eq_str(v5, "yeni", "ayni anahtara ikinci set degeri gunceller")
+else:
+    nox.test.assert_true(False, "guncellenen girdi bulunamadi")
+
+c.set("temizlenecek", "x", 0)
+c.clear()
+v6: str | None = c.get("temizlenecek")
+nox.test.assert_true(v6 == None, "clear sonrasi hicbir anahtar kalmamali")
+
+print("cache_test ok")

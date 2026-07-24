@@ -1,0 +1,53 @@
+import nox.test
+import nox.fs
+import nyx.i18n
+from nyx.i18n import I18nError
+
+dir_path: str = "/tmp/nyx_i18n_test"
+if nox.fs.exists(dir_path):
+    x: int = 0
+else:
+    nox.fs.create_dir(dir_path)
+
+nox.fs.write_string(
+    dir_path + "/tr.json",
+    "{\"greeting\":\"Merhaba\",\"welcome\":\"Hos geldin, {{ name }}\"}"
+)
+nox.fs.write_string(
+    dir_path + "/en.json",
+    "{\"greeting\":\"Hello\",\"only_in_en\":\"English only\"}"
+)
+
+nyx.i18n.load(dir_path, "tr")
+nyx.i18n.load(dir_path, "en")
+nyx.i18n.set_default_locale("en")
+nyx.i18n.set_locale("tr")
+
+nox.test.assert_eq_str(nyx.i18n.current_locale(), "tr", "current_locale set_locale sonrasi tr olmali")
+nox.test.assert_eq_str(nyx.i18n.default_locale(), "en", "default_locale en olmali")
+nox.test.assert_true(nyx.i18n.is_loaded("tr"), "tr yuklenmis olmali")
+nox.test.assert_true(not nyx.i18n.is_loaded("de"), "yuklenmemis locale False donmeli")
+
+nox.test.assert_eq_str(nyx.i18n.t("greeting"), "Merhaba", "aktif locale'den ceviri")
+
+nox.test.assert_eq_str(nyx.i18n.t("only_in_en"), "English only", "aktif localede yoksa varsayilana duser")
+
+missing: str = nyx.i18n.t("hic_olmayan_anahtar")
+nox.test.assert_true(missing == "translation missing: tr.hic_olmayan_anahtar", "eksik anahtar icin yer tutucu")
+
+ctx: dict[str, str] = {}
+ctx["name"] = "Ada"
+rendered: str = nyx.i18n.t_with("welcome", ctx)
+nox.test.assert_eq_str(rendered, "Hos geldin, Ada", "t_with degiskeni doldurmali")
+
+nyx.i18n.set_locale("en")
+nox.test.assert_eq_str(nyx.i18n.t("greeting"), "Hello", "locale degistirince ceviri de degismeli")
+
+threw: bool = False
+try:
+    nyx.i18n.load(dir_path, "hic_olmayan_locale")
+except I18nError:
+    threw = True
+nox.test.assert_true(threw, "olmayan locale dosyasi I18nError firlatir")
+
+print("i18n_test ok")

@@ -1,0 +1,47 @@
+import nox.test
+import nox.fs
+import nox.strings
+import nyx.storage
+from nyx.storage import StorageError
+
+root: str = "/tmp/nyx_storage_test"
+if nox.fs.exists(root):
+    x: int = 0
+else:
+    nox.fs.create_dir(root)
+
+key: str = nyx.storage.store(root, "avatar.png", "binary-icerik-verisi")
+nox.test.assert_true(len(key) > 0, "store bos olmayan key doner")
+nox.test.assert_true(nyx.storage.exists(root, key), "store sonrasi dosya var olmali")
+
+content: str = nyx.storage.read(root, key)
+nox.test.assert_eq_str(content, "binary-icerik-verisi", "read yazilan icerigi doner")
+
+nox.test.assert_true(nyx.storage.verify_checksum(root, key), "checksum dogrulanmali")
+
+url: str = nyx.storage.url_path(key)
+nox.test.assert_eq_str(url, "/storage/" + key, "url_path dogru onek uretmeli")
+
+traversal_key: str = nyx.storage.store(root, "../../etc/passwd", "zararli")
+nox.test.assert_true(not nox.strings.contains(traversal_key, ".."), "path traversal denemesi temizlenmeli")
+nox.test.assert_true(nox.strings.contains(traversal_key, "passwd"), "sadece dosya adi (basename) korunmali")
+nyx.storage.delete(root, traversal_key)
+
+nyx.storage.delete(root, key)
+nox.test.assert_true(not nyx.storage.exists(root, key), "delete sonrasi dosya olmamali")
+
+threw: bool = False
+try:
+    nyx.storage.read(root, key)
+except StorageError:
+    threw = True
+nox.test.assert_true(threw, "silinen anahtari okumak StorageError firlatir")
+
+threw2: bool = False
+try:
+    nyx.storage.store(root, "", "icerik")
+except StorageError:
+    threw2 = True
+nox.test.assert_true(threw2, "bos dosya adi StorageError firlatir")
+
+print("storage_test ok")

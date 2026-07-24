@@ -1,0 +1,58 @@
+import nox.test
+import nox.fs
+import nox.strings
+import nyx.mailer
+from nyx.mailer import Mail, MailerError
+import nyx.config
+from nyx.config import Config
+
+mail: Mail = nyx.mailer.new_mail("alice@example.com", "noreply@example.com", "Merhaba", "govde metni")
+eml: str = nyx.mailer.to_eml(mail)
+nox.test.assert_true(nox.strings.contains(eml, "To: alice@example.com"), "eml icerir to")
+nox.test.assert_true(nox.strings.contains(eml, "Subject: Merhaba"), "eml icerir subject")
+nox.test.assert_true(nox.strings.contains(eml, "govde metni"), "eml icerir govde")
+
+html_mail: Mail = nyx.mailer.new_html_mail("bob@example.com", "noreply@example.com", "HTML Konu", "duz metin", "<b>zengin</b>")
+html_eml: str = nyx.mailer.to_eml(html_mail)
+nox.test.assert_true(nox.strings.contains(html_eml, "multipart/alternative"), "html eml multipart")
+nox.test.assert_true(nox.strings.contains(html_eml, "<b>zengin</b>"), "html eml icerir html govde")
+
+cfg: Config = nyx.config.defaults("test")
+cfg.mail_delivery = "file"
+before_count: int = 0
+if nox.fs.exists("tmp/mail"):
+    entries_before: list[str] = nox.fs.read_dir("tmp/mail")
+    before_count = len(entries_before)
+
+nyx.mailer.deliver(cfg, mail)
+
+entries_after: list[str] = nox.fs.read_dir("tmp/mail")
+nox.test.assert_true(len(entries_after) == before_count + 1, "file teslimat bir dosya yazdi")
+
+invalid_mail: Mail = nyx.mailer.new_mail("gecersiz-adres", "noreply@example.com", "Konu", "govde")
+threw: bool = False
+try:
+    nyx.mailer.deliver(cfg, invalid_mail)
+except MailerError:
+    threw = True
+nox.test.assert_true(threw, "gecersiz alici MailerError firlatir")
+
+empty_subject_mail: Mail = nyx.mailer.new_mail("a@b.c", "noreply@example.com", "", "govde")
+threw2: bool = False
+try:
+    nyx.mailer.deliver(cfg, empty_subject_mail)
+except MailerError:
+    threw2 = True
+nox.test.assert_true(threw2, "bos konu MailerError firlatir")
+
+cfg_bad: Config = nyx.config.defaults("test")
+cfg_bad.mail_delivery = "http"
+cfg_bad.mail_api_url = ""
+threw3: bool = False
+try:
+    nyx.mailer.deliver(cfg_bad, mail)
+except MailerError:
+    threw3 = True
+nox.test.assert_true(threw3, "http teslimat yapilandirilmamis api_url ile hata verir")
+
+print("mailer_test ok")

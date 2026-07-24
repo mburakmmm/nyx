@@ -1,0 +1,42 @@
+import nox.test
+import nox.strings
+import nyx.cable
+from nyx.cable import Hub
+from nox.http import HttpResponse
+
+hub: Hub = Hub()
+
+since: str = nyx.cable.subscribe(hub, "room:1")
+nox.test.assert_eq_str(since, "0", "hic mesaj yokken subscribe 0 doner")
+
+id1: int = nyx.cable.broadcast(hub, "room:1", "message", "{\"text\":\"selam\"}")
+nox.test.assert_eq_int(id1, 1, "ilk broadcast id 1 olmali")
+
+id2: int = nyx.cable.broadcast(hub, "room:1", "message", "{\"text\":\"nasilsin\"}")
+nox.test.assert_eq_int(id2, 2, "ikinci broadcast id 2 olmali")
+
+id3: int = nyx.cable.broadcast(hub, "room:2", "message", "{\"text\":\"baska oda\"}")
+nox.test.assert_eq_int(id3, 1, "farkli kanal kendi id sayacina sahip olmali")
+
+nox.test.assert_eq_int(nyx.cable.last_event_id(hub, "room:1"), 2, "room:1 son id 2 olmali")
+nox.test.assert_eq_int(nyx.cable.last_event_id(hub, "hic-abone-olmayan"), 0, "abone olunmamis kanal 0 doner")
+
+resp: HttpResponse = nyx.cable.sse_response_for(hub, "room:1", 0)
+nox.test.assert_eq_int(resp.status, 200, "sse yaniti 200 olmali")
+nox.test.assert_true(nox.strings.contains(resp.body, "event: message"), "sse govdesi event alani icermeli")
+nox.test.assert_true(nox.strings.contains(resp.body, "id: 1"), "sse govdesi ilk mesaj id'sini icermeli")
+nox.test.assert_true(nox.strings.contains(resp.body, "selam"), "sse govdesi veriyi icermeli")
+
+resp2: HttpResponse = nyx.cable.sse_response_for(hub, "room:1", 1)
+nox.test.assert_true(not nox.strings.contains(resp2.body, "\"text\":\"selam\""), "since_id sonrasi eski mesaj gelmemeli")
+nox.test.assert_true(nox.strings.contains(resp2.body, "nasilsin"), "since_id sonrasi yeni mesaj gelmeli")
+
+poll_json: str = nyx.cable.stream_poll(hub, "room:1", 0)
+nox.test.assert_true(nox.strings.contains(poll_json, "\"channel\":\"room:1\""), "poll json kanal adini icermeli")
+nox.test.assert_true(nox.strings.contains(poll_json, "\"id\":1"), "poll json mesaj id icermeli")
+
+poll_resp: HttpResponse = nyx.cable.stream_poll_response(hub, "room:1", 2)
+nox.test.assert_eq_int(poll_resp.status, 200, "poll yaniti 200 olmali")
+nox.test.assert_true(nox.strings.contains(poll_resp.body, "\"events\":[]"), "since_id son mesajdaysa bos liste donmeli")
+
+print("cable_test ok")

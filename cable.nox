@@ -23,6 +23,11 @@ class CableError:
         self.message = message
 
 class Message:
+    id: int
+    event: str
+    data_json: str
+    ts_ms: int
+
     def __init__(self: Message, id: int, event: str, data_json: str, ts_ms: int) -> None:
         self.id = id
         self.event = event
@@ -30,7 +35,9 @@ class Message:
         self.ts_ms = ts_ms
 
 class ChannelBuf:
+    name: str
     messages: list[Message]
+    next_id: int
 
     def __init__(self: ChannelBuf, name: str) -> None:
         self.name = name
@@ -42,6 +49,7 @@ def default_capacity() -> int:
 
 class Hub:
     channels: list[ChannelBuf]
+    capacity: int
 
     def __init__(self: Hub) -> None:
         self.channels = []
