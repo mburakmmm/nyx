@@ -1,9 +1,7 @@
-# Nyx blog example — posts list + create via nyx.app
+# Nyx blog example — posts list + create via typed attrs + AppContext
 # cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
 
 import nox.http
-import nox.json
-import nox.template
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
 from nox.sqlite import Connection
@@ -13,36 +11,30 @@ import nyx.model
 import nyx.ctrl
 import nyx.form
 import nyx.csrf
-import nyx.params
 import nyx.view
+import nyx.ctx
 from nyx.app import Application
 from nyx.config import Config
-from nyx.model import Record
-
-def build_posts_html(rows: list[Record]) -> str:
-    out: str = ""
-    i: int = 0
-    while i < len(rows):
-        r: Record = rows[i]
-        title: str = nox.template.escape_html(r.get("title"))
-        body: str = nox.template.escape_html(r.get("body"))
-        out = out + "<li><strong>" + title + "</strong>: " + body + "</li>"
-        i = i + 1
-    if len(out) == 0:
-        return "<li>No posts yet.</li>"
-    return out
+from nyx.model import Record, Attributes
+from nyx.ctx import AppContext
 
 def setup(application: Application) -> None:
     router: Router = application.router
-    db: Connection = application.db
     secret: str = application.config.secret_key
 
     def index(ctx: Context) -> HttpResponse:
-        rows: list[Record] = nyx.model.all(db, "posts")
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        rows: list[Record] = nyx.model.all(ac.db(), "posts")
+        fields: list[str] = []
+        fields.append("title")
+        fields.append("body")
+        posts_html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
+        if len(rows) == 0:
+            posts_html = "<li>No posts yet.</li>"
         context: dict[str, str] = {}
         context["title"] = "Nyx Blog"
         context["notice"] = ""
-        context["posts_html"] = build_posts_html(rows)
+        context["posts_html"] = posts_html
         context["csrf_field"] = nyx.csrf.field(secret)
         context["title_field"] = nyx.form.text("title", "")
         context["body_field"] = nyx.form.textarea("body", "")
@@ -50,13 +42,15 @@ def setup(application: Application) -> None:
         return nyx.ctrl.html(200, nyx.view.render_unescaped("app/views/posts.html", context))
 
     def create(ctx: Context) -> HttpResponse:
-        form: dict[str, str] = nyx.params.from_request(ctx.request)
-        title: str = nyx.params.get(form, "title", "")
-        body: str = nyx.params.get(form, "body", "")
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        title: str = ac.param("title", "")
+        body: str = ac.param("body", "")
         if len(title) == 0:
             return nyx.ctrl.redirect("/")
-        attrs: str = "{\"title\":" + nox.json.encode_string(title) + ",\"body\":" + nox.json.encode_string(body) + "}"
-        nyx.model.create(db, "posts", attrs)
+        attrs: Attributes = nyx.model.attributes()
+        nyx.model.set_str(attrs, "title", title)
+        nyx.model.set_str(attrs, "body", body)
+        nyx.model.create_attrs(ac.db(), "posts", attrs)
         return nyx.ctrl.redirect("/")
 
     router.get("/", index)

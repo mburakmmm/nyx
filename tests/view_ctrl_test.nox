@@ -3,8 +3,12 @@ import nox.fs
 import nox.strings
 import nyx.view
 import nyx.ctrl
+import nyx.db
+import nyx.model
 from nox.http import HttpResponse, HttpRequest
 from nox.router import Context
+from nyx.model import Record, Attributes
+from nox.sqlite import Connection
 
 path: str = "/tmp/nyx_view_test.html"
 nox.fs.write_string(path, "<h1>{{ title }}</h1>")
@@ -76,5 +80,24 @@ errors.append("isim bos olamaz")
 r9: HttpResponse = nyx.ctrl.unprocessable_json(errors)
 nox.test.assert_eq_int(r9.status, 422, "unprocessable_json 422 donmeli")
 nox.test.assert_true(nox.strings.contains(r9.body, "email bos olamaz"), "unprocessable_json hatalari icermeli")
+
+# render_each: partial per Record (Nox template has no {% for %})
+item_path: str = "/tmp/nyx_item_partial.html"
+nox.fs.write_string(item_path, "<li>{{ title }}</li>")
+vdb: Connection = nyx.db.open(":memory:")
+vdb.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT)")
+a1: Attributes = nyx.model.attributes()
+nyx.model.set_str(a1, "title", "One")
+nyx.model.create_attrs(vdb, "posts", a1)
+a2: Attributes = nyx.model.attributes()
+nyx.model.set_str(a2, "title", "Two")
+nyx.model.create_attrs(vdb, "posts", a2)
+posts: list[Record] = nyx.model.all(vdb, "posts")
+fields: list[str] = []
+fields.append("title")
+each_html: str = nyx.view.render_records(item_path, posts, fields)
+nox.test.assert_true(nox.strings.contains(each_html, "<li>One</li>"), "render_records one")
+nox.test.assert_true(nox.strings.contains(each_html, "<li>Two</li>"), "render_records two")
+vdb.close()
 
 print("view_ctrl_test ok")

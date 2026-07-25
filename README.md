@@ -2,23 +2,18 @@
 
 [English](README.md) · [Türkçe](README.tr.md)
 
-**Rails-style, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**
+**Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
+Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.3.1 · **License:** MIT · **Required alias:** `nyx`
+**Version:** 0.4.0 · **License:** MIT · **Required alias:** `nyx`
 
 ---
 
 ## This is a Nox package (not a standalone binary)
 
-`nyx` is consumed like any other Nox library:
-
-1. Add it to your app’s **`nox.json`** under `requires`
-2. Run **`noxc fetch`** (or `noxc update`)
+1. Add to your app’s **`nox.json`** under `requires`
+2. Run **`noxc fetch`** / **`noxc update`**
 3. Import with **`import nyx...`** (alias **must** be `nyx`)
-
-Copying `.nox` files by hand is not supported — use the Nox package manager.
-
-### `nox.json`
 
 ```json
 {
@@ -28,46 +23,25 @@ Copying `.nox` files by hand is not supported — use the Nox package manager.
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.3.1"
+      "ref": "v0.4.0"
     }
   ]
 }
 ```
 
 ```sh
-noxc fetch
-noxc run main.nox
+noxc fetch && noxc run main.nox
 ```
-
-> **Important:** Internal imports are `import nyx.db`, `import nyx.app`, etc.  
-> If the alias is not exactly `nyx`, the package will not resolve.
 
 ### Local path (development)
 
 ```json
-{
-  "alias": "nyx",
-  "repo": "/absolute/path/to/nyx",
-  "ref": "master"
-}
+{ "alias": "nyx", "repo": "/absolute/path/to/nyx", "ref": "master" }
 ```
-
-After editing the local checkout, sync or `noxc update` so `~/.nox/pkg/mod/...` picks up changes.
 
 ---
 
 ## Quick start
-
-```sh
-# from a clone of this repo (generators only)
-./bin/nyx new myapp
-cd myapp
-# point requires at github.com/mburakmmm/nyx@v0.3.1 (or this checkout)
-noxc fetch
-NYX_ENV=development noxc run main.nox
-```
-
-Minimal `main.nox`:
 
 ```nox
 import nox.http
@@ -76,15 +50,30 @@ from nox.router import Context
 import nyx.app
 import nyx.config
 import nyx.ctrl
+import nyx.ctx
+import nyx.model
 from nyx.app import Application
 from nyx.config import Config
+from nyx.ctx import AppContext
+from nyx.model import Attributes
 
 def setup(application: Application) -> None:
     def home(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
         context: dict[str, str] = {}
         context["title"] = "Hello"
+        context["env"] = ac.config().env
         return nyx.ctrl.render(200, "app/views/home.html", context)
+
+    def create(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        attrs: Attributes = nyx.model.attributes()
+        nyx.model.set_str(attrs, "title", ac.param("title", ""))
+        nyx.model.create_attrs(ac.db(), "posts", attrs)
+        return nyx.ctrl.redirect("/")
+
     application.router.get("/", home)
+    application.router.post("/posts", create)
 
 def handle(req: HttpRequest) -> HttpResponse:
     cfg: Config = nyx.config.load()
@@ -99,9 +88,7 @@ def handle(req: HttpRequest) -> HttpResponse:
 nox.http.serve(8080, handle)
 ```
 
-`nyx.app.boot` opens SQLite, optionally runs migrations (`Config.auto_migrate` / `NYX_AUTO_MIGRATE`), installs session + CSRF + security headers + request logging, then calls your `setup`.
-
-Define route handlers **inside** `setup` so they close over `application.db` (Nox: top-level functions cannot see module globals). Open/close `nyx.cache` (and similar resources) inside the handlers that use them.
+Define handlers **inside** `setup` so they close over `application`. Prefer `nyx.ctx.wrap` + `create_attrs` over hand-built JSON strings.
 
 ---
 
@@ -109,22 +96,38 @@ Define route handlers **inside** `setup` so they close over `application.db` (No
 
 | Area | Modules |
 |---|---|
-| App lifecycle | `nyx.app`, `nyx.config`, `nyx.runtime` |
+| App lifecycle | `nyx.app`, `nyx.config`, `nyx.runtime`, `nyx.ctx` |
 | HTTP | `nyx.ctrl`, `nyx.view`, `nyx.params`, `nyx.routes`, `nyx.form` |
 | Data | `nyx.db`, `nyx.model`, `nyx.assoc` |
 | Security | `nyx.session`, `nyx.csrf`, `nyx.auth`, `nyx.jwt`, `nyx.password`, `nyx.security`, `nyx.cors` |
 | Extras | `nyx.mailer`, `nyx.job`, `nyx.storage`, `nyx.cache`, `nyx.i18n`, `nyx.cable`, `nyx.flash`, `nyx.testing` |
 
-### Notable APIs (0.3.1)
+### Typed models (preferred)
 
-- **Params:** `from_request` keeps the query string through `dispatch`; `permit` / `missing_required` / `require_keys`; multipart bodies are ignored (query still returned)
-- **CSRF:** session-bound tokens; `/api/` exempt by default; `protect_except` for custom prefixes
-- **Session:** `cycle_session` / regenerate on privilege change; flash auto-clears on read
-- **Jobs:** `reclaim_stale` + `work` / `work_forever`; CLI `nyx jobs work` runs `jobs/worker.nox`
-- **Storage:** path traversal blocked on read/write
-- **Redirects:** `redirect_back` allows only safe relative locations
-- **Cache:** `Cache.close` — open/close per use site
-- **Config:** `auto_migrate`, `csp`, env overrides including `NYX_AUTO_MIGRATE` / `NYX_CSP`
+```nox
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "title", title)
+nyx.model.set_int(attrs, "user_id", user_id)
+nyx.model.set_null(attrs, "bio")
+id: int = nyx.model.create_attrs(db, "posts", attrs)
+
+row: Record | None = nyx.model.find(db, "posts", id)
+bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
+title: str = row.get_or("title", "")
+```
+
+JSON-string `create` / `update` remain for compatibility; new code should use `Attributes`.
+
+### Views without template loops
+
+Nox templates have no `{% for %}`, and `list[dict[str,str]]` is not codegen-safe. Use field-key partials:
+
+```nox
+fields: list[str] = []
+fields.append("title")
+fields.append("body")
+html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
+```
 
 ### CLI
 
@@ -134,67 +137,51 @@ Define route handlers **inside** `setup` so they close over `application.db` (No
 ./bin/nyx generate scaffold Comment body:text
 ./bin/nyx db migrate | rollback | schema | seed
 ./bin/nyx jobs work
-./bin/nyx console
-./bin/nyx server
-./bin/nyx version
+./bin/nyx console | server | version
 ```
-
-Scaffold writes `config/scaffold_<name>_routes.nox.snippet` with handlers meant to be pasted inside `setup(application)`.
 
 ### Configuration
 
 | Variable | Meaning |
 |---|---|
 | `NYX_ENV` | `development` / `test` / `production` |
-| `NYX_SECRET_KEY` | session/CSRF secret (≥32 chars in production) |
-| `NYX_DB_PATH` / `DATABASE_URL` | SQLite path or `sqlite:///...` |
-| `NYX_MIGRATE_PATH` | migration directory (default `db/migrate`) |
-| `NYX_AUTO_MIGRATE` | `1`/`0` — run migrations inside `boot` (default on; prefer `0` + `nyx db migrate` in production) |
-| `NYX_CSRF` | CSRF middleware on/off |
-| `NYX_LOCALE` / `NYX_LOCALES_PATH` | default locale and locale files |
-| `NYX_CSP` | optional Content-Security-Policy value |
-| `NYX_CACHE_PATH` / `NYX_STORAGE_PATH` / `NYX_JOBS_DB_PATH` | cache, uploads, jobs SQLite paths |
-| `NYX_MAIL_DELIVERY` / `NYX_MAIL_FROM` / `NYX_MAIL_API_*` | `file` or `http` mail delivery |
+| `NYX_SECRET_KEY` | ≥32 chars in production |
+| `NYX_DB_PATH` / `DATABASE_URL` | SQLite path |
+| `NYX_AUTO_MIGRATE` | `1`/`0` (prefer `0` + CLI migrate in production) |
+| `NYX_CSRF` / `NYX_CSP` / `NYX_LOCALE` | security & i18n |
 
 ---
 
-## Changelog — 0.3.1
+## Changelog
 
-Hardening and correctness release (stdlib gaps unchanged: no Postgres driver, no server TLS, no WebSocket).
+### 0.4.0 — Typed models & DX
 
-- Preserve query strings across `app.dispatch` → `params.from_request`
-- `response.with_header` keeps tracked + known headers
-- Mailer rejects CR/LF in header fields (byte-safe)
-- Jobs no longer stick in `running`; stale reclaim on `work`
-- Session-bound CSRF; `/api/` exempt; safer cookies / CORS / redirects / storage
-- Model JSON `null` → SQL `NULL`; transactional migrations; optional `auto_migrate`
-- `params.permit` / `missing_required`; flash one-shot; JWT past-`exp` rejected
-- Cable docs: Hub is not process-wide; CLI scaffold + `jobs work`
+- `Attributes` + `create_attrs` / `update_attrs` / `create_fields` (typed binds)
+- `Record.get_or` / `is_null` / `get_int_or` + `nyx.model.get_opt` / `get_int_opt` (NULL ≠ `""`)
+- `nyx.ctx.AppContext` request-scoped helper
+- `nyx.view.render_records` for collection partials
+- Blog example rewritten to use the new APIs
 
----
+### 0.3.1 — Hardening
 
-## Examples
-
-- [`examples/blog`](examples/blog/) — migrations, model, forms, CSRF via `nyx.app`
-- [`examples/app`](examples/app/) — JWT login API
-
-```sh
-cd examples/blog
-# set requires.repo to this checkout or github.com/mburakmmm/nyx@v0.3.1
-noxc fetch && NYX_ENV=development noxc run main.nox
-```
+Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirect safety, `auto_migrate`.
 
 ---
 
 ## Platform limits (Nox)
 
-- No process-wide app singleton → boot per request (set `NYX_AUTO_MIGRATE=0` in production and migrate via CLI)
-- Request state uses `nox.os` env vars (`nyx.runtime`) — one concurrent HTTP worker assumed
-- SQLite today; `postgres://` raises until `nox.postgres` exists
-- Terminate TLS at a reverse proxy; nyx sets security headers
-- Realtime via SSE/long-poll (`nyx.cable`), not WebSocket — Hub is per-request unless you persist elsewhere
-- Mail via file spool or HTTP provider API
-- Prefer ASCII in HTML templates (some non-ASCII glyphs have crashed Nox template rendering)
+- Boot per request; set `NYX_AUTO_MIGRATE=0` in production
+- Request state via `nox.os` env — one concurrent HTTP worker assumed
+- SQLite only until `nox.postgres`
+- TLS at reverse proxy; SSE/long-poll cable (not WebSocket)
+- Prefer ASCII in HTML templates (some Unicode glyphs have crashed template render)
+- Alias must be `nyx` (package-manager limitation)
+- No `{% for %}` in templates → use `nyx.view.render_records`
+- Prefer `Attributes` / `create_attrs` over hand-built JSON strings
+- Limited exception catching (no generic `Exception` base yet) → keep job/transaction handlers narrow
+
+**Fit:** reverse-proxy, single instance, SQLite, low traffic, MVP/internal tools.  
+**Not yet:** high concurrency, multi-worker, horizontal scale, realtime chat, strong multi-tenant SaaS.
 
 ---
 
@@ -202,12 +189,9 @@ noxc fetch && NYX_ENV=development noxc run main.nox
 
 ```sh
 noxc test
-# or:
-for f in tests/*_test.nox; do noxc test "$f" || exit 1; done
 ```
 
 ## Links
 
-- Repo: [github.com/mburakmmm/nyx](https://github.com/mburakmmm/nyx)
-- Nox language: [github.com/mburakmmm/nox-lang](https://github.com/mburakmmm/nox-lang)
-- Turkish docs: [README.tr.md](README.tr.md)
+- [github.com/mburakmmm/nyx](https://github.com/mburakmmm/nyx)
+- [Nox](https://github.com/mburakmmm/nox-lang) · [Türkçe](README.tr.md)

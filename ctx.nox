@@ -1,0 +1,57 @@
+# nyx.ctx — request-scoped uygulama baglami (AppContext).
+#
+# def setup(application: Application) -> None:
+#     def index(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         rows = nyx.model.all(ac.db(), "posts")
+#         title = ac.param("q", "")
+
+from nox.http import HttpRequest
+from nox.router import Context
+from nox.sqlite import Connection
+from nyx.app import Application
+from nyx.config import Config
+import nyx.params
+import nyx.runtime
+
+class AppContext:
+    def __init__(self: AppContext, application: Application, router_ctx: Context) -> None:
+        self.application = application
+        self.router_ctx = router_ctx
+
+    def db(self: AppContext) -> Connection:
+        return self.application.db
+
+    def config(self: AppContext) -> Config:
+        return self.application.config
+
+    def request(self: AppContext) -> HttpRequest:
+        return self.router_ctx.request
+
+    def path_param(self: AppContext, name: str) -> str:
+        return self.router_ctx.param(name)
+
+    def path_int(self: AppContext, name: str) -> int:
+        return int(self.router_ctx.param(name))
+
+    def params(self: AppContext) -> dict[str, str]:
+        return nyx.params.from_request(self.router_ctx.request)
+
+    def param(self: AppContext, key: str, default: str) -> str:
+        all_params: dict[str, str] = self.params()
+        return nyx.params.get(all_params, key, default)
+
+    def session_json(self: AppContext) -> str:
+        return nyx.runtime.session_json()
+
+    def request_id(self: AppContext) -> str:
+        return nyx.runtime.request_id()
+
+    def current_user_id(self: AppContext) -> str:
+        return nyx.runtime.current_user_id()
+
+    def signed_in(self: AppContext) -> bool:
+        return nyx.runtime.signed_in()
+
+def wrap(application: Application, router_ctx: Context) -> AppContext:
+    return AppContext(application, router_ctx)

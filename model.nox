@@ -3,11 +3,18 @@
 # import nyx.model
 # from nox.sqlite import Connection
 #
-# u: Record | None = nyx.model.find(db, "users", 1)
+# # Tercih edilen (typed) API:
+# attrs: Attributes = nyx.model.attributes()
+# nyx.model.set_str(attrs, "email", "a@b.c")
+# nyx.model.set_str(attrs, "name", "A")
+# id: int = nyx.model.create_attrs(db, "users", attrs)
+#
+# # Eski JSON string API (uyumluluk icin duruyor):
 # id: int = nyx.model.create(db, "users", "{\"email\":\"a@b.c\",\"name\":\"A\"}")
-# nyx.model.update(db, "users", id, "{\"name\":\"B\"}")
-# rows: list[Record] = nyx.model.where(db, "users", "email", "a@b.c")
-# nyx.model.destroy(db, "users", id)
+#
+# u: Record | None = nyx.model.find(db, "users", 1)
+# bio: str | None = nyx.model.get_opt(u, "bio")   # SQL NULL -> None
+# name: str = u.get_or("name", "")
 
 import nox.sqlite
 import nox.json
@@ -23,19 +30,50 @@ class Record:
     def __init__(self: Record, row: Row) -> None:
         self.row = row
 
-    def get(self: Record, name: str) -> str:
+    def _col_index(self: Record, name: str) -> int:
         i: int = 0
         n: int = self.row.column_count()
         while i < n:
             if self.row.column_name(i) == name:
-                if self.row.is_null(i):
-                    return ""
-                return self.row.get_str(i)
+                return i
             i = i + 1
         raise ModelError("sutun yok: " + name)
 
+    # Uyumluluk: SQL NULL -> "" (eski davranis). Yeni kod icin get_opt/get_or.
+    def get(self: Record, name: str) -> str:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return ""
+        return self.row.get_str(i)
+
+    def is_null(self: Record, name: str) -> bool:
+        return self.row.is_null(self._col_index(name))
+
+    # Sutun yoksa ModelError. SQL NULL ise None.
+    # Not: metod icinde `str | None` donusu bazi Nox surumlerinde
+    # sonraki metodlarin tip kontrolunu bozabildigi icin modul-duzeyi
+    # `get_opt` / `get_int_opt` fonksiyonlari kullanilir (asagida).
+
+    def get_or(self: Record, name: str, fallback: str) -> str:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return fallback
+        out: str = self.row.get_str(i)
+        return out
+
     def get_int(self: Record, name: str) -> int:
-        return int(self.get(name))
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            raise ModelError("sutun NULL, get_int_opt kullanin: " + name)
+        out: int = self.row.get_int(i)
+        return out
+
+    def get_int_or(self: Record, name: str, fallback: int) -> int:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return fallback
+        out: int = self.row.get_int(i)
+        return out
 
     def has(self: Record, name: str) -> bool:
         i: int = 0
@@ -45,6 +83,18 @@ class Record:
                 return True
             i = i + 1
         return False
+
+def get_opt(record: Record, name: str) -> str | None:
+    i: int = record._col_index(name)
+    if record.row.is_null(i):
+        return None
+    return record.row.get_str(i)
+
+def get_int_opt(record: Record, name: str) -> int | None:
+    i: int = record._col_index(name)
+    if record.row.is_null(i):
+        return None
+    return record.row.get_int(i)
 
 def _check_ident(name: str) -> None:
     if len(name) == 0:
@@ -122,6 +172,158 @@ class Attrs:
         self.keys = keys
         self.vals = vals
         self.nulls = nulls
+
+# Typed attribute builder — JSON string birlestirme yerine tercih edilen API.
+# kinds[i]: "str" | "int" | "bool" | "null"
+class Attributes:
+    keys: list[str]
+    kinds: list[str]
+    str_vals: list[str]
+    int_vals: list[int]
+    bool_vals: list[bool]
+
+    def __init__(self: Attributes) -> None:
+        self.keys = []
+        self.kinds = []
+        self.str_vals = []
+        self.int_vals = []
+        self.bool_vals = []
+
+def attributes() -> Attributes:
+    return Attributes()
+
+def _attrs_append(
+    attrs: Attributes,
+    key: str,
+    kind: str,
+    str_val: str,
+    int_val: int,
+    bool_val: bool
+) -> None:
+    _check_ident(key)
+    keys: list[str] = attrs.keys
+    kinds: list[str] = attrs.kinds
+    strs: list[str] = attrs.str_vals
+    ints: list[int] = attrs.int_vals
+    bools: list[bool] = attrs.bool_vals
+    keys.append(key)
+    kinds.append(kind)
+    strs.append(str_val)
+    ints.append(int_val)
+    bools.append(bool_val)
+    attrs.keys = keys
+    attrs.kinds = kinds
+    attrs.str_vals = strs
+    attrs.int_vals = ints
+    attrs.bool_vals = bools
+
+def set_str(attrs: Attributes, key: str, value: str) -> None:
+    _attrs_append(attrs, key, "str", value, 0, False)
+
+def set_int(attrs: Attributes, key: str, value: int) -> None:
+    _attrs_append(attrs, key, "int", "", value, False)
+
+def set_bool(attrs: Attributes, key: str, value: bool) -> None:
+    _attrs_append(attrs, key, "bool", "", 0, value)
+
+def set_null(attrs: Attributes, key: str) -> None:
+    _attrs_append(attrs, key, "null", "", 0, False)
+
+def _bind_typed(stmt: Statement, attrs: Attributes) -> None:
+    j: int = 0
+    while j < len(attrs.keys):
+        kind: str = attrs.kinds[j]
+        if kind == "null":
+            stmt.bind_null(j)
+        elif kind == "int":
+            stmt.bind_int(j, attrs.int_vals[j])
+        elif kind == "bool":
+            if attrs.bool_vals[j]:
+                stmt.bind_int(j, 1)
+            else:
+                stmt.bind_int(j, 0)
+        else:
+            stmt.bind_str(j, attrs.str_vals[j])
+        j = j + 1
+
+def create_attrs(db: Connection, table: str, attrs: Attributes) -> int:
+    _check_ident(table)
+    if len(attrs.keys) == 0:
+        raise ModelError("bos attrs")
+    cols: str = ""
+    placeholders: str = ""
+    i: int = 0
+    while i < len(attrs.keys):
+        if i > 0:
+            cols = cols + ", "
+            placeholders = placeholders + ", "
+        cols = cols + _quote_ident(attrs.keys[i])
+        placeholders = placeholders + "?"
+        i = i + 1
+    sql: str = "INSERT INTO " + _quote_ident(table) + " (" + cols + ") VALUES (" + placeholders + ")"
+    stmt: Statement = db.prepare(sql)
+    _bind_typed(stmt, attrs)
+    stmt.execute()
+    return db.last_insert_rowid()
+
+def update_attrs(db: Connection, table: str, id: int, attrs: Attributes) -> None:
+    _check_ident(table)
+    if len(attrs.keys) == 0:
+        raise ModelError("bos attrs")
+    sets: str = ""
+    i: int = 0
+    while i < len(attrs.keys):
+        if i > 0:
+            sets = sets + ", "
+        sets = sets + _quote_ident(attrs.keys[i]) + " = ?"
+        i = i + 1
+    sql: str = "UPDATE " + _quote_ident(table) + " SET " + sets + " WHERE \"id\" = ?"
+    stmt: Statement = db.prepare(sql)
+    _bind_typed(stmt, attrs)
+    stmt.bind_int(len(attrs.keys), id)
+    stmt.execute()
+
+# Yalnizca string alanlar icin kisa yol (JSON birlestirme yok).
+def create_fields(db: Connection, table: str, keys: list[str], vals: list[str]) -> int:
+    if len(keys) != len(vals):
+        raise ModelError("keys ve vals ayni uzunlukta olmali")
+    attrs: Attributes = attributes()
+    i: int = 0
+    while i < len(keys):
+        set_str(attrs, keys[i], vals[i])
+        i = i + 1
+    return create_attrs(db, table, attrs)
+
+def validate_attrs_required(attrs: Attributes, fields: list[str]) -> list[str]:
+    errors: list[str] = []
+    fi: int = 0
+    while fi < len(fields):
+        name: str = fields[fi]
+        found: bool = False
+        empty: bool = False
+        ai: int = 0
+        while ai < len(attrs.keys):
+            if attrs.keys[ai] == name:
+                found = True
+                kind: str = attrs.kinds[ai]
+                if kind == "null":
+                    empty = True
+                if kind == "str" and len(attrs.str_vals[ai]) == 0:
+                    empty = True
+            ai = ai + 1
+        if not found:
+            errors.append("eksik zorunlu alan: " + name)
+        else:
+            if empty:
+                errors.append("alan bos olamaz: " + name)
+        fi = fi + 1
+    return errors
+
+def create_attrs_valid(db: Connection, table: str, attrs: Attributes, required_fields: list[str]) -> int:
+    errors: list[str] = validate_attrs_required(attrs, required_fields)
+    if len(errors) > 0:
+        raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
+    return create_attrs(db, table, attrs)
 
 # `keys[i]`in degerini tasir: `nulls[i]` True ise deger JSON `null`dur
 # (baglanirken `vals[i]` ("") YOK SAYILIP `Statement.bind_null` kullanilir),

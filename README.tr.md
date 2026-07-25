@@ -2,23 +2,18 @@
 
 [English](README.md) · [Türkçe](README.tr.md)
 
-**[Nox](https://github.com/mburakmmm/nox-lang) için Rails tarzı, batteries-included web framework.**
+**[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
+Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.3.1 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
+**Sürüm:** 0.4.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
 
 ---
 
-## Bu bir Nox paketidir (tek başına çalışan binary değil)
+## Bu bir Nox paketidir
 
-`nyx`, diğer Nox kütüphaneleri gibi kullanılır:
-
-1. Uygulamanın **`nox.json`** dosyasına `requires` altına ekleyin
-2. **`noxc fetch`** (veya `noxc update`) çalıştırın
-3. **`import nyx...`** ile kullanın (alias **mutlaka** `nyx` olmalı)
-
-`.nox` dosyalarını elle kopyalamak desteklenmez — Nox paket yöneticisini kullanın.
-
-### `nox.json`
+1. **`nox.json`** `requires` altına ekleyin  
+2. **`noxc fetch`** / **`noxc update`**  
+3. **`import nyx...`** (alias **mutlaka** `nyx`)
 
 ```json
 {
@@ -28,46 +23,25 @@
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.3.1"
+      "ref": "v0.4.0"
     }
   ]
 }
 ```
 
 ```sh
-noxc fetch
-noxc run main.nox
+noxc fetch && noxc run main.nox
 ```
 
-> **Önemli:** Paket içi importlar `import nyx.db`, `import nyx.app` şeklindedir.  
-> Alias tam olarak `nyx` değilse paket çözülmez.
-
-### Yerel geliştirme (path)
+### Yerel geliştirme
 
 ```json
-{
-  "alias": "nyx",
-  "repo": "/absolute/path/to/nyx",
-  "ref": "master"
-}
+{ "alias": "nyx", "repo": "/absolute/path/to/nyx", "ref": "master" }
 ```
-
-Yerel checkout’u değiştirdikten sonra `noxc update` veya paket önbelleğini senkronlayın (`~/.nox/pkg/mod/...`).
 
 ---
 
 ## Hızlı başlangıç
-
-```sh
-# bu repoyu klonladıktan sonra (generator için)
-./bin/nyx new myapp
-cd myapp
-# requires: github.com/mburakmmm/nyx@v0.3.1 (veya bu checkout)
-noxc fetch
-NYX_ENV=development noxc run main.nox
-```
-
-Minimal `main.nox`:
 
 ```nox
 import nox.http
@@ -76,15 +50,30 @@ from nox.router import Context
 import nyx.app
 import nyx.config
 import nyx.ctrl
+import nyx.ctx
+import nyx.model
 from nyx.app import Application
 from nyx.config import Config
+from nyx.ctx import AppContext
+from nyx.model import Attributes
 
 def setup(application: Application) -> None:
     def home(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
         context: dict[str, str] = {}
         context["title"] = "Merhaba"
+        context["env"] = ac.config().env
         return nyx.ctrl.render(200, "app/views/home.html", context)
+
+    def create(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        attrs: Attributes = nyx.model.attributes()
+        nyx.model.set_str(attrs, "title", ac.param("title", ""))
+        nyx.model.create_attrs(ac.db(), "posts", attrs)
+        return nyx.ctrl.redirect("/")
+
     application.router.get("/", home)
+    application.router.post("/posts", create)
 
 def handle(req: HttpRequest) -> HttpResponse:
     cfg: Config = nyx.config.load()
@@ -99,9 +88,7 @@ def handle(req: HttpRequest) -> HttpResponse:
 nox.http.serve(8080, handle)
 ```
 
-`nyx.app.boot` SQLite açar, isteğe bağlı migration çalıştırır (`Config.auto_migrate` / `NYX_AUTO_MIGRATE`), session + CSRF + güvenlik başlıkları + istek logunu takar, sonra sizin `setup` fonksiyonunuzu çağırır.
-
-Route handler’larını **`setup` içinde** tanımlayın ki `application.db`’yi closure ile yakalasınlar (Nox: üst düzey fonksiyonlar modül global’lerini göremez). `nyx.cache` gibi kaynakları kullanan handler içinde açıp kapatın.
+Handler’ları **`setup` içinde** tanımlayın. JSON string birleştirmek yerine `nyx.ctx.wrap` + `create_attrs` kullanın.
 
 ---
 
@@ -109,22 +96,38 @@ Route handler’larını **`setup` içinde** tanımlayın ki `application.db`’
 
 | Alan | Modüller |
 |---|---|
-| Uygulama yaşam döngüsü | `nyx.app`, `nyx.config`, `nyx.runtime` |
+| Yaşam döngüsü | `nyx.app`, `nyx.config`, `nyx.runtime`, `nyx.ctx` |
 | HTTP | `nyx.ctrl`, `nyx.view`, `nyx.params`, `nyx.routes`, `nyx.form` |
 | Veri | `nyx.db`, `nyx.model`, `nyx.assoc` |
 | Güvenlik | `nyx.session`, `nyx.csrf`, `nyx.auth`, `nyx.jwt`, `nyx.password`, `nyx.security`, `nyx.cors` |
 | Ekler | `nyx.mailer`, `nyx.job`, `nyx.storage`, `nyx.cache`, `nyx.i18n`, `nyx.cable`, `nyx.flash`, `nyx.testing` |
 
-### Öne çıkan API’ler (0.3.1)
+### Typed model (tercih edilen)
 
-- **Params:** `dispatch` sonrası query korunur; `permit` / `missing_required` / `require_keys`; multipart gövde yok sayılır (query döner)
-- **CSRF:** oturuma bağlı jeton; varsayılan `/api/` muafiyeti; `protect_except`
-- **Session:** yetki değişiminde `cycle_session`; flash okununca silinir
-- **Jobs:** `reclaim_stale` + `work` / `work_forever`; CLI `nyx jobs work` → `jobs/worker.nox`
-- **Storage:** path traversal engeli
-- **Redirect:** `redirect_back` yalnızca güvenli göreli yollar
-- **Cache:** `Cache.close` — kullanım yerinde open/close
-- **Config:** `auto_migrate`, `csp`, `NYX_AUTO_MIGRATE` / `NYX_CSP`
+```nox
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "title", title)
+nyx.model.set_int(attrs, "user_id", user_id)
+nyx.model.set_null(attrs, "bio")
+id: int = nyx.model.create_attrs(db, "posts", attrs)
+
+row: Record | None = nyx.model.find(db, "posts", id)
+bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
+title: str = row.get_or("title", "")
+```
+
+JSON `create` / `update` uyumluluk için duruyor; yeni kod `Attributes` kullanmalı.
+
+### Döngüsüz şablonlar
+
+Nox template’te `{% for %}` yok; `list[dict[str,str]]` codegen’de güvenli değil. Alan-adı listesi ile partial:
+
+```nox
+fields: list[str] = []
+fields.append("title")
+fields.append("body")
+html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
+```
 
 ### CLI
 
@@ -134,67 +137,50 @@ Route handler’larını **`setup` içinde** tanımlayın ki `application.db`’
 ./bin/nyx generate scaffold Comment body:text
 ./bin/nyx db migrate | rollback | schema | seed
 ./bin/nyx jobs work
-./bin/nyx console
-./bin/nyx server
-./bin/nyx version
+./bin/nyx console | server | version
 ```
-
-Scaffold, `setup(application)` içine yapıştırılacak handler’ları `config/scaffold_<name>_routes.nox.snippet` dosyasına yazar.
 
 ### Yapılandırma
 
 | Değişken | Anlamı |
 |---|---|
 | `NYX_ENV` | `development` / `test` / `production` |
-| `NYX_SECRET_KEY` | session/CSRF gizli anahtarı (production’da ≥32 karakter) |
-| `NYX_DB_PATH` / `DATABASE_URL` | SQLite yolu veya `sqlite:///...` |
-| `NYX_MIGRATE_PATH` | migration dizini (varsayılan `db/migrate`) |
-| `NYX_AUTO_MIGRATE` | `1`/`0` — `boot` içinde migrate (varsayılan açık; production’da `0` + `nyx db migrate`) |
-| `NYX_CSRF` | CSRF middleware açık/kapalı |
-| `NYX_LOCALE` / `NYX_LOCALES_PATH` | varsayılan dil ve locale dosyaları |
-| `NYX_CSP` | isteğe bağlı Content-Security-Policy |
-| `NYX_CACHE_PATH` / `NYX_STORAGE_PATH` / `NYX_JOBS_DB_PATH` | cache, upload, jobs SQLite yolları |
-| `NYX_MAIL_DELIVERY` / `NYX_MAIL_FROM` / `NYX_MAIL_API_*` | `file` veya `http` mail |
+| `NYX_SECRET_KEY` | production’da ≥32 karakter |
+| `NYX_DB_PATH` / `DATABASE_URL` | SQLite |
+| `NYX_AUTO_MIGRATE` | `1`/`0` (production’da `0` + CLI migrate) |
+| `NYX_CSRF` / `NYX_CSP` / `NYX_LOCALE` | güvenlik ve i18n |
 
 ---
 
-## Sürüm notları — 0.3.1
+## Sürüm notları
 
-Sertleştirme ve doğruluk sürümü (stdlib boşlukları aynı: Postgres sürücüsü, sunucu TLS, WebSocket yok).
+### 0.4.0 — Typed models & DX
 
-- `app.dispatch` → `params.from_request` query string korunuyor
-- `response.with_header` bilinen + izlenen başlıkları tutuyor
-- Mailer CR/LF header injection’ı reddediyor (bayt güvenli)
-- Job’lar `running`’de takılmıyor; `work` stale reclaim yapıyor
-- Oturuma bağlı CSRF; `/api/` muaf; daha güvenli cookie / CORS / redirect / storage
-- Model JSON `null` → SQL `NULL`; transaction’lı migrate; isteğe bağlı `auto_migrate`
-- `params.permit` / `missing_required`; flash tek kullanımlık; süresi geçmiş JWT reddi
-- Cable: Hub süreç geneli değil; scaffold snippet + `jobs work`
+- `Attributes` + `create_attrs` / `update_attrs` / `create_fields`
+- `Record.get_or` / `is_null` / `get_int_or` + `nyx.model.get_opt` / `get_int_opt` (NULL ≠ `""`)
+- `nyx.ctx.AppContext`
+- `nyx.view.render_records`
+- Blog örneği yeni API’ye geçirildi
 
----
+### 0.3.1 — Sertleştirme
 
-## Örnekler
-
-- [`examples/blog`](examples/blog/) — migration, model, form, CSRF (`nyx.app`)
-- [`examples/app`](examples/app/) — JWT login API
-
-```sh
-cd examples/blog
-# requires.repo: bu checkout veya github.com/mburakmmm/nyx@v0.3.1
-noxc fetch && NYX_ENV=development noxc run main.nox
-```
+Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_migrate`.
 
 ---
 
 ## Platform sınırları (Nox)
 
-- Süreç geneli app singleton yok → istek başına boot (production’da `NYX_AUTO_MIGRATE=0` + CLI migrate)
-- İstek durumu `nox.os` env (`nyx.runtime`) — tek eşzamanlı HTTP worker varsayımı
-- Şimdilik SQLite; `postgres://` `nox.postgres` gelene kadar hata verir
-- TLS reverse proxy’de sonlandırın; nyx güvenlik başlıklarını ekler
-- Realtime: SSE/long-poll (`nyx.cable`), WebSocket değil — Hub istekler arası kalıcı değil
-- Mail: dosya spool veya HTTP sağlayıcı API
-- HTML şablonlarda ASCII tercih edin (bazı Unicode glifler Nox template’te çökertmişti)
+- İstek başına boot; production’da `NYX_AUTO_MIGRATE=0`
+- İstek durumu `nox.os` env — tek HTTP worker varsayımı
+- SQLite; TLS reverse proxy’de; cable = SSE/long-poll
+- HTML’de ASCII tercih edin (bazı Unicode glifler template’te çökertmişti)
+- Alias zorunlu `nyx`
+- Şablonda `{% for %}` yok → `nyx.view.render_records`
+- JSON string yerine `Attributes` / `create_attrs` tercih edin
+- Genel `Exception` yok → job/transaction handler’ları dar tutun
+
+**Uygun:** reverse-proxy, tek instance, SQLite, düşük trafik, MVP/internal.  
+**Henüz değil:** yüksek concurrency, multi-worker, yatay ölçek, realtime chat.
 
 ---
 
@@ -202,12 +188,9 @@ noxc fetch && NYX_ENV=development noxc run main.nox
 
 ```sh
 noxc test
-# veya:
-for f in tests/*_test.nox; do noxc test "$f" || exit 1; done
 ```
 
 ## Bağlantılar
 
-- Repo: [github.com/mburakmmm/nyx](https://github.com/mburakmmm/nyx)
-- Nox dili: [github.com/mburakmmm/nox-lang](https://github.com/mburakmmm/nox-lang)
-- English: [README.md](README.md)
+- [github.com/mburakmmm/nyx](https://github.com/mburakmmm/nyx)
+- [Nox](https://github.com/mburakmmm/nox-lang) · [English](README.md)

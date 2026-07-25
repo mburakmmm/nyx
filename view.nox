@@ -3,10 +3,12 @@
 # nyx.view.render("app/views/home.html", ctx)
 # nyx.view.render_with_layout("app/views/layouts/application.html", "app/views/home.html", ctx)
 # nyx.view.partial("app/views/posts/_item.html", ctx)
+# nyx.view.render_records("app/views/posts/_item.html", rows, ["title", "body"])
 
 import nox.fs
 import nox.template
 import nox.strings
+from nyx.model import Record
 
 class ViewError:
     def __init__(self: ViewError, message: str) -> None:
@@ -30,19 +32,42 @@ def partial(path: str, context: dict[str, str]) -> str:
 def partial_unescaped(path: str, context: dict[str, str]) -> str:
     return render_unescaped(path, context)
 
+# Nox template'te `{% for %}` yok. Her Record icin `field_keys` alanlarini
+# context'e yazip partial render eder (HTML string birlestirme yerine).
+# Not: `list[dict[str,str]]` Nox codegen'de DESTEKLENMEZ; bu yuzden
+# callback/`list[dict]` API'si yerine alan adi listesi kullanilir.
+def render_records(partial_path: str, rows: list[Record], field_keys: list[str]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        context: dict[str, str] = {}
+        j: int = 0
+        while j < len(field_keys):
+            key: str = field_keys[j]
+            context[key] = rows[i].get_or(key, "")
+            j = j + 1
+        out = out + partial(partial_path, context)
+        i = i + 1
+    return out
+
+def render_records_unescaped(partial_path: str, rows: list[Record], field_keys: list[str]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        context: dict[str, str] = {}
+        j: int = 0
+        while j < len(field_keys):
+            key: str = field_keys[j]
+            context[key] = rows[i].get_or(key, "")
+            j = j + 1
+        out = out + partial_unescaped(partial_path, context)
+        i = i + 1
+    return out
+
 # Layout içinde `{{ yield }}` — içerik güvenli HTML olarak enjekte edilir
 # (içerik zaten escape edilmiş render çıktısı olmalı).
 def render_with_layout(layout_path: str, view_path: str, context: dict[str, str]) -> str:
     body: str = render(view_path, context)
-    layout_ctx: dict[str, str] = {}
-    # context anahtarlarını kopyala — dict iterasyonu yok; bilinen anahtarları
-    # çağıranın layout_ctx'e eklemesi gerekir. Bu yüzden body'yi context'e yazıp
-    # layout'u unescaped render ederiz (yield güvenli HTML).
-    # Pratik: context'e "yield" ekle, layout render_unescaped.
-    # Diğer context alanları layout'ta da lazım — flat merge:
-    # context kopyası için raw template'te kullanılan anahtarlar caller'dan gelir.
-    # Çözüm: layout template string'ini al, {{ yield }} yerine body koy, sonra
-    # kalan {{ }} için normal render.
     if not nox.fs.exists(layout_path):
         raise ViewError("layout yok: " + layout_path)
     layout_tmpl: str = nox.fs.read_to_string(layout_path)

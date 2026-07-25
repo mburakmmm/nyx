@@ -2,7 +2,7 @@ import nox.test
 import nyx.db
 import nyx.model
 from nox.sqlite import Connection, Statement, Row
-from nyx.model import Record, ModelError
+from nyx.model import Record, ModelError, Attributes
 
 def _txn_ok(conn: Connection) -> None:
     nyx.model.create(conn, "users", "{\"email\":\"txn-ok@b.c\",\"name\":\"TxnOk\"}")
@@ -114,6 +114,56 @@ back_to_null_stmt: Statement = db.prepare("SELECT bio FROM profiles WHERE id = ?
 back_to_null_stmt.bind_int(0, pid)
 back_to_null_rows: list[Row] = back_to_null_stmt.query()
 nox.test.assert_true(back_to_null_rows[0].is_null(0), "update ile bio yeniden NULL yapilabilir")
+
+# --- typed Attributes API ---
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "email", "typed@b.c")
+nyx.model.set_str(attrs, "name", "Typed")
+tid: int = nyx.model.create_attrs(db, "users", attrs)
+typed_row: Record | None = nyx.model.find(db, "users", tid)
+nox.test.assert_true(typed_row != None, "create_attrs find")
+if typed_row != None:
+    nox.test.assert_eq_str(typed_row.get_or("email", ""), "typed@b.c", "create_attrs email")
+
+upd: Attributes = nyx.model.attributes()
+nyx.model.set_str(upd, "name", "Typed2")
+nyx.model.update_attrs(db, "users", tid, upd)
+typed2: Record | None = nyx.model.find(db, "users", tid)
+if typed2 != None:
+    nox.test.assert_eq_str(typed2.get("name"), "Typed2", "update_attrs name")
+
+# --- nullable Record API ---
+prof_attrs: Attributes = nyx.model.attributes()
+nyx.model.set_int(prof_attrs, "user_id", tid)
+nyx.model.set_null(prof_attrs, "bio")
+pid2: int = nyx.model.create_attrs(db, "profiles", prof_attrs)
+prof: Record | None = nyx.model.find(db, "profiles", pid2)
+nox.test.assert_true(prof != None, "profile find")
+if prof != None:
+    nox.test.assert_true(prof.is_null("bio"), "is_null bio")
+    nox.test.assert_true(nyx.model.get_opt(prof, "bio") == None, "get_opt NULL -> None")
+    nox.test.assert_eq_str(prof.get_or("bio", "yok"), "yok", "get_or fallback")
+    nox.test.assert_eq_str(prof.get("bio"), "", "get NULL -> empty (compat)")
+    nox.test.assert_eq_int(prof.get_int("user_id"), tid, "get_int typed")
+    nox.test.assert_true(nyx.model.get_int_opt(prof, "bio") == None, "get_int_opt NULL")
+    nox.test.assert_eq_int(prof.get_int_or("bio", -1), -1, "get_int_or fallback")
+
+keys: list[str] = []
+keys.append("email")
+keys.append("name")
+vals: list[str] = []
+vals.append("fields@b.c")
+vals.append("Fields")
+fid: int = nyx.model.create_fields(db, "users", keys, vals)
+nox.test.assert_true(fid > 0, "create_fields id")
+
+req_fields: list[str] = []
+req_fields.append("email")
+req_fields.append("name")
+bad: Attributes = nyx.model.attributes()
+nyx.model.set_str(bad, "email", "")
+bad_errs: list[str] = nyx.model.validate_attrs_required(bad, req_fields)
+nox.test.assert_eq_int(len(bad_errs), 2, "validate_attrs_required")
 
 db.close()
 print("model_test ok")

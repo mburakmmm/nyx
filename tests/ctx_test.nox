@@ -1,0 +1,42 @@
+import nox.test
+import nox.fs
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.ctx
+import nyx.model
+from nyx.app import Application
+from nyx.config import Config
+from nyx.ctx import AppContext
+from nyx.model import Attributes
+
+dir_path: str = "/tmp/nyx_ctx_mig_test"
+if not nox.fs.exists(dir_path):
+    nox.fs.create_dir(dir_path)
+nox.fs.write_string(dir_path + "/001_t.sql", "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT);")
+
+def setup(application: Application) -> None:
+    def show(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        q: str = ac.param("q", "")
+        attrs: Attributes = nyx.model.attributes()
+        nyx.model.set_str(attrs, "title", "hello")
+        nyx.model.create_attrs(ac.db(), "notes", attrs)
+        return nyx.ctrl.text(200, "q=" + q + ";env=" + ac.config().env)
+    application.router.get("/show", show)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.db_path = ":memory:"
+cfg.migrate_path = dir_path
+cfg.csrf_enabled = False
+cfg.log_requests = False
+application: Application = nyx.app.boot(cfg, setup)
+req: HttpRequest = HttpRequest("GET", "/show?q=nyx", "", {})
+resp: HttpResponse = nyx.app.dispatch(application, req)
+nox.test.assert_eq_int(resp.status, 200, "status")
+nox.test.assert_eq_str(resp.body, "q=nyx;env=test", "appcontext params+db")
+application.db.close()
+print("ctx_test ok")
