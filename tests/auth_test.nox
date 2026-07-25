@@ -1,9 +1,11 @@
 import nox.test
 import nox.time
+import nox.strings
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Context
 import nyx.auth
 import nyx.jwt
+import nyx.session
 
 secret: str = "auth-secret-key-32chars-minimum!!!"
 now: int = nox.time.now_ms() // 1000
@@ -37,5 +39,31 @@ h3: dict[str, str] = {}
 req3: HttpRequest = HttpRequest("POST", "/login", "", h3)
 ctx3: Context = Context(req3, {})
 nox.test.assert_true(skip(ctx3) == None, "exempt login")
+
+r2_error: HttpResponse | None = mw(ctx2)
+if r2_error != None:
+    nox.test.assert_true(nox.strings.contains(r2_error.body, "\"error\":\"invalid_token\""), "hata govdesi gecerli JSON olmali")
+
+# --- require_session: user_id zorunlu ---
+
+session_secret: str = "session-secret-key-32chars-min!!"
+session_mw: (Context) -> HttpResponse | None = nyx.auth.require_session(session_secret, "nyx_session")
+
+with_user_id: str = nyx.session.create(session_secret, "{\"user_id\":\"u1\"}", 3600)
+h_with_uid: dict[str, str] = {}
+h_with_uid["Cookie"] = "nyx_session=" + with_user_id
+req_with_uid: HttpRequest = HttpRequest("GET", "/me", "", h_with_uid)
+ctx_with_uid: Context = Context(req_with_uid, {})
+nox.test.assert_true(session_mw(ctx_with_uid) == None, "user_id iceren oturum gecer")
+
+without_user_id: str = nyx.session.create(session_secret, "{\"other\":\"x\"}", 3600)
+h_without_uid: dict[str, str] = {}
+h_without_uid["Cookie"] = "nyx_session=" + without_user_id
+req_without_uid: HttpRequest = HttpRequest("GET", "/me", "", h_without_uid)
+ctx_without_uid: Context = Context(req_without_uid, {})
+r_without_uid: HttpResponse | None = session_mw(ctx_without_uid)
+nox.test.assert_true(r_without_uid != None, "user_id icermeyen oturum reddedilmeli")
+if r_without_uid != None:
+    nox.test.assert_eq_int(r_without_uid.status, 401, "user_id eksikse 401")
 
 print("auth_test ok")

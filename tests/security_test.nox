@@ -1,0 +1,51 @@
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.security
+import nyx.runtime
+import nyx.config
+from nyx.config import Config
+
+nyx.runtime.begin("req-security-test", 0, "en")
+
+req: HttpRequest = HttpRequest("GET", "/", "", {})
+ctx: Context = Context(req, {})
+base: HttpResponse = HttpResponse(200, "ok", {})
+
+dev_cfg: Config = nyx.config.defaults("development")
+dev_handler: (Context, HttpResponse) -> HttpResponse = nyx.security.headers_after(dev_cfg)
+dev_resp: HttpResponse = dev_handler(ctx, base)
+nox.test.assert_eq_str(dev_resp.headers["X-Content-Type-Options"], "nosniff", "baseline X-Content-Type-Options her ortamda")
+nox.test.assert_eq_str(dev_resp.headers["X-Frame-Options"], "SAMEORIGIN", "baseline X-Frame-Options her ortamda")
+nox.test.assert_eq_str(dev_resp.headers["Referrer-Policy"], "strict-origin-when-cross-origin", "baseline Referrer-Policy her ortamda")
+nox.test.assert_eq_str(dev_resp.headers["X-Request-Id"], "req-security-test", "X-Request-Id runtime'dan eklenir")
+try:
+    x: str = dev_resp.headers["Content-Security-Policy"]
+    nox.test.assert_true(False, "development ortaminda varsayilan CSP olmamali")
+except KeyError:
+    nox.test.assert_true(True, "development ortaminda CSP yok")
+try:
+    y: str = dev_resp.headers["Strict-Transport-Security"]
+    nox.test.assert_true(False, "development ortaminda HSTS olmamali")
+except KeyError:
+    nox.test.assert_true(True, "development ortaminda HSTS yok")
+
+prod_cfg: Config = nyx.config.defaults("production")
+prod_cfg.secret_key = "nyx-prod-secret-change-me-32bytes!!"
+prod_handler: (Context, HttpResponse) -> HttpResponse = nyx.security.headers_after(prod_cfg)
+prod_resp: HttpResponse = prod_handler(ctx, base)
+nox.test.assert_eq_str(
+    prod_resp.headers["Content-Security-Policy"],
+    "default-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+    "production varsayilan CSP"
+)
+nox.test.assert_eq_str(prod_resp.headers["Strict-Transport-Security"], "max-age=31536000; includeSubDomains", "production HSTS")
+
+custom_cfg: Config = nyx.config.defaults("development")
+custom_cfg.csp = "default-src 'none'"
+custom_handler: (Context, HttpResponse) -> HttpResponse = nyx.security.headers_after(custom_cfg)
+custom_resp: HttpResponse = custom_handler(ctx, base)
+nox.test.assert_eq_str(custom_resp.headers["Content-Security-Policy"], "default-src 'none'", "Config.csp ayarlanmissa development'ta da uygulanir")
+
+nyx.runtime.end()
+print("security_test ok")

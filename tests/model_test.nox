@@ -1,7 +1,7 @@
 import nox.test
 import nyx.db
 import nyx.model
-from nox.sqlite import Connection
+from nox.sqlite import Connection, Statement, Row
 from nyx.model import Record, ModelError
 
 def _txn_ok(conn: Connection) -> None:
@@ -92,6 +92,28 @@ try:
 except ModelError:
     threw_create_valid = True
 nox.test.assert_true(threw_create_valid, "create_valid eksik alanlarda ModelError firlatir")
+
+db.execute("CREATE TABLE profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, bio TEXT)")
+
+pid: int = nyx.model.create(db, "profiles", "{\"user_id\":1,\"bio\":null}")
+null_check_stmt: Statement = db.prepare("SELECT bio FROM profiles WHERE id = ?")
+null_check_stmt.bind_int(0, pid)
+null_rows: list[Row] = null_check_stmt.query()
+nox.test.assert_eq_int(len(null_rows), 1, "null bio ile profil olusturuldu")
+nox.test.assert_true(null_rows[0].is_null(0), "JSON null gercek SQL NULL olarak baglanir (bos string degil)")
+
+nyx.model.update(db, "profiles", pid, "{\"bio\":\"merhaba\"}")
+filled_check_stmt: Statement = db.prepare("SELECT bio FROM profiles WHERE id = ?")
+filled_check_stmt.bind_int(0, pid)
+filled_rows: list[Row] = filled_check_stmt.query()
+nox.test.assert_true(not filled_rows[0].is_null(0), "update sonrasi bio artik NULL olmamali")
+nox.test.assert_eq_str(filled_rows[0].get_str(0), "merhaba", "update sonrasi bio degeri dogru")
+
+nyx.model.update(db, "profiles", pid, "{\"bio\":null}")
+back_to_null_stmt: Statement = db.prepare("SELECT bio FROM profiles WHERE id = ?")
+back_to_null_stmt.bind_int(0, pid)
+back_to_null_rows: list[Row] = back_to_null_stmt.query()
+nox.test.assert_true(back_to_null_rows[0].is_null(0), "update ile bio yeniden NULL yapilabilir")
 
 db.close()
 print("model_test ok")

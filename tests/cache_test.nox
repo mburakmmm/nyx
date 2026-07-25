@@ -44,4 +44,10 @@ c.clear()
 v6: str | None = c.get("temizlenecek")
 nox.test.assert_true(v6 == None, "clear sonrasi hicbir anahtar kalmamali")
 
+c.close()
+
+c2: Cache = nyx.cache.open(":memory:")
+c2.set("a", "b", 0)
+nyx.cache.close(c2)
+
 print("cache_test ok")

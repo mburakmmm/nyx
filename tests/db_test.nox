@@ -49,5 +49,34 @@ except DbError:
     threw = True
 nox.test.assert_true(threw, "olmayan down dosyasi DbError firlatir")
 
+# --- migration atomiklik (BEGIN IMMEDIATE / COMMIT / ROLLBACK) ---
+
+atomic_dir: str = "/tmp/nyx_migrate_atomic_test"
+if nox.fs.exists(atomic_dir):
+    y: int = 0
+else:
+    nox.fs.create_dir(atomic_dir)
+nox.fs.write_string(atomic_dir + "/001_ok.sql", "CREATE TABLE IF NOT EXISTS t_ok (id INTEGER PRIMARY KEY);")
+nox.fs.write_string(atomic_dir + "/002_bad.sql", "CREAT TABLE t_bad (id INTEGER PRIMARY KEY);")
+
+atomic_db: Connection = nyx.db.open(":memory:")
+threw_atomic: bool = False
+try:
+    nyx.db.migrate(atomic_db, atomic_dir)
+except DbError:
+    threw_atomic = True
+nox.test.assert_true(threw_atomic, "gecersiz sozdizimli migration DbError firlatir")
+
+ok_table: list[Row] = atomic_db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 't_ok'")
+nox.test.assert_eq_int(len(ok_table), 1, "kendisinden ONCEKI gecerli migration commit edilmis olmali")
+
+applied_versions: list[Row] = atomic_db.query("SELECT version FROM schema_migrations WHERE version = '002_bad.sql'")
+nox.test.assert_eq_int(len(applied_versions), 0, "basarisiz migration schema_migrations'a kaydedilmemis olmali")
+
+ok_versions: list[Row] = atomic_db.query("SELECT version FROM schema_migrations WHERE version = '001_ok.sql'")
+nox.test.assert_eq_int(len(ok_versions), 1, "basarili migration schema_migrations'a kaydedilmis olmali")
+
+atomic_db.close()
+
 db.close()
 print("db_test ok")

@@ -1,10 +1,56 @@
 import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
 import nyx.csrf
+import nyx.runtime
 
 secret: str = "csrf-secret-key-32-characters!!"
 tok: str = nyx.csrf.token(secret)
 nox.test.assert_true(nyx.csrf.check(secret, tok), "valid token")
 nox.test.assert_true(not nyx.csrf.check("wrong-secret-key-32-characters!", tok), "wrong secret")
 nox.test.assert_true(not nyx.csrf.check(secret, "bad.token"), "bad token")
+
+# --- oturuma baglama (session binding) ---
+
+nyx.runtime.begin("req-a", 0, "en")
+nyx.runtime.set_session("{\"user_id\":\"alice\"}")
+tok_alice: str = nyx.csrf.token(secret)
+nox.test.assert_true(nyx.csrf.check(secret, tok_alice), "alice kendi jetonuyla dogrulanir")
+nyx.runtime.end()
+
+nyx.runtime.begin("req-b", 0, "en")
+nyx.runtime.set_session("{\"user_id\":\"bob\"}")
+nox.test.assert_true(not nyx.csrf.check(secret, tok_alice), "bob, alice'in jetonunu kullanamaz (session-bound)")
+tok_bob: str = nyx.csrf.token(secret)
+nox.test.assert_true(nyx.csrf.check(secret, tok_bob), "bob kendi jetonuyla dogrulanir")
+nyx.runtime.end()
+
+# --- protect / protect_except: /api/ muafiyeti ---
+
+mw: (Context) -> HttpResponse | None = nyx.csrf.protect(secret)
+
+api_headers: dict[str, str] = {}
+api_req: HttpRequest = HttpRequest("POST", "/api/posts", "{}", api_headers)
+api_ctx: Context = Context(api_req, {})
+nox.test.assert_true(mw(api_ctx) == None, "/api/ altindaki yollar CSRF korumasindan muaf")
+
+html_headers: dict[str, str] = {}
+html_req: HttpRequest = HttpRequest("POST", "/posts", "title=x", html_headers)
+html_ctx: Context = Context(html_req, {})
+r_forbidden: HttpResponse | None = mw(html_ctx)
+nox.test.assert_true(r_forbidden != None, "jeton eksikse HTML rotalari 403 doner")
+if r_forbidden != None:
+    nox.test.assert_eq_int(r_forbidden.status, 403, "jeton eksikse 403")
+
+get_headers: dict[str, str] = {}
+get_req: HttpRequest = HttpRequest("GET", "/posts", "", get_headers)
+get_ctx: Context = Context(get_req, {})
+nox.test.assert_true(mw(get_ctx) == None, "GET gibi guvenli metodlar CSRF korumasindan gecer")
+
+custom_mw: (Context) -> HttpResponse | None = nyx.csrf.protect_except(secret, ["/webhooks/"])
+webhook_headers: dict[str, str] = {}
+webhook_req: HttpRequest = HttpRequest("POST", "/webhooks/stripe", "{}", webhook_headers)
+webhook_ctx: Context = Context(webhook_req, {})
+nox.test.assert_true(custom_mw(webhook_ctx) == None, "protect_except ozel onekleri muaf tutar")
 
 print("csrf_test ok")

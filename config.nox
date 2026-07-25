@@ -33,7 +33,9 @@ class Config:
         mail_from: str,
         mail_api_url: str,
         mail_api_key: str,
-        jobs_db_path: str
+        jobs_db_path: str,
+        csp: str,
+        auto_migrate: bool
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -55,6 +57,14 @@ class Config:
         self.mail_api_url = mail_api_url
         self.mail_api_key = mail_api_key
         self.jobs_db_path = jobs_db_path
+        # Bos ("") ise `nyx.security.headers_after` PRODUCTION'da KENDI
+        # sabit CSP'sini kullanir, aksi ortamlarda HICBIR CSP eklemez —
+        # niyet ACIKCA burada belirtilmis bir deger DAIMA (ortamdan
+        # BAGIMSIZ) uygulanir.
+        self.csp = csp
+        # True ise `nyx.app.boot` migrate calistirir. CLI `nyx db migrate`
+        # ile ayri yonetmek icin False yapin (onerilen production).
+        self.auto_migrate = auto_migrate
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -126,7 +136,9 @@ def defaults(env: str) -> Config:
         "noreply@example.com",
         "",
         "",
-        "db/jobs.sqlite"
+        "db/jobs.sqlite",
+        "",
+        True
     )
 
 def from_env() -> Config:
@@ -159,6 +171,8 @@ def from_env() -> Config:
     cfg.mail_api_url = _env_or("NYX_MAIL_API_URL", cfg.mail_api_url)
     cfg.mail_api_key = _env_or("NYX_MAIL_API_KEY", cfg.mail_api_key)
     cfg.jobs_db_path = _env_or("NYX_JOBS_DB_PATH", cfg.jobs_db_path)
+    cfg.csp = _env_or("NYX_CSP", cfg.csp)
+    cfg.auto_migrate = _env_bool("NYX_AUTO_MIGRATE", cfg.auto_migrate)
     return cfg
 
 def load() -> Config:

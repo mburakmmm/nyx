@@ -9,7 +9,7 @@ import nox.sqlite
 import nox.fs
 import nox.path
 import nox.strings
-from nox.sqlite import Connection, Statement, Row
+from nox.sqlite import Connection, Statement, Row, SqliteError
 
 class DbError:
     def __init__(self: DbError, message: str) -> None:
@@ -113,7 +113,15 @@ def _record_applied(db: Connection, version: str) -> None:
     stmt.execute()
 
 # `dir_path` altındaki `*.sql` dosyalarını ada göre sırayla uygular.
-# Her dosya bir kez çalışır; `schema_migrations` tablosunda izlenir.
+# Her dosya bir kez çalışır; `schema_migrations` tablosunda izlenir. HER
+# migration KENDI `BEGIN IMMEDIATE`/`COMMIT` bloguna sarilir (bkz. SQLite
+# dokumantasyonu — `IMMEDIATE` yazma kilidini HEMEN alir, bir baska
+# baglantinin ORTASINDA bulundugu bir "deferred" islemle YARIS durumuna
+# GIRMEZ) — bir migration dosyasi BASARISIZ olursa (sozdizimi hatasi,
+# kisitlama ihlali) o dosyanin YARIM kalmis etkileri ROLLBACK edilir VE
+# `schema_migrations`a ASLA kaydedilmez (aksi halde bir sonraki `migrate()`
+# cagrisi onu "zaten uygulanmis" sanip ATLARDI, veritabani kalici olarak
+# tutarsiz kalirdi).
 def migrate(db: Connection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
@@ -136,8 +144,14 @@ def migrate(db: Connection, dir_path: str) -> int:
         if not _already_applied(db, version):
             full: str = nox.path.join(dir_path, version)
             sql: str = nox.fs.read_to_string(full)
-            db.execute(sql)
-            _record_applied(db, version)
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                db.execute(sql)
+                _record_applied(db, version)
+            except SqliteError as e:
+                db.execute("ROLLBACK")
+                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+            db.execute("COMMIT")
             applied = applied + 1
         j = j + 1
     return applied
@@ -160,6 +174,10 @@ def _down_name(version: str) -> str:
 # `dir_path`taki migration'lardan `schema_migrations`a EN SON kaydedileni
 # (rowid'e gore) geri alir: eslesen `<version>.down.sql` dosyasini
 # calistirip `schema_migrations`dan siler. Geri alinan versiyonu doner.
+# `migrate()` gibi TEK bir `BEGIN IMMEDIATE`/`COMMIT` blogu icinde calisir —
+# down-migration BASARISIZ olursa `schema_migrations` kaydi SILINMEDEN
+# ROLLBACK edilir (yari-uygulanmis bir geri alma, veritabanini KOD ile
+# `schema_migrations` arasinda tutarsiz birakmaz).
 def rollback(db: Connection, dir_path: str) -> str:
     _ensure_migrations_table(db)
     stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
@@ -172,10 +190,16 @@ def rollback(db: Connection, dir_path: str) -> str:
     if not nox.fs.exists(down_path):
         raise DbError("down migration dosyasi yok: " + down_path)
     sql: str = nox.fs.read_to_string(down_path)
-    db.execute(sql)
-    del_stmt: Statement = db.prepare("DELETE FROM schema_migrations WHERE version = ?")
-    del_stmt.bind_str(0, version)
-    del_stmt.execute()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute(sql)
+        del_stmt: Statement = db.prepare("DELETE FROM schema_migrations WHERE version = ?")
+        del_stmt.bind_str(0, version)
+        del_stmt.execute()
+    except SqliteError as e:
+        db.execute("ROLLBACK")
+        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+    db.execute("COMMIT")
     return version
 
 # Mevcut tum tablolarin CREATE TABLE ifadelerini `path`e yazar (sqlite_master

@@ -2,10 +2,19 @@ import nox.test
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Context
 import nyx.cors
-from nyx.cors import CorsConfig
+from nyx.cors import CorsConfig, CorsError
 
 cfg: CorsConfig = nyx.cors.default_config()
 nox.test.assert_eq_str(cfg.origin, "*", "default origin")
+
+def expect_wildcard_credentials_error() -> bool:
+    try:
+        bad: CorsConfig = CorsConfig("*", "GET,POST", "Authorization", True)
+        return False
+    except CorsError:
+        return True
+
+nox.test.assert_true(expect_wildcard_credentials_error(), "origin='*' + credentials=true reddedilmeli")
 
 before: (Context) -> HttpResponse | None = nyx.cors.before_handler(cfg)
 headers: dict[str, str] = {}

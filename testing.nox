@@ -57,18 +57,49 @@ def delete(handler: (HttpRequest) -> HttpResponse, path: str) -> HttpResponse:
     empty: dict[str, str] = {}
     return request(handler, "DELETE", path, "", empty)
 
+# `with_bearer`/`with_cookie`/`with_csrf_token` BIRLIKTE ZINCIRLENEBILIR
+# (ör. `with_csrf_token(with_cookie(headers, ck), tok)`) — bu yuzden HER
+# BIRI, digerlerinin EKLEDIGI basliklari (Authorization/Cookie/Content-Type/
+# X-CSRF-Token) KORUR (bir "whitelist" araciligiyla kopyalar). Eskiden
+# `with_bearer`/`with_cookie` bu listeyi EKSIK tutuyordu (X-CSRF-Token
+# KOPYALANMIYORDU) — CSRF-korumali + kimlik-dogrulamali bir rotayi test
+# etmek icin ZINCIRLEME KULLANILDIGINDA jeton SESSIZCE DUSUYORDU.
+def _request_header_keys() -> list[str]:
+    keys: list[str] = []
+    keys.append("Content-Type")
+    keys.append("Cookie")
+    keys.append("Authorization")
+    keys.append("X-CSRF-Token")
+    return keys
+
 def with_bearer(headers: dict[str, str], token: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    _try_copy(out, headers, "Content-Type")
-    _try_copy(out, headers, "Cookie")
+    keys: list[str] = _request_header_keys()
+    i: int = 0
+    while i < len(keys):
+        _try_copy(out, headers, keys[i])
+        i = i + 1
     out["Authorization"] = "Bearer " + token
     return out
 
 def with_cookie(headers: dict[str, str], cookie_header: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    _try_copy(out, headers, "Authorization")
-    _try_copy(out, headers, "Content-Type")
+    keys: list[str] = _request_header_keys()
+    i: int = 0
+    while i < len(keys):
+        _try_copy(out, headers, keys[i])
+        i = i + 1
     out["Cookie"] = cookie_header
+    return out
+
+def with_csrf_token(headers: dict[str, str], tok: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    keys: list[str] = _request_header_keys()
+    i: int = 0
+    while i < len(keys):
+        _try_copy(out, headers, keys[i])
+        i = i + 1
+    out["X-CSRF-Token"] = tok
     return out
 
 def assert_status(resp: HttpResponse, code: int) -> None:

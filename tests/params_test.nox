@@ -17,4 +17,44 @@ form: dict[str, str] = nyx.params.from_request(req)
 nox.test.assert_eq_str(form["src"], "web", "query merge")
 nox.test.assert_eq_str(form["title"], "Ok", "form title")
 nox.test.assert_eq_str(nyx.params.path_only("/a?b=1"), "/a", "path_only")
+
+keys: list[str] = []
+keys.append("title")
+keys.append("missing")
+permitted: dict[str, str] = nyx.params.permit(form, keys)
+nox.test.assert_eq_str(permitted["title"], "Ok", "permit keeps title")
+try:
+    x: str = permitted["body"]
+    nox.test.assert_true(False, "permit must drop body")
+except KeyError:
+    nox.test.assert_true(True, "permit dropped body")
+
+req_keys: list[str] = []
+req_keys.append("title")
+req_keys.append("body")
+required: dict[str, str] = nyx.params.require_keys(form, req_keys)
+nox.test.assert_eq_str(required["body"], "Yes", "require_keys ok")
+
+bad_keys: list[str] = []
+bad_keys.append("nope")
+errs: list[str] = nyx.params.missing_required(form, bad_keys)
+nox.test.assert_eq_int(len(errs), 1, "missing_required reports")
+empty_req: dict[str, str] = nyx.params.require_keys(form, bad_keys)
+try:
+    z: str = empty_req["nope"]
+    nox.test.assert_true(False, "require_keys empty on miss")
+except KeyError:
+    nox.test.assert_true(True, "require_keys empty on miss")
+
+mh: dict[str, str] = {}
+mh["Content-Type"] = "multipart/form-data; boundary=x"
+mreq: HttpRequest = HttpRequest("POST", "/upload?x=1", "ignored-body", mh)
+mp: dict[str, str] = nyx.params.from_request(mreq)
+nox.test.assert_eq_str(mp["x"], "1", "multipart keeps query only")
+try:
+    y: str = mp["ignored"]
+    nox.test.assert_true(False, "multipart must not parse body")
+except KeyError:
+    nox.test.assert_true(True, "multipart body ignored")
+
 print("params_test ok")

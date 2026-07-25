@@ -212,15 +212,6 @@ class JobRegistry:
             i = i + 1
         raise JobError("kayitli handler yok: " + name)
 
-# Sirada bekleyen TEK bir isi alip ilgili handler'i cagirir. Is yoksa
-# False doner. Handler basariliysa `complete`, BILINEN bir framework
-# hatasi firlatirsa `fail` cagrilir.
-def process_one(db: Connection, registry: JobRegistry) -> bool:
-    job_json: str | None = reserve(db)
-    if job_json != None:
-        return _process_reserved(db, registry, job_json)
-    return False
-
 def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> bool:
     v: JsonValue = nox.json.decode(job_json)
     id: int = int(nox.json.as_number(_field(v, "id")))
@@ -232,36 +223,71 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
         return True
 
     handler: (str) -> None = registry.get(job_name)
+    finished: bool = False
     try:
-        handler(payload_json)
-    except ModelError as e:
-        fail(db, id, e.message)
-        return True
-    except MailerError as e:
-        fail(db, id, e.message)
-        return True
-    except SqliteError as e:
-        fail(db, id, e.message)
-        return True
-    except DbError as e:
-        fail(db, id, e.message)
-        return True
-    except JsonError as e:
-        fail(db, id, e.message)
-        return True
-    except HttpError as e:
-        fail(db, id, e.message)
-        return True
-    except ValueError as e:
-        fail(db, id, e.message)
-        return True
-    complete(db, id)
+        try:
+            handler(payload_json)
+            complete(db, id)
+            finished = True
+        except ModelError as e:
+            fail(db, id, e.message)
+            finished = True
+        except MailerError as e:
+            fail(db, id, e.message)
+            finished = True
+        except SqliteError as e:
+            fail(db, id, e.message)
+            finished = True
+        except DbError as e:
+            fail(db, id, e.message)
+            finished = True
+        except JsonError as e:
+            fail(db, id, e.message)
+            finished = True
+        except HttpError as e:
+            fail(db, id, e.message)
+            finished = True
+        except ValueError as e:
+            fail(db, id, e.message)
+            finished = True
+        except JobError as e:
+            fail(db, id, e.message)
+            finished = True
+    finally:
+        # Uncaught / unexpected abort must not leave the job in `running`.
+        if not finished:
+            fail(db, id, "handler aborted without completion")
     return True
 
-# Senkron poll dongusu — en fazla `max_jobs` is isler, kuyruk bosalirsa
-# erken doner. Dondurulen deger GERCEKTEN islenen is sayisidir.
+# Re-queue jobs stuck in `running` longer than `stale_ms` (worker crash recovery).
+def reclaim_stale(db: Connection, stale_ms: int) -> int:
+    if stale_ms <= 0:
+        raise JobError("stale_ms must be positive")
+    now: int = nox.time.now_ms()
+    cutoff: int = now - stale_ms
+    stmt: Statement = db.prepare(
+        "UPDATE jobs SET status = ?, updated_at_ms = ?, last_error = ? " +
+        "WHERE status = ? AND updated_at_ms <= ?"
+    )
+    stmt.bind_str(0, status_queued())
+    stmt.bind_int(1, now)
+    stmt.bind_str(2, "reclaimed: stale running")
+    stmt.bind_str(3, status_running())
+    stmt.bind_int(4, cutoff)
+    stmt.execute()
+    return db.changes()
+
+# Sirada bekleyen TEK bir isi alip ilgili handler'i cagirir. Is yoksa
+# False doner. Handler basariliysa `complete`, bilinen hatalarda `fail`.
+def process_one(db: Connection, registry: JobRegistry) -> bool:
+    job_json: str | None = reserve(db)
+    if job_json != None:
+        return _process_reserved(db, registry, job_json)
+    return False
+
 def work(db: Connection, registry: JobRegistry, max_jobs: int) -> int:
     ensure_schema(db)
+    reclaim_stale(db, 300000)
     processed: int = 0
     while processed < max_jobs:
         did: bool = process_one(db, registry)
@@ -270,14 +296,12 @@ def work(db: Connection, registry: JobRegistry, max_jobs: int) -> int:
         processed = processed + 1
     return processed
 
-# Surekli calisan worker dongusu — kuyruk bosaldiginda `poll_interval_ms`
-# kadar bekleyip yeniden dener. `max_iterations <= 0` ise sinirsiz calisir
-# (yalnizca uzun-omurlu worker sureclerinde kullanin).
 def work_forever(db: Connection, registry: JobRegistry, poll_interval_ms: int, max_iterations: int) -> None:
     ensure_schema(db)
     iterations: int = 0
     running: bool = True
     while running:
+        reclaim_stale(db, 300000)
         did: bool = process_one(db, registry)
         if not did:
             nox.time.sleep_ms(poll_interval_ms)

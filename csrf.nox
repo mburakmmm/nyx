@@ -12,6 +12,7 @@ import nyx.base64
 import nyx.params
 import nyx.ctrl
 import nyx.form
+import nyx.runtime
 from nyx.base64 import Base64Error
 from nox.http import HttpResponse
 from nox.router import Context
@@ -23,6 +24,19 @@ class CsrfError:
 def _sign(secret: str, payload: str) -> str:
     return nyx.base64.encode_hex_url(nox.crypto.hmac_sha256(secret, payload))
 
+# Jetonu GEÇERLİ oturuma bağlar (session-bound CSRF token, bkz. OWASP CSRF
+# Prevention Cheat Sheet "synchronizer token" deseni) — bu sayede saldirganin
+# KENDI oturumunda ürettigi (ama gecerli imzali) bir jeton, KURBANIN
+# oturumuna karsi ASLA gecerli olmaz (jeton yalnizca UretildIGI oturumla
+# eslesir). Oturum yoksa/bossa ("{}") istek-basina benzersiz `request_id`
+# ile "anon:" onekli bir baglanti kullanilir — YINE DE ayni istek icinde
+# uretilen jeton yine ayni istekte dogrulanabilir (login-oncesi formlar).
+def _session_binding() -> str:
+    sess: str = nyx.runtime.session_json()
+    if len(sess) == 0 or sess == "{}":
+        return "anon:" + nyx.runtime.request_id()
+    return nox.crypto.sha256(sess)
+
 def token(secret: str) -> str:
     return token_ttl(secret, 3600)
 
@@ -32,7 +46,8 @@ def token_ttl(secret: str, ttl_sec: int) -> str:
     if ttl_sec <= 0:
         raise CsrfError("ttl pozitif olmali")
     exp: int = (nox.time.now_ms() // 1000) + ttl_sec
-    payload: str = str(exp)
+    binding: str = _session_binding()
+    payload: str = str(exp) + "|" + binding
     payload_b64: str = nyx.base64.encode_url(payload)
     mac: str = _sign(secret, payload_b64)
     return payload_b64 + "." + mac
@@ -50,9 +65,15 @@ def check(secret: str, tok: str) -> bool:
         return False
     try:
         payload: str = nyx.base64.decode_url(payload_b64)
-        exp: int = int(payload)
+        fields: list[str] = nox.strings.split(payload, "|")
+        if len(fields) != 2:
+            return False
+        exp: int = int(fields[0])
+        binding: str = fields[1]
         now: int = nox.time.now_ms() // 1000
         if now >= exp:
+            return False
+        if not nox.crypto.constant_time_eq(binding, _session_binding()):
             return False
         return True
     except Base64Error:
@@ -83,10 +104,34 @@ def _header_get(headers: dict[str, str], name: str) -> str:
 def _unsafe_method(method: str) -> bool:
     return method == "POST" or method == "PUT" or method == "PATCH" or method == "DELETE"
 
-# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu.
-def protect(secret: str) -> (Context) -> HttpResponse | None:
+def _target_path(target: str) -> str:
+    q: int = nox.strings.index_of(target, "?")
+    if q < 0:
+        return target
+    out: str = ""
+    i: int = 0
+    while i < q:
+        out = out + target[i]
+        i = i + 1
+    return out
+
+def _starts_with_any(path: str, prefixes: list[str]) -> bool:
+    i: int = 0
+    while i < len(prefixes):
+        if nox.strings.starts_with(path, prefixes[i]):
+            return True
+        i = i + 1
+    return False
+
+# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu —
+# `exempt_prefixes`teki oneklerle BASLAYAN yollar (ör. JSON/API istemcileri
+# genellikle CSRF cerezine DAYANMADIGINDAN, kendi Bearer/API-key kimlik
+# dogrulamalarini kullanir) atlanir.
+def protect_except(secret: str, exempt_prefixes: list[str]) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
         if not _unsafe_method(ctx.request.method):
+            return None
+        if _starts_with_any(_target_path(ctx.request.target), exempt_prefixes):
             return None
         tok: str = _header_get(ctx.request.headers, "X-CSRF-Token")
         if len(tok) == 0:
@@ -96,6 +141,12 @@ def protect(secret: str) -> (Context) -> HttpResponse | None:
             return nyx.ctrl.forbidden()
         return None
     return handler
+
+# `protect_except`in varsayilan hali: `/api/` altindaki tum yollar CSRF
+# korumasindan MUAFTIR (bkz. yukarisi).
+def protect(secret: str) -> (Context) -> HttpResponse | None:
+    exempt: list[str] = ["/api/"]
+    return protect_except(secret, exempt)
 
 def field(secret: str) -> str:
     return nyx.form.hidden("_csrf", token(secret))

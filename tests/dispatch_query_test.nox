@@ -1,0 +1,40 @@
+# Integration: app.dispatch preserves query for nyx.params
+import nox.test
+import nox.fs
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.params
+from nyx.app import Application
+from nyx.config import Config
+
+dir_path: str = "/tmp/nyx_dispatch_query_mig"
+if not nox.fs.exists(dir_path):
+    nox.fs.create_dir(dir_path)
+nox.fs.write_string(dir_path + "/001_t.sql", "CREATE TABLE IF NOT EXISTS t_q (id INTEGER PRIMARY KEY);")
+
+def setup(application: Application) -> None:
+    def search(ctx: Context) -> HttpResponse:
+        # Router sees path-only target; params must still read original query
+        # via runtime.request_target set by dispatch.
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        q: str = nyx.params.get(p, "q", "")
+        return nyx.ctrl.text(200, "q=" + q)
+    application.router.get("/search", search)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.db_path = ":memory:"
+cfg.migrate_path = dir_path
+cfg.csrf_enabled = False
+cfg.log_requests = False
+
+application: Application = nyx.app.boot(cfg, setup)
+req: HttpRequest = HttpRequest("GET", "/search?q=hello%20nyx", "", {})
+resp: HttpResponse = nyx.app.dispatch(application, req)
+nox.test.assert_eq_int(resp.status, 200, "status")
+nox.test.assert_eq_str(resp.body, "q=hello nyx", "query preserved through dispatch")
+application.db.close()
+print("dispatch_query_test ok")

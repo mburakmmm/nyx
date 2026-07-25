@@ -1,0 +1,26 @@
+import nox.test
+import nyx.runtime
+
+nyx.runtime.begin("req-flash", 0, "en")
+
+nyx.runtime.flash_set("notice", "Kaydedildi")
+first_read: str | None = nyx.runtime.flash_get("notice")
+nox.test.assert_true(first_read != None, "flash_get ilk okumada mesaji doner")
+if first_read != None:
+    nox.test.assert_eq_str(first_read, "Kaydedildi", "flash_get dogru mesaji doner")
+
+second_read: str | None = nyx.runtime.flash_get("notice")
+nox.test.assert_true(second_read == None, "flash_get ikinci okumada mesaj otomatik temizlenmis olmali (Rails-benzeri)")
+
+nyx.runtime.end()
+
+# --- cycle_session ---
+
+nyx.runtime.begin("req-cycle", 0, "en")
+nyx.runtime.load_session("{\"user_id\":\"alice\"}")
+nox.test.assert_true(not nyx.runtime.is_session_dirty(), "load_session dirty isaretlemez")
+nyx.runtime.cycle_session()
+nox.test.assert_true(nyx.runtime.is_session_dirty(), "cycle_session oturumu dirty isaretler")
+nyx.runtime.end()
+
+print("runtime_test ok")

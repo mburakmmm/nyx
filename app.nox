@@ -75,14 +75,15 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     if cfg.is_production() and len(cfg.secret_key) < 32:
         raise AppError("production secret_key must be at least 32 characters")
     conn: Connection = nyx.db.open(cfg.db_path)
-    if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
-        try:
-            nyx.db.migrate(conn, cfg.migrate_path)
-        except DbError:
-            raise AppError("migration failed: " + cfg.migrate_path)
-    else:
-        if cfg.is_production():
-            raise AppError("migration directory missing: " + cfg.migrate_path)
+    if cfg.auto_migrate:
+        if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
+            try:
+                nyx.db.migrate(conn, cfg.migrate_path)
+            except DbError:
+                raise AppError("migration failed: " + cfg.migrate_path)
+        else:
+            if cfg.is_production():
+                raise AppError("migration directory missing: " + cfg.migrate_path)
     application: Application = Application(cfg, conn, Router())
     _install_framework_middleware(application)
     setup(application)
@@ -185,6 +186,8 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
     rid: str = nox.uuid.uuid4()
     nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
+    # Keep full target (with query) for nyx.params; router matches on path only.
+    nyx.runtime.set_request_target(req.target)
     path: str = _strip_query(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
     resp: HttpResponse = HttpResponse(500, "", {})

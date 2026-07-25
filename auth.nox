@@ -47,8 +47,14 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             b: int = 0
     return None
 
+# `msg` her zaman bu modulun SABIT dizeleri OLSA da ("missing_authorization"
+# gibi, kullanici girdisi ICERMEZ), `nox.json.encode_string` KULLANMAK
+# gelecekte BASKA bir cagiran DEGISKEN/kullanici-kontrollu bir mesaj
+# GECIRIRSE (ör. hata ayrintisi) bozuk/enjekte edilebilir JSON URETILMESINI
+# BASTAN ONLER — elle `"\"" + msg + "\""` birlestirmesi TIRNAK/backslash
+# icerebilecek bir `msg` icin GECERSIZ JSON uretirdi.
 def _unauthorized(msg: str) -> HttpResponse:
-    return nyx.response.json(401, "{\"error\":\"" + msg + "\"}")
+    return nyx.response.json(401, "{\"error\":" + nox.json.encode_string(msg) + "}")
 
 def _drop_prefix(s: str, n: int) -> str:
     out: str = ""
@@ -114,6 +120,11 @@ def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpRes
         return inner(ctx)
     return handler
 
+# NOT: Oturum (cookie) verisinde `user_id` alani ZORUNLUDUR — imzasi
+# GECERLI ama `user_id`si eksik/bos bir oturum "kimlik dogrulanmis DEGIL"
+# olarak SAYILIR (401 doner). Bu, HMAC imzasi gecerli olsa bile icerigi
+# YANLIS/eksik olusturulmus (ör. login akisinda `user_id` unutulmus) bir
+# oturumun `nyx.runtime.signed_in()`in True donmesine yol ACMASINI ONLER.
 def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
@@ -128,7 +139,8 @@ def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse 
                     uid: str = _json_field_str(data, "user_id")
                     if len(uid) > 0:
                         nyx.runtime.set_user(uid, data)
-                    return None
+                        return None
+                    return _unauthorized("missing_user_id")
                 return _unauthorized("invalid_session")
             except KeyError:
                 return _unauthorized("missing_session_cookie")

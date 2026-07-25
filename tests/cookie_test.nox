@@ -24,4 +24,17 @@ nox.test.assert_true(nox.strings.contains(line, "SameSite=Lax"), "serialize same
 
 nox.test.assert_true(expect_bad_name(), "reject bad name")
 
+def expect_samesite_none_insecure() -> bool:
+    try:
+        nyx.cookie.serialize("sid", "abc", "/", 3600, True, "None", False)
+        return False
+    except CookieError:
+        return True
+
+nox.test.assert_true(expect_samesite_none_insecure(), "SameSite=None secure=False icin reddedilmeli")
+
+line_none_secure: str = nyx.cookie.serialize("sid", "abc", "/", 3600, True, "None", True)
+nox.test.assert_true(nox.strings.contains(line_none_secure, "SameSite=None"), "SameSite=None secure=True ile izinli")
+nox.test.assert_true(nox.strings.contains(line_none_secure, "Secure"), "SameSite=None Secure bayragini icermeli")
+
 print("cookie_test ok")

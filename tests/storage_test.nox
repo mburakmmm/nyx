@@ -44,4 +44,56 @@ except StorageError:
     threw2 = True
 nox.test.assert_true(threw2, "bos dosya adi StorageError firlatir")
 
+# --- path traversal / mutlak yol / backslash korumasi (path_for uzerinden
+# read/delete/exists/metadata_json'a yayilir) ---
+
+threw_dotdot: bool = False
+try:
+    nyx.storage.read(root, "../../etc/passwd")
+except StorageError:
+    threw_dotdot = True
+nox.test.assert_true(threw_dotdot, "read icin '..' iceren anahtar StorageError firlatir")
+
+threw_dotdot_exists: bool = False
+try:
+    nyx.storage.exists(root, "foo/../../etc/passwd")
+except StorageError:
+    threw_dotdot_exists = True
+nox.test.assert_true(threw_dotdot_exists, "exists icin '..' iceren anahtar StorageError firlatir")
+
+threw_dotdot_delete: bool = False
+try:
+    nyx.storage.delete(root, "../escape")
+except StorageError:
+    threw_dotdot_delete = True
+nox.test.assert_true(threw_dotdot_delete, "delete icin '..' iceren anahtar StorageError firlatir")
+
+threw_dotdot_meta: bool = False
+try:
+    nyx.storage.metadata_json(root, "../escape")
+except StorageError:
+    threw_dotdot_meta = True
+nox.test.assert_true(threw_dotdot_meta, "metadata_json icin '..' iceren anahtar StorageError firlatir")
+
+threw_absolute: bool = False
+try:
+    nyx.storage.read(root, "/etc/passwd")
+except StorageError:
+    threw_absolute = True
+nox.test.assert_true(threw_absolute, "mutlak yol iceren anahtar StorageError firlatir")
+
+threw_backslash: bool = False
+try:
+    nyx.storage.read(root, "foo\\bar")
+except StorageError:
+    threw_backslash = True
+nox.test.assert_true(threw_backslash, "backslash iceren anahtar StorageError firlatir")
+
+threw_empty_key: bool = False
+try:
+    nyx.storage.path_for(root, "")
+except StorageError:
+    threw_empty_key = True
+nox.test.assert_true(threw_empty_key, "bos anahtar path_for icin StorageError firlatir")
+
 print("storage_test ok")

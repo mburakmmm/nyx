@@ -13,6 +13,7 @@ import nox.uuid
 import nox.crypto
 import nox.time
 import nox.json
+import nox.strings
 
 class StorageError:
     def __init__(self: StorageError, message: str) -> None:
@@ -36,6 +37,44 @@ def _sanitize_filename(filename: str) -> str:
 
 def _meta_path(content_path: str) -> str:
     return content_path + ".meta.json"
+
+def _drop_last_n(s: str, n: int) -> str:
+    out: str = ""
+    limit: int = len(s) - n
+    i: int = 0
+    while i < limit:
+        out = out + s[i]
+        i = i + 1
+    return out
+
+# `key` (cagiran tarafindan verilen, GUVENILMEYEN olabilecek opak depolama
+# anahtari) icinde yol gezinme (`..`), mutlak yol veya backslash icerip
+# icermedigini denetler — hicbiri `store()`un URETTIGI (uuid4 + "/" +
+# basename) anahtarlarda BULUNMAZ, bu yuzden burada YAKALANMASI HER ZAMAN
+# kotu niyetli/bozuk bir `key` anlamina gelir.
+def _validate_key(key: str) -> None:
+    if len(key) == 0:
+        raise StorageError("depolama anahtari bos olamaz")
+    if nox.strings.contains(key, ".."):
+        raise StorageError("gecersiz depolama anahtari (yol gezinme denemesi): " + key)
+    if nox.strings.contains(key, "\\"):
+        raise StorageError("gecersiz depolama anahtari (backslash icermemeli): " + key)
+    if nox.path.is_absolute(key):
+        raise StorageError("gecersiz depolama anahtari (mutlak yol olamaz): " + key)
+
+# `full` (root+key birlestirilmis yol) HALA `root` altinda mi diye ikinci
+# bir savunma hatti (defense-in-depth) olarak dogrular — `_validate_key`
+# `..`/mutlak yolu ZATEN reddettiginden bu normalde tetiklenmez, ama
+# `nox.path.join` GELECEKTE farkli davranirsa (ör. sembolik link cozme)
+# BILE `root` disina cikisi yakalar.
+def _ensure_under_root(root: str, full: str) -> None:
+    root_norm: str = root
+    if len(root_norm) > 0 and nox.strings.ends_with(root_norm, "/"):
+        root_norm = _drop_last_n(root_norm, 1)
+    if full == root_norm:
+        return
+    if not nox.strings.starts_with(full, root_norm + "/"):
+        raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + full)
 
 # `content_str`i `root` altinda RASTGELE (uuid4) bir alt dizine yazar ve
 # opak bir `key` ("<uuid>/<dosya_adi>") doner. Yaninda sha256 checksum +
@@ -64,7 +103,10 @@ def store(root: str, filename: str, content_str: str) -> str:
     return key
 
 def path_for(root: str, key: str) -> str:
-    return nox.path.join(root, key)
+    _validate_key(key)
+    full: str = nox.path.join(root, key)
+    _ensure_under_root(root, full)
+    return full
 
 def read(root: str, key: str) -> str:
     full: str = path_for(root, key)

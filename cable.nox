@@ -7,6 +7,12 @@
 # sorgular (long-poll fallback). Gercek, kalici cift-yonlu bir soket
 # baglantisi HTTP katmani SINIRLARI icinde saglanamaz.
 #
+# OMUR: Hub surec-geneli DEGILDIR. `nyx.app.boot` her istekte yeniden
+# calistigi icin Hub'i `setup` icinde olusturmak isteklar ARASI durumu
+# KORUMAZ. Kalici yayin icin harici bir depolama (SQLite tablo / dosya)
+# veya Nox tarafında process-global durum gerekir. Hub, TEK bir istek
+# icinde broadcast + sse/poll birlestirmek icin uygundur.
+#
 # import nyx.cable
 #
 # hub: Hub = Hub()

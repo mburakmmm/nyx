@@ -16,6 +16,23 @@ import nyx.view
 def redirect(location: str) -> HttpResponse:
     return nyx.response.redirect(location, 302)
 
+# Acik yonlendirme (open redirect) korumasi: yalnizca `/` ile baslayan,
+# `//` (sema-goreli/protocol-relative — tarayici bunu farkli bir HOST'a
+# yonlendirir) ile BASLAMAYAN ve `://` (mutlak URL, farkli bir origin'e
+# isaret edebilir) ICERMEYEN goreli yollara izin verilir. `redirect_back`/
+# `redirect_back_to` kullanici-kontrollu `Referer` basligina KOR KOR
+# guvenmez — guvenli degilse `fallback`e doner.
+def _is_safe_relative_redirect(target: str) -> bool:
+    if len(target) == 0:
+        return False
+    if not nox.strings.starts_with(target, "/"):
+        return False
+    if nox.strings.starts_with(target, "//"):
+        return False
+    if nox.strings.contains(target, "://"):
+        return False
+    return True
+
 def _header_get(headers: dict[str, str], name: str) -> str | None:
     try:
         return headers[name]
@@ -34,19 +51,23 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
     return None
 
 # Istegin `Referer` basligina (varsa) yonlendirir, yoksa `fallback`e.
+# `Referer` GUVENILMEYEN bir istemci girdisidir — acik yonlendirmeyi
+# ONLEMEK icin yalnizca `_is_safe_relative_redirect` KABUL ETTIGI goreli
+# yollara izin verilir (bkz. yukarisi).
 def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
     referer: str | None = _header_get(ctx.request.headers, "Referer")
     if referer != None:
-        if len(referer) > 0:
+        if _is_safe_relative_redirect(referer):
             return redirect(referer)
     return redirect(fallback)
 
 # `Context` olmadan, dogrudan bir `Referer` metniyle cagirmak isteyenler
-# icin (ör. baska bir middleware'den gelen deger).
+# icin (ör. baska bir middleware'den gelen deger). Ayni acik yonlendirme
+# korumasina tabidir.
 def redirect_back_to(referer: str, fallback: str) -> HttpResponse:
-    if len(referer) == 0:
-        return redirect(fallback)
-    return redirect(referer)
+    if _is_safe_relative_redirect(referer):
+        return redirect(referer)
+    return redirect(fallback)
 
 def html(status: int, body: str) -> HttpResponse:
     headers: dict[str, str] = {}

@@ -27,10 +27,29 @@ nox.test.assert_true(nox.strings.contains(payload, "exp"), "payload exp")
 
 nox.test.assert_true(expect_jwt_error("wrong-secret-key-32chars-minimum!", token), "reject wrong secret")
 
-expired: str = nyx.jwt.encode(secret, "{\"sub\":\"bob\"}", now - 10)
-nox.test.assert_true(expect_jwt_error(secret, expired), "reject expired")
-
 tampered: str = parts[0] + "." + parts[1] + ".AAAA"
 nox.test.assert_true(expect_jwt_error(secret, tampered), "reject tampered")
+
+# --- encode gecmis/simdiki zaman icin exp_unix'i reddeder ---
+
+threw_past_exp: bool = False
+try:
+    nyx.jwt.encode(secret, "{\"sub\":\"bob\"}", now - 10)
+except JwtError:
+    threw_past_exp = True
+nox.test.assert_true(threw_past_exp, "encode gecmis exp_unix icin JwtError firlatir")
+
+threw_now_exp: bool = False
+try:
+    nyx.jwt.encode(secret, "{\"sub\":\"bob\"}", now)
+except JwtError:
+    threw_now_exp = True
+nox.test.assert_true(threw_now_exp, "encode simdiki zamana esit exp_unix icin JwtError firlatir")
+
+# --- decode, GECERLI olarak uretilmis ama SURESI SONRADAN dolan bir token'i reddeder ---
+
+short_lived: str = nyx.jwt.encode(secret, "{\"sub\":\"carol\"}", now + 1)
+nox.time.sleep_ms(1100)
+nox.test.assert_true(expect_jwt_error(secret, short_lived), "reject expired (decode-time check)")
 
 print("jwt_test ok")

@@ -117,83 +117,98 @@ def destroy(db: Connection, table: str, id: int) -> None:
     stmt.bind_int(0, id)
     stmt.execute()
 
-def _json_keys_vals(attrs_json: str) -> list[str]:
-    # Düzleştirilmiş [k0,v0,k1,v1,...] — değerler her zaman string bağlanır
-    # (sayılar da metin olarak). JSON number → str(as_number) / int cast.
+class Attrs:
+    def __init__(self: Attrs, keys: list[str], vals: list[str], nulls: list[bool]) -> None:
+        self.keys = keys
+        self.vals = vals
+        self.nulls = nulls
+
+# `keys[i]`in degerini tasir: `nulls[i]` True ise deger JSON `null`dur
+# (baglanirken `vals[i]` ("") YOK SAYILIP `Statement.bind_null` kullanilir),
+# aksi halde `vals[i]` (her zaman metin — sayilar da metin olarak) baglanir.
+def _json_keys_vals(attrs_json: str) -> Attrs:
     v: JsonValue = nox.json.decode(attrs_json)
     if not nox.json.is_object(v):
         raise ModelError("attrs bir JSON nesnesi olmali")
-    flat: list[str] = []
+    keys: list[str] = []
+    vals: list[str] = []
+    nulls: list[bool] = []
     i: int = 0
     n: int = nox.json.object_len(v)
     while i < n:
         key: str = nox.json.object_key(v, i)
         _check_ident(key)
         val: JsonValue = nox.json.object_value(v, i)
-        flat.append(key)
+        keys.append(key)
         if nox.json.is_null(val):
-            flat.append("")
+            vals.append("")
+            nulls.append(True)
         elif nox.json.is_string(val):
-            flat.append(nox.json.as_string(val))
+            vals.append(nox.json.as_string(val))
+            nulls.append(False)
         elif nox.json.is_number(val):
-            flat.append(nox.json.encode(val))
+            vals.append(nox.json.encode(val))
+            nulls.append(False)
         elif nox.json.is_bool(val):
             if nox.json.as_bool(val):
-                flat.append("1")
+                vals.append("1")
             else:
-                flat.append("0")
+                vals.append("0")
+            nulls.append(False)
         else:
             raise ModelError("desteklenmeyen attrs tipi: " + key)
         i = i + 1
-    return flat
+    return Attrs(keys, vals, nulls)
 
 def create(db: Connection, table: str, attrs_json: str) -> int:
     _check_ident(table)
-    flat: list[str] = _json_keys_vals(attrs_json)
-    if len(flat) == 0:
+    attrs: Attrs = _json_keys_vals(attrs_json)
+    if len(attrs.keys) == 0:
         raise ModelError("bos attrs")
     cols: str = ""
     placeholders: str = ""
     i: int = 0
-    while i < len(flat):
+    while i < len(attrs.keys):
         if i > 0:
             cols = cols + ", "
             placeholders = placeholders + ", "
-        cols = cols + _quote_ident(flat[i])
+        cols = cols + _quote_ident(attrs.keys[i])
         placeholders = placeholders + "?"
-        i = i + 2
+        i = i + 1
     sql: str = "INSERT INTO " + _quote_ident(table) + " (" + cols + ") VALUES (" + placeholders + ")"
     stmt: Statement = db.prepare(sql)
-    bind_i: int = 0
-    j: int = 1
-    while j < len(flat):
-        stmt.bind_str(bind_i, flat[j])
-        bind_i = bind_i + 1
-        j = j + 2
+    j: int = 0
+    while j < len(attrs.keys):
+        if attrs.nulls[j]:
+            stmt.bind_null(j)
+        else:
+            stmt.bind_str(j, attrs.vals[j])
+        j = j + 1
     stmt.execute()
     return db.last_insert_rowid()
 
 def update(db: Connection, table: str, id: int, attrs_json: str) -> None:
     _check_ident(table)
-    flat: list[str] = _json_keys_vals(attrs_json)
-    if len(flat) == 0:
+    attrs: Attrs = _json_keys_vals(attrs_json)
+    if len(attrs.keys) == 0:
         raise ModelError("bos attrs")
     sets: str = ""
     i: int = 0
-    while i < len(flat):
+    while i < len(attrs.keys):
         if i > 0:
             sets = sets + ", "
-        sets = sets + _quote_ident(flat[i]) + " = ?"
-        i = i + 2
+        sets = sets + _quote_ident(attrs.keys[i]) + " = ?"
+        i = i + 1
     sql: str = "UPDATE " + _quote_ident(table) + " SET " + sets + " WHERE \"id\" = ?"
     stmt: Statement = db.prepare(sql)
-    bind_i: int = 0
-    j: int = 1
-    while j < len(flat):
-        stmt.bind_str(bind_i, flat[j])
-        bind_i = bind_i + 1
-        j = j + 2
-    stmt.bind_int(bind_i, id)
+    j: int = 0
+    while j < len(attrs.keys):
+        if attrs.nulls[j]:
+            stmt.bind_null(j)
+        else:
+            stmt.bind_str(j, attrs.vals[j])
+        j = j + 1
+    stmt.bind_int(len(attrs.keys), id)
     stmt.execute()
 
 # `fn`i tek bir SQLite islemi (transaction) icinde calistirir: basariliysa

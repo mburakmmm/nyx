@@ -36,6 +36,7 @@ def handle(req: HttpRequest) -> HttpResponse:
     cfg: Config = nyx.config.load()
     if len(cfg.secret_key) < 16:
         cfg.secret_key = "change-me-{{APP_NAME}}-secret-key-32b!"
+    # Production: set NYX_AUTO_MIGRATE=0 and run `nyx db migrate` separately.
     application: Application = nyx.app.boot(cfg, setup)
     resp: HttpResponse = HttpResponse(500, "", {})
     try:

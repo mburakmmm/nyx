@@ -49,6 +49,24 @@ nox.test.assert_eq_str(r6.headers["Location"], "/fallback", "redirect_back_to bo
 r7: HttpResponse = nyx.ctrl.redirect_back_to("/direkt", "/fallback")
 nox.test.assert_eq_str(r7.headers["Location"], "/direkt", "redirect_back_to dolu referer kullanmali")
 
+# --- acik yonlendirme (open redirect) korumasi ---
+
+r_abs: HttpResponse = nyx.ctrl.redirect_back_to("http://evil.example.com/phish", "/fallback")
+nox.test.assert_eq_str(r_abs.headers["Location"], "/fallback", "mutlak URL referer reddedilip fallback kullanilmali")
+
+r_proto_relative: HttpResponse = nyx.ctrl.redirect_back_to("//evil.example.com/phish", "/fallback")
+nox.test.assert_eq_str(r_proto_relative.headers["Location"], "/fallback", "protokol-goreli (//) referer reddedilip fallback kullanilmali")
+
+r_scheme_embedded: HttpResponse = nyx.ctrl.redirect_back_to("/redirect?to=http://evil.example.com", "/fallback")
+nox.test.assert_eq_str(r_scheme_embedded.headers["Location"], "/fallback", "'://' iceren referer reddedilip fallback kullanilmali")
+
+with_evil_referer: dict[str, str] = {}
+with_evil_referer["Referer"] = "http://evil.example.com/phish"
+req_evil_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_evil_referer)
+ctx_evil_referer: Context = Context(req_evil_referer, params_empty)
+r_evil: HttpResponse = nyx.ctrl.redirect_back(ctx_evil_referer, "/anasayfa")
+nox.test.assert_eq_str(r_evil.headers["Location"], "/anasayfa", "redirect_back mutlak Referer'i reddedip fallback kullanmali")
+
 r8: HttpResponse = nyx.ctrl.unprocessable()
 nox.test.assert_eq_int(r8.status, 422, "unprocessable 422 donmeli")
 

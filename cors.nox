@@ -6,8 +6,21 @@ from nox.http import HttpResponse
 from nox.router import Context
 import nyx.response
 
+class CorsError:
+    def __init__(self: CorsError, message: str) -> None:
+        self.message = message
+
 class CorsConfig:
+    # Fetch/CORS spesifikasyonu `Access-Control-Allow-Origin: *` ile
+    # `Access-Control-Allow-Credentials: true`nin BIRLIKTE kullanimini
+    # ZATEN tarayici tarafinda REDDEDER (kimlik-bilgili istekler "*" origin'i
+    # KABUL ETMEZ) — ama bu SESSIZ bir tarayici-tarafi basarisizliktir
+    # (gelistirici curl/Postman ile test EDERKEN "calisiyor" SANIR, gercek
+    # tarayicida CORS hatasi ALIR). Bu yuzden burada YAPILANDIRMA ANINDA
+    # ACIKCA CorsError firlatilir.
     def __init__(self: CorsConfig, origin: str, methods: str, headers: str, credentials: bool) -> None:
+        if credentials and origin == "*":
+            raise CorsError("credentials=true ile origin='*' birlikte kullanilamaz (CORS guvenlik ihlali)")
         self.origin = origin
         self.methods = methods
         self.headers = headers

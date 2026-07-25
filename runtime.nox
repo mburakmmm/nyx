@@ -17,6 +17,7 @@
 
 import nox.os
 from nox.os import OsError
+import nox.strings
 import nyx.flash
 
 # NOT: Kurucu (__init__) PARAMETRE adlari, bu modulun ASAGIDAKI
@@ -100,6 +101,8 @@ def reset() -> None:
     _put("LOCALE", "")
     _put("REQUEST_ID", "")
     _put("STARTED_MS", "0")
+    _put("REQUEST_TARGET", "")
+    _put("HDR_KEYS", "")
 
 # Yeni bir istek icin durumu baslatir (nyx.app.dispatch tarafindan HER
 # istegin basinda cagrilir).
@@ -122,10 +125,41 @@ def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _put("LOCALE", loc)
     _put("REQUEST_ID", req_id)
     _put("STARTED_MS", str(start_ms))
+    _put("REQUEST_TARGET", "")
+    _put("HDR_KEYS", "")
     return current()
 
 def end() -> None:
     reset()
+
+def set_request_target(target: str) -> None:
+    _put("REQUEST_TARGET", target)
+
+def request_target() -> str:
+    return _get("REQUEST_TARGET", "")
+
+# Tracks response header names for with_header (dict key iteration yok).
+def track_header_key(key: str) -> None:
+    raw: str = _get("HDR_KEYS", "")
+    if len(raw) == 0:
+        _put("HDR_KEYS", key)
+        return
+    parts: list[str] = nox.strings.split(raw, "\n")
+    i: int = 0
+    while i < len(parts):
+        if parts[i] == key:
+            return
+        i = i + 1
+    _put("HDR_KEYS", raw + "\n" + key)
+
+def tracked_header_keys() -> list[str]:
+    raw: str = _get("HDR_KEYS", "")
+    if len(raw) == 0:
+        return []
+    return nox.strings.split(raw, "\n")
+
+def clear_tracked_headers() -> None:
+    _put("HDR_KEYS", "")
 
 # `begin()` HIC CAGRILMAMISSA (ör. bir middleware'i `nyx.app.dispatch`
 # DISINDA, dogrudan bir birim testinde cagirirken) BILE cokmemek icin
@@ -170,6 +204,14 @@ def is_session_dirty() -> bool:
 def touch_session() -> None:
     _put_bool("SESSION_DIRTY", True)
 
+# Oturum sabitleme (session fixation) korumasi: giris/yetki DEGISIMINDE
+# cagirilir — veriyi DEGISTIRMEZ, sadece `session_dirty`yi isaretler, boylece
+# `nyx.app`in `_session_after`i `nyx.session.create`i (HER cagrildiginda
+# YENI bir `exp` + imza uretir) YENIDEN calistirip Set-Cookie'yi YENI bir
+# degerle yeniden yazar (bkz. `nyx.session.regenerate`/`rotate`).
+def cycle_session() -> None:
+    touch_session()
+
 def set_user(user_id: str, payload_json: str) -> None:
     _put("USER_ID", user_id)
     _put("USER_PAYLOAD", payload_json)
@@ -204,8 +246,15 @@ def flash_set(key: str, message: str) -> None:
     _put_bool("HAS_SESSION", True)
     _put_bool("SESSION_DIRTY", True)
 
+# Rails'in flash'iyla AYNI TEK-KULLANIMLIK davranis: mesaj OKUNDUGUNDA
+# (mevcutsa) oturumdan OTOMATIK silinir — cagiran ARTIK ayrica `flash_clear`
+# CAGIRMAK ZORUNDA DEGILDIR (bir sonraki istekte AYNI mesaj TEKRAR
+# GORUNMEZ). Mesaj YOKSA (None) oturum DEGISTIRILMEZ.
 def flash_get(key: str) -> str | None:
-    return nyx.flash.get(session_json(), key)
+    val: str | None = nyx.flash.get(session_json(), key)
+    if val != None:
+        flash_clear(key)
+    return val
 
 def flash_clear(key: str) -> None:
     updated: str = nyx.flash.clear(session_json(), key)

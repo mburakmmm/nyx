@@ -24,4 +24,15 @@ nox.test.assert_true(nyx.session.load(secret, "") == None, "empty")
 
 nox.test.assert_eq_str(nyx.session.default_cookie_name(), "nyx_session", "cookie name")
 
+# --- regenerate/rotate (oturum sabitleme korumasi) ---
+
+regenerated: str = nyx.session.regenerate(secret, "{\"user\":\"alice\"}", 3600)
+loaded_regenerated: str | None = nyx.session.load(secret, regenerated)
+nox.test.assert_true(loaded_regenerated != None, "regenerate ile uretilen deger yuklenebilir")
+if loaded_regenerated != None:
+    nox.test.assert_true(nox.strings.contains(loaded_regenerated, "alice"), "regenerate verisini korur")
+
+rotated: str = nyx.session.rotate(secret, "{\"user\":\"alice\"}", 3600)
+nox.test.assert_true(nyx.session.load(secret, rotated) != None, "rotate ile uretilen deger yuklenebilir")
+
 print("session_test ok")

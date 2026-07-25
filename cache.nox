@@ -138,6 +138,13 @@ class Cache:
         self.mem_vals = []
         self.mem_exp = []
 
+    # Alttaki SQLite baglantisini kapatir — `nyx.db.open`/`nyx.cache.open`in
+    # actigi dosya tanitici (file descriptor) sizintisini ONLEMEK icin
+    # cagiran, Cache'i kullanimi bittiginde (ör. istek sonu/uygulama
+    # kapanisi) BUNU cagirmalidir.
+    def close(self: Cache) -> None:
+        self.db.close()
+
 def _ensure_schema(db: Connection) -> None:
     db.execute(
         "CREATE TABLE IF NOT EXISTS cache_entries (" +
@@ -151,3 +158,6 @@ def open(path: str) -> Cache:
     db: Connection = nyx.db.open(path)
     _ensure_schema(db)
     return Cache(db)
+
+def close(c: Cache) -> None:
+    c.close()

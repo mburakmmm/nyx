@@ -7,10 +7,16 @@
 
 import nox.strings
 from nox.http import HttpRequest
+import nyx.runtime
 
 class ParamsError:
     def __init__(self: ParamsError, message: str) -> None:
         self.message = message
+
+
+
+
+
 
 def _substr(s: str, start: int, end: int) -> str:
     out: str = ""
@@ -279,6 +285,45 @@ def get(params: dict[str, str], key: str, default: str) -> str:
     except KeyError:
         return default
 
+# Strong parameters: yalnizca izin verilen anahtarlari kopyalar (Rails
+# `params.permit(:a, :b)` benzeri). Bilinmeyen anahtarlar sessizce dusulur.
+def permit(params: dict[str, str], keys: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    i: int = 0
+    while i < len(keys):
+        k: str = keys[i]
+        try:
+            out[k] = params[k]
+        except KeyError:
+            skip: int = 0
+        i = i + 1
+    return out
+
+# Eksik veya bos zorunlu anahtarlarin listesini doner (bos liste = OK).
+# Nox'ta bazi ParamsError raise yollari paket sinirinda segfault
+# uretebildigi icin require API istisna yerine hata listesi kullanir.
+def missing_required(params: dict[str, str], keys: list[str]) -> list[str]:
+    errors: list[str] = []
+    i: int = 0
+    while i < len(keys):
+        k: str = keys[i]
+        try:
+            v: str = params[k]
+            if len(v) == 0:
+                errors.append("required param empty: " + k)
+        except KeyError:
+            errors.append("required param missing: " + k)
+        i = i + 1
+    return errors
+
+# Tum `keys` mevcut ve bos degilse `permit` sonucu, aksi halde bos dict.
+def require_keys(params: dict[str, str], keys: list[str]) -> dict[str, str]:
+    errs: list[str] = missing_required(params, keys)
+    if len(errs) > 0:
+        empty: dict[str, str] = {}
+        return empty
+    return permit(params, keys)
+
 def _header_ci(headers: dict[str, str], name: str) -> str:
     try:
         return headers[name]
@@ -297,15 +342,23 @@ def _header_ci(headers: dict[str, str], name: str) -> str:
     return ""
 
 def from_request(req: HttpRequest) -> dict[str, str]:
-    flat: list[str] = parse_qs_flat(query_string(req.target))
+    target: str = req.target
+    full: str = nyx.runtime.request_target()
+    if len(full) > 0:
+        target = full
+    flat: list[str] = parse_qs_flat(query_string(target))
     method: str = req.method
     if method == "POST" or method == "PUT" or method == "PATCH":
         if len(req.body) > 0:
             ct: str = _header_ci(req.headers, "Content-Type")
+            # multipart desteklenmez — govdeyi form olarak parse ETME
+            # (raise bazi Nox surumlerinde segfault; query yine doner).
+            if nox.strings.contains(ct, "multipart/form-data"):
+                return flat_to_dict(flat)
             trimmed: str = nox.strings.trim(req.body)
             is_json: bool = nox.strings.starts_with(trimmed, "{") or nox.strings.starts_with(trimmed, "[")
             is_form: bool = nox.strings.contains(ct, "application/x-www-form-urlencoded")
-            if is_form or (not is_json and (len(ct) == 0 or is_form)):
+            if is_form or (not is_json and len(ct) == 0):
                 if not is_json:
                     body_flat: list[str] = parse_qs_flat(req.body)
                     j: int = 0

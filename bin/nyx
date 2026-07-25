@@ -13,12 +13,13 @@ Usage:
   nyx new <app_name>                         create a new app skeleton
   nyx generate model <Name> [field:type ...] model + migration (+ down)
   nyx generate controller <Name>             controller + views
-  nyx generate scaffold <Name> [field:type]  model + controller + views + route hint
+  nyx generate scaffold <Name> [field:type]  model + controller + views + route snippet
   nyx generate migration <name>              empty up/down migration
   nyx db migrate                             apply pending migrations
   nyx db rollback                            roll back the last migration
   nyx db schema                              dump db/schema.sql
   nyx db seed                                run db/seeds.nox
+  nyx jobs work                              run jobs/worker.nox once
   nyx console                                run db/console.nox (no REPL)
   nyx server                                 run noxc run main.nox
   nyx version                                print version
@@ -29,7 +30,7 @@ version() {
   if [[ -f "$ROOT/VERSION" ]]; then
     cat "$ROOT/VERSION"
   else
-    echo "0.3.0"
+    echo "0.3.1"
   fi
 }
 
@@ -234,12 +235,82 @@ cmd_generate_scaffold() {
   local sn
   sn="$(snake "$name")"
   mkdir -p config
-  cat >> "config/routes.hint" <<EOF
-# Scaffold $name — add to build_router in main.nox:
+  local snippet="config/scaffold_${sn}_routes.nox.snippet"
+  cat > "$snippet" <<EOF
+# Paste inside setup(application) — handlers close over db (Nox requirement).
+# Then delete this file once wired.
+#
+# import nyx.model
+# import nyx.params
 # import nyx.routes
-# nyx.routes.resources(router, "$table", index, show, new_action, create, edit, update, destroy)
+# from nyx.model import Record
+#
+#     def ${sn}_index(ctx: Context) -> HttpResponse:
+#         rows: list[Record] = nyx.model.all(db, "$table")
+#         context: dict[str, str] = {}
+#         context["title"] = "$name"
+#         context["count"] = str(len(rows))
+#         return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
+#
+#     def ${sn}_show(ctx: Context) -> HttpResponse:
+#         id: int = int(ctx.param("id"))
+#         row: Record | None = nyx.model.find(db, "$table", id)
+#         if row == None:
+#             return nyx.ctrl.text(404, "not found")
+#         context: dict[str, str] = {}
+#         context["title"] = row.get("id")
+#         return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
+#
+#     def ${sn}_new(ctx: Context) -> HttpResponse:
+#         context: dict[str, str] = {}
+#         context["title"] = "New $name"
+#         return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
+#
+#     def ${sn}_create(ctx: Context) -> HttpResponse:
+#         form: dict[str, str] = nyx.params.from_request(ctx.request)
+#         # permitted: dict[str, str] = nyx.params.permit(form, keys)
+#         nyx.model.create(db, "$table", form)
+#         return nyx.ctrl.redirect("/$table")
+#
+#     def ${sn}_edit(ctx: Context) -> HttpResponse:
+#         id: int = int(ctx.param("id"))
+#         context: dict[str, str] = {}
+#         context["title"] = "Edit $name"
+#         context["id"] = str(id)
+#         return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
+#
+#     def ${sn}_update(ctx: Context) -> HttpResponse:
+#         id: int = int(ctx.param("id"))
+#         form: dict[str, str] = nyx.params.from_request(ctx.request)
+#         nyx.model.update(db, "$table", id, form)
+#         return nyx.ctrl.redirect("/$table/" + str(id))
+#
+#     def ${sn}_destroy(ctx: Context) -> HttpResponse:
+#         id: int = int(ctx.param("id"))
+#         nyx.model.destroy(db, "$table", id)
+#         return nyx.ctrl.redirect("/$table")
+#
+#     nyx.routes.resources(router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF
-  echo "created: config/routes.hint"
+  echo "created: $snippet"
+}
+
+cmd_jobs() {
+  local what="${1:-}"
+  case "$what" in
+    work)
+      if [[ ! -f jobs/worker.nox ]]; then
+        echo "missing jobs/worker.nox" >&2
+        echo "Create jobs/worker.nox that registers handlers and calls nyx.job.work / work_forever." >&2
+        exit 1
+      fi
+      noxc run jobs/worker.nox
+      ;;
+    *)
+      echo "usage: nyx jobs work" >&2
+      exit 1
+      ;;
+  esac
 }
 
 write_db_runner() {
@@ -359,6 +430,10 @@ main() {
     db)
       shift
       cmd_db "$@"
+      ;;
+    jobs)
+      shift
+      cmd_jobs "$@"
       ;;
     console)
       cmd_console

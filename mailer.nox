@@ -50,6 +50,31 @@ def _validate(mail: Mail) -> None:
         raise MailerError("gonderen (from) bos olamaz")
     if len(mail.subject) == 0:
         raise MailerError("konu (subject) bos olamaz")
+    _reject_crlf("to", mail.to)
+    _reject_crlf("from", mail.from_addr)
+    _reject_crlf("subject", mail.subject)
+
+# GERCEK bir hata, bu kontrolun ILK halinde BULUNDU: Nox'un lexer'i `"\r"`
+# KAÇIŞ dizisini TANIMAZ — `\` SESSIZCE düşürülüp `r` DÜZ karakter olarak
+# alınır (bkz. `nox.json.encode_string`in AYNI kisiti belgeleyen notu) —
+# bu YÜZDEN `nox.strings.contains(value, "\r")` GERCEK bir CR (bayt 13)
+# ARAMAZ, sadece kucuk harf `r` HARFINI arar ve "noreply@example.com" gibi
+# TAMAMEN GECERLI adresleri "header injection" SANIP REDDEDER (GERCEKTEN
+# gozlemlendi, testlerde yakalandi). Duzeltme: CR/LF'yi `nox.strings.
+# byte_at` ile HAM BAYT DEGERINE (13/10) gore, karakter-KARAKTER tara.
+def _contains_cr_or_lf(s: str) -> bool:
+    i: int = 0
+    n: int = len(s)
+    while i < n:
+        b: int = nox.strings.byte_at(s, i)
+        if b == 13 or b == 10:
+            return True
+        i = i + 1
+    return False
+
+def _reject_crlf(field: str, value: str) -> None:
+    if _contains_cr_or_lf(value):
+        raise MailerError("header injection: " + field + " contains CR/LF")
 
 def _ensure_dir(path: str) -> None:
     if len(path) == 0 or path == ".":

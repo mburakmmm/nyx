@@ -51,8 +51,8 @@ def _sign(secret: str, signing_input: str) -> str:
 def encode(secret: str, payload_json: str, exp_unix: int) -> str:
     if len(secret) == 0:
         raise JwtError("secret bos olamaz")
-    if exp_unix <= 0:
-        raise JwtError("exp_unix pozitif olmali")
+    if exp_unix <= _now_unix():
+        raise JwtError("exp_unix simdiki zamandan ileride olmali")
     payload: str = _with_exp(payload_json, exp_unix)
     h_b64: str = nyx.base64.encode_url(_header_json())
     p_b64: str = nyx.base64.encode_url(payload)
