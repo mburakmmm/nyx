@@ -192,7 +192,26 @@ class Attributes:
 def attributes() -> Attributes:
     return Attributes()
 
-def _attrs_append(
+def _validate_attrs_shape(attrs: Attributes) -> None:
+    n: int = len(attrs.keys)
+    if len(attrs.kinds) != n:
+        raise ModelError("corrupt Attributes: kinds length mismatch")
+    if len(attrs.str_vals) != n:
+        raise ModelError("corrupt Attributes: str_vals length mismatch")
+    if len(attrs.int_vals) != n:
+        raise ModelError("corrupt Attributes: int_vals length mismatch")
+    if len(attrs.bool_vals) != n:
+        raise ModelError("corrupt Attributes: bool_vals length mismatch")
+
+def _attrs_find(attrs: Attributes, key: str) -> int:
+    i: int = 0
+    while i < len(attrs.keys):
+        if attrs.keys[i] == key:
+            return i
+        i = i + 1
+    return -1
+
+def _attrs_set(
     attrs: Attributes,
     key: str,
     kind: str,
@@ -201,35 +220,51 @@ def _attrs_append(
     bool_val: bool
 ) -> None:
     _check_ident(key)
+    idx: int = _attrs_find(attrs, key)
+    if idx >= 0:
+        kinds: list[str] = attrs.kinds
+        strs: list[str] = attrs.str_vals
+        ints: list[int] = attrs.int_vals
+        bools: list[bool] = attrs.bool_vals
+        kinds[idx] = kind
+        strs[idx] = str_val
+        ints[idx] = int_val
+        bools[idx] = bool_val
+        attrs.kinds = kinds
+        attrs.str_vals = strs
+        attrs.int_vals = ints
+        attrs.bool_vals = bools
+        return
     keys: list[str] = attrs.keys
-    kinds: list[str] = attrs.kinds
-    strs: list[str] = attrs.str_vals
-    ints: list[int] = attrs.int_vals
-    bools: list[bool] = attrs.bool_vals
+    kinds2: list[str] = attrs.kinds
+    strs2: list[str] = attrs.str_vals
+    ints2: list[int] = attrs.int_vals
+    bools2: list[bool] = attrs.bool_vals
     keys.append(key)
-    kinds.append(kind)
-    strs.append(str_val)
-    ints.append(int_val)
-    bools.append(bool_val)
+    kinds2.append(kind)
+    strs2.append(str_val)
+    ints2.append(int_val)
+    bools2.append(bool_val)
     attrs.keys = keys
-    attrs.kinds = kinds
-    attrs.str_vals = strs
-    attrs.int_vals = ints
-    attrs.bool_vals = bools
+    attrs.kinds = kinds2
+    attrs.str_vals = strs2
+    attrs.int_vals = ints2
+    attrs.bool_vals = bools2
 
 def set_str(attrs: Attributes, key: str, value: str) -> None:
-    _attrs_append(attrs, key, "str", value, 0, False)
+    _attrs_set(attrs, key, "str", value, 0, False)
 
 def set_int(attrs: Attributes, key: str, value: int) -> None:
-    _attrs_append(attrs, key, "int", "", value, False)
+    _attrs_set(attrs, key, "int", "", value, False)
 
 def set_bool(attrs: Attributes, key: str, value: bool) -> None:
-    _attrs_append(attrs, key, "bool", "", 0, value)
+    _attrs_set(attrs, key, "bool", "", 0, value)
 
 def set_null(attrs: Attributes, key: str) -> None:
-    _attrs_append(attrs, key, "null", "", 0, False)
+    _attrs_set(attrs, key, "null", "", 0, False)
 
 def _bind_typed(stmt: Statement, attrs: Attributes) -> None:
+    _validate_attrs_shape(attrs)
     j: int = 0
     while j < len(attrs.keys):
         kind: str = attrs.kinds[j]
@@ -242,12 +277,15 @@ def _bind_typed(stmt: Statement, attrs: Attributes) -> None:
                 stmt.bind_int(j, 1)
             else:
                 stmt.bind_int(j, 0)
-        else:
+        elif kind == "str":
             stmt.bind_str(j, attrs.str_vals[j])
+        else:
+            raise ModelError("bilinmeyen attribute tipi: " + kind)
         j = j + 1
 
 def create_attrs(db: Connection, table: str, attrs: Attributes) -> int:
     _check_ident(table)
+    _validate_attrs_shape(attrs)
     if len(attrs.keys) == 0:
         raise ModelError("bos attrs")
     cols: str = ""
@@ -268,6 +306,7 @@ def create_attrs(db: Connection, table: str, attrs: Attributes) -> int:
 
 def update_attrs(db: Connection, table: str, id: int, attrs: Attributes) -> None:
     _check_ident(table)
+    _validate_attrs_shape(attrs)
     if len(attrs.keys) == 0:
         raise ModelError("bos attrs")
     sets: str = ""

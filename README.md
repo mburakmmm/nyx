@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.4.0 · **License:** MIT · **Required alias:** `nyx`
+**Version:** 0.4.1 · **License:** MIT · **Required alias:** `nyx`
 
 ---
 
@@ -23,7 +23,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.4.0"
+      "ref": "v0.4.1"
     }
   ]
 }
@@ -112,6 +112,9 @@ nyx.model.set_null(attrs, "bio")
 id: int = nyx.model.create_attrs(db, "posts", attrs)
 
 row: Record | None = nyx.model.find(db, "posts", id)
+if row == None:
+    return nyx.ctrl.text(404, "not found")
+# Narrow first: get_opt / get_or need Record, not Record | None
 bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
 title: str = row.get_or("title", "")
 ```
@@ -129,6 +132,7 @@ fields.append("body")
 html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
 ```
 
+Default `render` / `render_with_layout` / `render_records` HTML-escape substitutions. Use `*_unescaped` only for trusted, already-safe HTML fragments (never raw user input). Layout body injection is slot-then-replace so `{{...}}` inside the view body is not re-parsed.
 ### CLI
 
 ```sh
@@ -153,6 +157,14 @@ html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
 ---
 
 ## Changelog
+
+### 0.4.1 — Generator DX & hardening
+
+- Scaffold/controller generators emit `AppContext` + typed `Attributes` / `create_attrs`
+- `set_*` upserts duplicate keys; unknown attribute kinds and corrupt parallel lists fail fast
+- Layout render: slot placeholder then string-replace (no second-pass `{{...}}` expansion in body)
+- README: `Record | None` narrowing before `get_opt`; unescaped safety notes
+- CI: GitHub Actions runs `noxc test`
 
 ### 0.4.0 — Typed models & DX
 

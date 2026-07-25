@@ -30,7 +30,7 @@ version() {
   if [[ -f "$ROOT/VERSION" ]]; then
     cat "$ROOT/VERSION"
   else
-    echo "0.4.0"
+    echo "0.4.1"
   fi
 }
 
@@ -59,6 +59,32 @@ sql_type() {
     datetime|timestamp) echo "TEXT" ;;
     *) echo "TEXT" ;;
   esac
+}
+
+# Emit commented nyx.model.set_* lines for scaffold create/update from field:type args.
+# Pass indent including leading "# " so the whole snippet line stays commented until pasted.
+scaffold_attr_sets() {
+  local indent="$1"
+  shift || true
+  local spec field ftype
+  for spec in "$@"; do
+    field="${spec%%:*}"
+    ftype="${spec##*:}"
+    if [[ "$spec" != *:* ]]; then
+      ftype="string"
+    fi
+    case "$ftype" in
+      integer|int)
+        echo "${indent}nyx.model.set_int(attrs, \"$field\", int(ac.param(\"$field\", \"0\")))"
+        ;;
+      boolean|bool)
+        echo "${indent}nyx.model.set_bool(attrs, \"$field\", ac.param(\"$field\", \"\") == \"1\" or ac.param(\"$field\", \"\") == \"true\")"
+        ;;
+      *)
+        echo "${indent}nyx.model.set_str(attrs, \"$field\", ac.param(\"$field\", \"\"))"
+        ;;
+    esac
+  done
 }
 
 cmd_new() {
@@ -148,47 +174,78 @@ cmd_generate_controller() {
   sn="$(snake "$name")"
   local table
   table="$(pluralize "$name")"
-  mkdir -p app/controllers app/views/"$sn"
+  mkdir -p app/controllers app/views/"$sn" config
   local file="app/controllers/${sn}_controller.nox"
   cat > "$file" <<EOF
-# ${name}Controller — register handlers inside setup(application) closures
-# so they can capture application.db (Router handlers take Context only).
-from nox.http import HttpResponse
-from nox.router import Context
-import nyx.ctrl
+# ${name}Controller — DO NOT register these top-level fns on the router.
+# Nox: handlers must be closures inside setup(application) to capture db.
+# Paste the snippet from config/${sn}_routes.nox.snippet into setup().
 
-def index(ctx: Context) -> HttpResponse:
-    context: dict[str, str] = {}
-    context["title"] = "$name"
-    return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
-
-def show(ctx: Context) -> HttpResponse:
-    id: int = int(ctx.param("id"))
-    context: dict[str, str] = {}
-    context["title"] = "$name " + str(id)
-    return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
-
-def new_action(ctx: Context) -> HttpResponse:
-    context: dict[str, str] = {}
-    context["title"] = "New $name"
-    return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
-
-def create(ctx: Context) -> HttpResponse:
-    return nyx.ctrl.redirect("/$table")
-
-def edit(ctx: Context) -> HttpResponse:
-    id: int = int(ctx.param("id"))
-    context: dict[str, str] = {}
-    context["title"] = "Edit $name"
-    context["id"] = str(id)
-    return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
-
-def update(ctx: Context) -> HttpResponse:
-    id: int = int(ctx.param("id"))
-    return nyx.ctrl.redirect("/$table/" + str(id))
-
-def destroy(ctx: Context) -> HttpResponse:
-    return nyx.ctrl.redirect("/$table")
+# Placeholder views only; real handlers live in the setup snippet.
+EOF
+  local snippet="config/${sn}_routes.nox.snippet"
+  cat > "$snippet" <<EOF
+# Paste inside setup(application) — uses AppContext + typed attrs (nyx 0.4+).
+#
+# import nyx.ctx
+# import nyx.model
+# import nyx.routes
+# from nyx.ctx import AppContext
+# from nyx.model import Record, Attributes
+#
+#     def ${sn}_index(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         rows: list[Record] = nyx.model.all(ac.db(), "$table")
+#         context: dict[str, str] = {}
+#         context["title"] = "$name"
+#         context["count"] = str(len(rows))
+#         return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
+#
+#     def ${sn}_show(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         row: Record | None = nyx.model.find(ac.db(), "$table", id)
+#         if row == None:
+#             return nyx.ctrl.text(404, "not found")
+#         context: dict[str, str] = {}
+#         context["title"] = row.get_or("id", str(id))
+#         return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
+#
+#     def ${sn}_new(ctx: Context) -> HttpResponse:
+#         context: dict[str, str] = {}
+#         context["title"] = "New $name"
+#         return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
+#
+#     def ${sn}_create(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         attrs: Attributes = nyx.model.attributes()
+#         nyx.model.set_str(attrs, "field", ac.param("field", ""))
+#         nyx.model.create_attrs(ac.db(), "$table", attrs)
+#         return nyx.ctrl.redirect("/$table")
+#
+#     def ${sn}_edit(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         context: dict[str, str] = {}
+#         context["title"] = "Edit $name"
+#         context["id"] = str(id)
+#         return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
+#
+#     def ${sn}_update(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         attrs: Attributes = nyx.model.attributes()
+#         nyx.model.set_str(attrs, "field", ac.param("field", ""))
+#         nyx.model.update_attrs(ac.db(), "$table", id, attrs)
+#         return nyx.ctrl.redirect("/$table/" + str(id))
+#
+#     def ${sn}_destroy(ctx: Context) -> HttpResponse:
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         nyx.model.destroy(ac.db(), "$table", id)
+#         return nyx.ctrl.redirect("/$table")
+#
+#     nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF
   for v in index show new edit; do
     cat > "app/views/$sn/${v}.html" <<EOF
@@ -198,8 +255,8 @@ EOF
 EOF
   done
   echo "created: $file"
+  echo "created: $snippet"
   echo "created: app/views/$sn/"
-  echo "wire in main.nox: nyx.routes.resources(router, \"$table\", ...)"
 }
 
 cmd_generate_migration() {
@@ -228,37 +285,48 @@ cmd_generate_scaffold() {
     exit 1
   fi
   shift
-  cmd_generate_model "$name" "$@"
+  local fields=("$@")
+  cmd_generate_model "$name" "${fields[@]}"
   cmd_generate_controller "$name"
   local table
   table="$(pluralize "$name")"
   local sn
   sn="$(snake "$name")"
   mkdir -p config
+  local create_sets update_sets
+  create_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
+  update_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
+  if [[ -z "$create_sets" ]]; then
+    create_sets='#         nyx.model.set_str(attrs, "field", ac.param("field", ""))'
+    update_sets="$create_sets"
+  fi
   local snippet="config/scaffold_${sn}_routes.nox.snippet"
   cat > "$snippet" <<EOF
-# Paste inside setup(application) — handlers close over db (Nox requirement).
+# Paste inside setup(application) — AppContext + typed Attributes (nyx 0.4+).
 # Then delete this file once wired.
 #
+# import nyx.ctx
 # import nyx.model
-# import nyx.params
 # import nyx.routes
-# from nyx.model import Record
+# from nyx.ctx import AppContext
+# from nyx.model import Record, Attributes
 #
 #     def ${sn}_index(ctx: Context) -> HttpResponse:
-#         rows: list[Record] = nyx.model.all(db, "$table")
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         rows: list[Record] = nyx.model.all(ac.db(), "$table")
 #         context: dict[str, str] = {}
 #         context["title"] = "$name"
 #         context["count"] = str(len(rows))
 #         return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
 #
 #     def ${sn}_show(ctx: Context) -> HttpResponse:
-#         id: int = int(ctx.param("id"))
-#         row: Record | None = nyx.model.find(db, "$table", id)
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         row: Record | None = nyx.model.find(ac.db(), "$table", id)
 #         if row == None:
 #             return nyx.ctrl.text(404, "not found")
 #         context: dict[str, str] = {}
-#         context["title"] = row.get("id")
+#         context["title"] = row.get_or("id", str(id))
 #         return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
 #
 #     def ${sn}_new(ctx: Context) -> HttpResponse:
@@ -267,32 +335,40 @@ cmd_generate_scaffold() {
 #         return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
 #
 #     def ${sn}_create(ctx: Context) -> HttpResponse:
-#         form: dict[str, str] = nyx.params.from_request(ctx.request)
-#         # permitted: dict[str, str] = nyx.params.permit(form, keys)
-#         nyx.model.create(db, "$table", form)
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         attrs: Attributes = nyx.model.attributes()
+${create_sets}
+#         nyx.model.create_attrs(ac.db(), "$table", attrs)
 #         return nyx.ctrl.redirect("/$table")
 #
 #     def ${sn}_edit(ctx: Context) -> HttpResponse:
-#         id: int = int(ctx.param("id"))
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
 #         context: dict[str, str] = {}
 #         context["title"] = "Edit $name"
 #         context["id"] = str(id)
 #         return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
 #
 #     def ${sn}_update(ctx: Context) -> HttpResponse:
-#         id: int = int(ctx.param("id"))
-#         form: dict[str, str] = nyx.params.from_request(ctx.request)
-#         nyx.model.update(db, "$table", id, form)
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         attrs: Attributes = nyx.model.attributes()
+${update_sets}
+#         nyx.model.update_attrs(ac.db(), "$table", id, attrs)
 #         return nyx.ctrl.redirect("/$table/" + str(id))
 #
 #     def ${sn}_destroy(ctx: Context) -> HttpResponse:
-#         id: int = int(ctx.param("id"))
-#         nyx.model.destroy(db, "$table", id)
+#         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         id: int = ac.path_int("id")
+#         nyx.model.destroy(ac.db(), "$table", id)
 #         return nyx.ctrl.redirect("/$table")
 #
-#     nyx.routes.resources(router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
+#     nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF
+  # Keep controller snippet aligned with scaffold (typed attrs).
+  cp "$snippet" "config/${sn}_routes.nox.snippet"
   echo "created: $snippet"
+  echo "updated: config/${sn}_routes.nox.snippet"
 }
 
 cmd_jobs() {

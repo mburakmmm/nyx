@@ -165,5 +165,44 @@ nyx.model.set_str(bad, "email", "")
 bad_errs: list[str] = nyx.model.validate_attrs_required(bad, req_fields)
 nox.test.assert_eq_int(len(bad_errs), 2, "validate_attrs_required")
 
+# --- set_* upsert (duplicate key overwrites, does not append) ---
+ups: Attributes = nyx.model.attributes()
+nyx.model.set_str(ups, "email", "first@b.c")
+nyx.model.set_str(ups, "email", "second@b.c")
+nyx.model.set_str(ups, "name", "Upsert")
+nox.test.assert_eq_int(len(ups.keys), 2, "upsert ayni anahtari tekrar eklememeli")
+ups_id: int = nyx.model.create_attrs(db, "users", ups)
+ups_row: Record | None = nyx.model.find(db, "users", ups_id)
+if ups_row != None:
+    nox.test.assert_eq_str(ups_row.get("email"), "second@b.c", "upsert son degeri yazar")
+
+# --- bilinmeyen attribute kind fail-fast ---
+bad_kind: Attributes = nyx.model.attributes()
+nyx.model.set_str(bad_kind, "email", "x@y.z")
+nyx.model.set_str(bad_kind, "name", "X")
+kinds_mut: list[str] = bad_kind.kinds
+kinds_mut[0] = "float"
+bad_kind.kinds = kinds_mut
+threw_kind: bool = False
+try:
+    nyx.model.create_attrs(db, "users", bad_kind)
+except ModelError:
+    threw_kind = True
+nox.test.assert_true(threw_kind, "bilinmeyen attribute tipi ModelError firlatmali")
+
+# --- corrupt parallel lists ---
+shape_bad: Attributes = nyx.model.attributes()
+nyx.model.set_str(shape_bad, "email", "a@b.c")
+nyx.model.set_str(shape_bad, "name", "A")
+keys_mut: list[str] = shape_bad.keys
+keys_mut.append("extra")
+shape_bad.keys = keys_mut
+threw_shape: bool = False
+try:
+    nyx.model.create_attrs(db, "users", shape_bad)
+except ModelError:
+    threw_shape = True
+nox.test.assert_true(threw_shape, "bozuk Attributes shape ModelError firlatmali")
+
 db.close()
 print("model_test ok")

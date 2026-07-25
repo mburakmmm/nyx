@@ -100,4 +100,16 @@ nox.test.assert_true(nox.strings.contains(each_html, "<li>One</li>"), "render_re
 nox.test.assert_true(nox.strings.contains(each_html, "<li>Two</li>"), "render_records two")
 vdb.close()
 
+# --- layout second-pass: body icindeki {{...}} yeniden parse edilmemeli ---
+inj_view: str = "/tmp/nyx_layout_inject_view.html"
+inj_layout: str = "/tmp/nyx_layout_inject_layout.html"
+nox.fs.write_string(inj_view, "<p>{{ title }}</p>")
+nox.fs.write_string(inj_layout, "<html><body>{{ yield }}</body></html>")
+inj_ctx: dict[str, str] = {}
+inj_ctx["title"] = "x {{ admin }} y"
+inj_ctx["admin"] = "PWNED"
+inj_html: str = nyx.view.render_with_layout(inj_layout, inj_view, inj_ctx)
+nox.test.assert_true(nox.strings.contains(inj_html, "x {{ admin }} y"), "body icindeki mustache literal kalmali")
+nox.test.assert_true(not nox.strings.contains(inj_html, "PWNED"), "layout second-pass admin genisletmemeli")
+
 print("view_ctrl_test ok")

@@ -64,22 +64,30 @@ def render_records_unescaped(partial_path: str, rows: list[Record], field_keys: 
         i = i + 1
     return out
 
-# Layout içinde `{{ yield }}` — içerik güvenli HTML olarak enjekte edilir
-# (içerik zaten escape edilmiş render çıktısı olmalı).
+# Layout: once layout render edilir ({{ yield }} icin benzersiz slot),
+# sonra body slot'a string replace ile konur — body icindeki `{{...}}`
+# ikinci kez template olarak yorumlanmaz (second-pass injection onlemi).
+def _yield_slot() -> str:
+    return "__NYX_YIELD_SLOT_7f3a9c__"
+
 def render_with_layout(layout_path: str, view_path: str, context: dict[str, str]) -> str:
     body: str = render(view_path, context)
     if not nox.fs.exists(layout_path):
         raise ViewError("layout yok: " + layout_path)
     layout_tmpl: str = nox.fs.read_to_string(layout_path)
-    merged: str = nox.strings.replace(layout_tmpl, "{{ yield }}", body)
-    merged = nox.strings.replace(merged, "{{yield}}", body)
-    return nox.template.render(merged, context)
+    slot: str = _yield_slot()
+    prepared: str = nox.strings.replace(layout_tmpl, "{{ yield }}", slot)
+    prepared = nox.strings.replace(prepared, "{{yield}}", slot)
+    rendered_layout: str = nox.template.render(prepared, context)
+    return nox.strings.replace(rendered_layout, slot, body)
 
 def render_with_layout_unescaped(layout_path: str, view_path: str, context: dict[str, str]) -> str:
     body: str = render_unescaped(view_path, context)
     if not nox.fs.exists(layout_path):
         raise ViewError("layout yok: " + layout_path)
     layout_tmpl: str = nox.fs.read_to_string(layout_path)
-    merged: str = nox.strings.replace(layout_tmpl, "{{ yield }}", body)
-    merged = nox.strings.replace(merged, "{{yield}}", body)
-    return nox.template.render_unescaped(merged, context)
+    slot: str = _yield_slot()
+    prepared: str = nox.strings.replace(layout_tmpl, "{{ yield }}", slot)
+    prepared = nox.strings.replace(prepared, "{{yield}}", slot)
+    rendered_layout: str = nox.template.render_unescaped(prepared, context)
+    return nox.strings.replace(rendered_layout, slot, body)

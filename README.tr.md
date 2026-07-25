@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.4.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
+**Sürüm:** 0.4.1 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
 
 ---
 
@@ -23,7 +23,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.4.0"
+      "ref": "v0.4.1"
     }
   ]
 }
@@ -112,6 +112,9 @@ nyx.model.set_null(attrs, "bio")
 id: int = nyx.model.create_attrs(db, "posts", attrs)
 
 row: Record | None = nyx.model.find(db, "posts", id)
+if row == None:
+    return nyx.ctrl.text(404, "not found")
+# Önce daraltın: get_opt / get_or Record ister, Record | None değil
 bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
 title: str = row.get_or("title", "")
 ```
@@ -129,6 +132,7 @@ fields.append("body")
 html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
 ```
 
+Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar. `*_unescaped` yalnızca güvenilir, önceden güvenli HTML parçaları için (ham kullanıcı girdisi için asla). Layout gövde enjeksiyonu slot-sonra-replace: view gövdesindeki `{{...}}` ikinci kez parse edilmez.
 ### CLI
 
 ```sh
@@ -153,6 +157,14 @@ html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
 ---
 
 ## Sürüm notları
+
+### 0.4.1 — Generator DX & sertleştirme
+
+- Scaffold/controller generator’ları `AppContext` + typed `Attributes` / `create_attrs` üretir
+- `set_*` aynı anahtarda upsert; bilinmeyen kind ve bozuk parallel listeler fail-fast
+- Layout: slot sonra string-replace (gövde içinde second-pass `{{...}}` yok)
+- README: `Record | None` daraltma; unescaped güvenlik notları
+- CI: GitHub Actions `noxc test`
 
 ### 0.4.0 — Typed models & DX
 
