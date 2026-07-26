@@ -112,4 +112,11 @@ inj_html: str = nyx.view.render_with_layout(inj_layout, inj_view, inj_ctx)
 nox.test.assert_true(nox.strings.contains(inj_html, "x {{ admin }} y"), "body icindeki mustache literal kalmali")
 nox.test.assert_true(not nox.strings.contains(inj_html, "PWNED"), "layout second-pass admin genisletmemeli")
 
+errs: list[str] = []
+errs.append("title bos")
+eh: str = nyx.ctrl.errors_html(errs)
+nox.test.assert_true(nox.strings.contains(eh, "<li>title bos</li>"), "errors_html")
+r422: HttpResponse = nyx.ctrl.unprocessable_html(errs)
+nox.test.assert_eq_int(r422.status, 422, "unprocessable_html")
+
 print("view_ctrl_test ok")

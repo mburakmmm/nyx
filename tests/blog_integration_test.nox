@@ -1,0 +1,137 @@
+# Blog-like integration: boot + CSRF + create_attrs roundtrip.
+# Not: Nox'ta modul-global'ler fonksiyon icinden gorulmez — bu yuzden
+# dispatch cagrilari script ust duzeyinde yapilir.
+import nox.test
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.csrf
+import nyx.ctx
+import nyx.form
+import nyx.model
+import nyx.params
+import nyx.testing
+from nyx.app import Application
+from nyx.config import Config
+from nyx.ctx import AppContext
+from nyx.model import Record, Attributes
+
+def setup(application: Application) -> None:
+    secret: str = application.config.secret_key
+
+    def index(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        rows: list[Record] = nyx.model.all(ac.db(), "posts")
+        context: dict[str, str] = {}
+        context["count"] = str(len(rows))
+        context["form_start"] = nyx.csrf.form_with("/posts", "POST", secret)
+        context["form_end"] = nyx.form.form_end()
+        context["title_field"] = nyx.form.text("title", "")
+        context["submit"] = nyx.form.submit("Save")
+        body: str = "<p>count=" + context["count"] + "</p>" + context["form_start"] + context["title_field"] + context["submit"] + context["form_end"]
+        return nyx.ctrl.html(200, body)
+
+    def create(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        raw: dict[str, str] = nyx.params.from_request(ctx.request)
+        keys: list[str] = []
+        keys.append("title")
+        permitted: dict[str, str] = nyx.params.permit(raw, keys)
+        errs: list[str] = nyx.params.missing_required(permitted, keys)
+        len_errs: list[str] = nyx.params.validate_max_length(permitted, "title", 200)
+        i: int = 0
+        while i < len(len_errs):
+            errs.append(len_errs[i])
+            i = i + 1
+        if len(errs) > 0:
+            return nyx.ctrl.unprocessable_html(errs)
+        attrs: Attributes = nyx.model.attributes()
+        nyx.model.set_str(attrs, "title", nyx.params.get(permitted, "title", ""))
+        nyx.model.create_attrs(ac.db(), "posts", attrs)
+        return nyx.ctrl.redirect("/")
+
+    application.router.get("/", index)
+    application.router.post("/posts", create)
+
+    def api_ping(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.json(200, "{\"ok\":true}")
+    application.router.post("/api/ping", api_ping)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "integration-secret-key-32chars!!"
+cfg.db_path = ":memory:"
+cfg.csrf_enabled = True
+cfg.csrf_api_exempt = False
+cfg.auto_migrate = False
+cfg.log_requests = False
+
+application: Application = nyx.app.boot(cfg, setup)
+application.db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
+
+get_req: HttpRequest = HttpRequest("GET", "/", "", {})
+get_resp: HttpResponse = nyx.app.dispatch(application, get_req)
+nox.test.assert_eq_int(get_resp.status, 200, "index 200")
+nox.test.assert_true(nox.strings.contains(get_resp.body, "name=\"_csrf\""), "index CSRF field")
+nox.test.assert_true(nox.strings.contains(get_resp.body, "count=0"), "empty posts")
+
+cookie: str | None = nyx.testing.extract_set_cookie(get_resp)
+nox.test.assert_true(cookie != None, "session seed Set-Cookie")
+
+csrf_tok: str = ""
+marker: str = "name=\"_csrf\" value=\""
+pos: int = nox.strings.index_of(get_resp.body, marker)
+nox.test.assert_true(pos >= 0, "csrf marker found")
+if pos >= 0:
+    start: int = pos + len(marker)
+    end: int = start
+    while end < len(get_resp.body) and get_resp.body[end] != "\"":
+        end = end + 1
+    i2: int = start
+    while i2 < end:
+        csrf_tok = csrf_tok + get_resp.body[i2]
+        i2 = i2 + 1
+nox.test.assert_true(len(csrf_tok) > 0, "csrf token extracted")
+
+bad_headers: dict[str, str] = {}
+bad_headers["Content-Type"] = "application/x-www-form-urlencoded"
+bad_req: HttpRequest = HttpRequest("POST", "/posts", "title=Nope", bad_headers)
+bad_resp: HttpResponse = nyx.app.dispatch(application, bad_req)
+nox.test.assert_eq_int(bad_resp.status, 403, "missing csrf -> 403")
+
+ok_headers: dict[str, str] = {}
+ok_headers["Content-Type"] = "application/x-www-form-urlencoded"
+if cookie != None:
+    # Set-Cookie: name=value; Path=/; ... → Cookie: name=value
+    cookie_hdr: str = cookie
+    semi: int = nox.strings.index_of(cookie, ";")
+    if semi >= 0:
+        cookie_hdr = ""
+        ci: int = 0
+        while ci < semi:
+            cookie_hdr = cookie_hdr + cookie[ci]
+            ci = ci + 1
+    ok_headers["Cookie"] = cookie_hdr
+ok_req: HttpRequest = HttpRequest("POST", "/posts", "title=Hello&_csrf=" + csrf_tok, ok_headers)
+ok_resp: HttpResponse = nyx.app.dispatch(application, ok_req)
+nox.test.assert_eq_int(ok_resp.status, 302, "create redirects")
+loc: str | None = nyx.testing.header(ok_resp, "Location")
+nox.test.assert_true(loc != None, "redirect Location")
+if loc != None:
+    nox.test.assert_eq_str(loc, "/", "redirect home")
+
+get2: HttpResponse = nyx.app.dispatch(application, get_req)
+nox.test.assert_true(nox.strings.contains(get2.body, "count=1"), "post created")
+
+# /api/ping kayitli rota — CSRF middleware eslesen rotalarda calisir.
+# Jeton yoksa 403 (handler'a ulasilmamali).
+api_headers: dict[str, str] = {}
+api_headers["Content-Type"] = "application/json"
+api_req: HttpRequest = HttpRequest("POST", "/api/ping", "{}", api_headers)
+api_resp: HttpResponse = nyx.app.dispatch(application, api_req)
+nox.test.assert_eq_int(api_resp.status, 403, "/api/ kayitli rota da CSRF ister (default)")
+
+application.db.close()
+print("blog_integration_test ok")

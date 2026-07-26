@@ -34,9 +34,11 @@ def setup(application: Application) -> None:
 
 def handle(req: HttpRequest) -> HttpResponse:
     cfg: Config = nyx.config.load()
-    if len(cfg.secret_key) < 16:
+    if not cfg.is_production() and len(cfg.secret_key) < 16:
         cfg.secret_key = "change-me-{{APP_NAME}}-secret-key-32b!"
-    # Production: set NYX_AUTO_MIGRATE=0 and run `nyx db migrate` separately.
+    # Production: NYX_SECRET_KEY zorunlu; NYX_AUTO_MIGRATE varsayilan 0 —
+    # `nyx db migrate` ile ayri calistirin. Bearer-only /api/ icin
+    # NYX_CSRF_API_EXEMPT=1 (cookie-session + /api/ icin KAPALI birakin).
     application: Application = nyx.app.boot(cfg, setup)
     resp: HttpResponse = HttpResponse(500, "", {})
     try:

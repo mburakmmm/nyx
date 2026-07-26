@@ -5,7 +5,7 @@ from nox.router import Context
 import nyx.app
 import nyx.config
 import nyx.ctrl
-from nyx.app import Application
+from nyx.app import Application, AppError
 from nyx.config import Config
 from nyx.db import DbError
 import nyx.db
@@ -45,6 +45,20 @@ cfg2.log_requests = False
 app2: Application = nyx.app.boot(cfg2, setup)
 app2.db.close()
 nox.test.assert_true(True, "auto_migrate false boots without migrate dir")
+
+# production placeholder secret rejected
+threw_placeholder: bool = False
+try:
+    cfg3: Config = nyx.config.defaults("production")
+    cfg3.secret_key = "change-me-please-this-is-32chars!!"
+    cfg3.db_path = ":memory:"
+    cfg3.auto_migrate = False
+    cfg3.csrf_enabled = False
+    cfg3.log_requests = False
+    nyx.app.boot(cfg3, setup)
+except AppError:
+    threw_placeholder = True
+nox.test.assert_true(threw_placeholder, "production placeholder secret rejected")
 
 # postgres URL must fail clearly
 try:

@@ -30,7 +30,7 @@ version() {
   if [[ -f "$ROOT/VERSION" ]]; then
     cat "$ROOT/VERSION"
   else
-    echo "0.4.1"
+    echo "0.5.0"
   fi
 }
 
@@ -63,6 +63,7 @@ sql_type() {
 
 # Emit commented nyx.model.set_* lines for scaffold create/update from field:type args.
 # Pass indent including leading "# " so the whole snippet line stays commented until pasted.
+# Values come from `permitted` dict (after nyx.params.permit).
 scaffold_attr_sets() {
   local indent="$1"
   shift || true
@@ -75,13 +76,13 @@ scaffold_attr_sets() {
     fi
     case "$ftype" in
       integer|int)
-        echo "${indent}nyx.model.set_int(attrs, \"$field\", int(ac.param(\"$field\", \"0\")))"
+        echo "${indent}nyx.model.set_int(attrs, \"$field\", int(nyx.params.get(permitted, \"$field\", \"0\")))"
         ;;
       boolean|bool)
-        echo "${indent}nyx.model.set_bool(attrs, \"$field\", ac.param(\"$field\", \"\") == \"1\" or ac.param(\"$field\", \"\") == \"true\")"
+        echo "${indent}nyx.model.set_bool(attrs, \"$field\", nyx.params.get(permitted, \"$field\", \"\") == \"1\" or nyx.params.get(permitted, \"$field\", \"\") == \"true\")"
         ;;
       *)
-        echo "${indent}nyx.model.set_str(attrs, \"$field\", ac.param(\"$field\", \"\"))"
+        echo "${indent}nyx.model.set_str(attrs, \"$field\", nyx.params.get(permitted, \"$field\", \"\"))"
         ;;
     esac
   done
@@ -177,19 +178,24 @@ cmd_generate_controller() {
   mkdir -p app/controllers app/views/"$sn" config
   local file="app/controllers/${sn}_controller.nox"
   cat > "$file" <<EOF
-# ${name}Controller — DO NOT register these top-level fns on the router.
-# Nox: handlers must be closures inside setup(application) to capture db.
-# Paste the snippet from config/${sn}_routes.nox.snippet into setup().
-
-# Placeholder views only; real handlers live in the setup snippet.
+# ${name}Controller
+#
+# Nox kisiti: router handler'lari setup(application) ICINDE closure olmali
+# (db/application yakalamak icin). Asagidaki snippet'i main.nox setup()
+# icine yapistirin — satir basindaki '#' isaretlerini kaldirin:
+#
+#   config/${sn}_routes.nox.snippet
+#
+# Views: app/views/$sn/
 EOF
   local snippet="config/${sn}_routes.nox.snippet"
   cat > "$snippet" <<EOF
-# Paste inside setup(application) — uses AppContext + typed attrs (nyx 0.4+).
+# Paste inside setup(application) — AppContext + typed attrs + path helpers.
 #
 # import nyx.ctx
 # import nyx.model
 # import nyx.routes
+# import nyx.params
 # from nyx.ctx import AppContext
 # from nyx.model import Record, Attributes
 #
@@ -206,30 +212,45 @@ EOF
 #         id: int = ac.path_int("id")
 #         row: Record | None = nyx.model.find(ac.db(), "$table", id)
 #         if row == None:
-#             return nyx.ctrl.text(404, "not found")
+#             return nyx.ctrl.not_found_for(ctx)
 #         context: dict[str, str] = {}
 #         context["title"] = row.get_or("id", str(id))
 #         return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
 #
 #     def ${sn}_new(ctx: Context) -> HttpResponse:
+#         secret: str = application.config.secret_key
 #         context: dict[str, str] = {}
 #         context["title"] = "New $name"
-#         return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
+#         context["form_start"] = nyx.csrf.form_with(nyx.routes.path_index("$table"), "POST", secret)
+#         context["form_end"] = nyx.form.form_end()
+#         context["submit"] = nyx.form.submit("Save")
+#         return nyx.ctrl.render_unescaped(200, "app/views/$sn/new.html", context)
 #
 #     def ${sn}_create(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         raw: dict[str, str] = nyx.params.from_request(ctx.request)
+#         keys: list[str] = []
+#         # keys.append("field")
+#         permitted: dict[str, str] = nyx.params.permit(raw, keys)
+#         req_errs: list[str] = nyx.params.missing_required(permitted, keys)
+#         if len(req_errs) > 0:
+#             return nyx.ctrl.unprocessable_html(req_errs)
 #         attrs: Attributes = nyx.model.attributes()
-#         nyx.model.set_str(attrs, "field", ac.param("field", ""))
+#         nyx.model.set_str(attrs, "field", nyx.params.get(permitted, "field", ""))
 #         nyx.model.create_attrs(ac.db(), "$table", attrs)
-#         return nyx.ctrl.redirect("/$table")
+#         return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
 #
 #     def ${sn}_edit(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
 #         id: int = ac.path_int("id")
+#         secret: str = application.config.secret_key
 #         context: dict[str, str] = {}
 #         context["title"] = "Edit $name"
 #         context["id"] = str(id)
-#         return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
+#         context["form_start"] = nyx.csrf.form_with(nyx.routes.path_show("$table", id), "POST", secret)
+#         context["form_end"] = nyx.form.form_end()
+#         context["submit"] = nyx.form.submit("Update")
+#         return nyx.ctrl.render_unescaped(200, "app/views/$sn/edit.html", context)
 #
 #     def ${sn}_update(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
@@ -237,13 +258,13 @@ EOF
 #         attrs: Attributes = nyx.model.attributes()
 #         nyx.model.set_str(attrs, "field", ac.param("field", ""))
 #         nyx.model.update_attrs(ac.db(), "$table", id, attrs)
-#         return nyx.ctrl.redirect("/$table/" + str(id))
+#         return nyx.ctrl.redirect(nyx.routes.path_show("$table", id))
 #
 #     def ${sn}_destroy(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
 #         id: int = ac.path_int("id")
 #         nyx.model.destroy(ac.db(), "$table", id)
-#         return nyx.ctrl.redirect("/$table")
+#         return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
 #
 #     nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF
@@ -293,20 +314,30 @@ cmd_generate_scaffold() {
   local sn
   sn="$(snake "$name")"
   mkdir -p config
-  local create_sets update_sets
+  local create_sets update_sets key_appends
   create_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
   update_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
+  key_appends=""
+  local spec field
+  for spec in "${fields[@]}"; do
+    field="${spec%%:*}"
+    key_appends="${key_appends}#         keys.append(\"${field}\")"$'\n'
+  done
   if [[ -z "$create_sets" ]]; then
     create_sets='#         nyx.model.set_str(attrs, "field", ac.param("field", ""))'
     update_sets="$create_sets"
+    key_appends='#         keys.append("field")'$'\n'
   fi
   local snippet="config/scaffold_${sn}_routes.nox.snippet"
   cat > "$snippet" <<EOF
-# Paste inside setup(application) — AppContext + typed Attributes (nyx 0.4+).
+# Paste inside setup(application) — AppContext + typed Attributes + path helpers.
 # Then delete this file once wired.
 #
 # import nyx.ctx
+# import nyx.csrf
+# import nyx.form
 # import nyx.model
+# import nyx.params
 # import nyx.routes
 # from nyx.ctx import AppContext
 # from nyx.model import Record, Attributes
@@ -324,44 +355,61 @@ cmd_generate_scaffold() {
 #         id: int = ac.path_int("id")
 #         row: Record | None = nyx.model.find(ac.db(), "$table", id)
 #         if row == None:
-#             return nyx.ctrl.text(404, "not found")
+#             return nyx.ctrl.not_found_for(ctx)
 #         context: dict[str, str] = {}
 #         context["title"] = row.get_or("id", str(id))
 #         return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
 #
 #     def ${sn}_new(ctx: Context) -> HttpResponse:
+#         secret: str = application.config.secret_key
 #         context: dict[str, str] = {}
 #         context["title"] = "New $name"
-#         return nyx.ctrl.render(200, "app/views/$sn/new.html", context)
+#         context["form_start"] = nyx.csrf.form_with(nyx.routes.path_index("$table"), "POST", secret)
+#         context["form_end"] = nyx.form.form_end()
+#         context["submit"] = nyx.form.submit("Save")
+#         return nyx.ctrl.render_unescaped(200, "app/views/$sn/new.html", context)
 #
 #     def ${sn}_create(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
+#         raw: dict[str, str] = nyx.params.from_request(ctx.request)
+#         keys: list[str] = []
+${key_appends}#         permitted: dict[str, str] = nyx.params.permit(raw, keys)
+#         req_errs: list[str] = nyx.params.missing_required(permitted, keys)
+#         if len(req_errs) > 0:
+#             return nyx.ctrl.unprocessable_html(req_errs)
 #         attrs: Attributes = nyx.model.attributes()
 ${create_sets}
 #         nyx.model.create_attrs(ac.db(), "$table", attrs)
-#         return nyx.ctrl.redirect("/$table")
+#         return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
 #
 #     def ${sn}_edit(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
 #         id: int = ac.path_int("id")
+#         secret: str = application.config.secret_key
 #         context: dict[str, str] = {}
 #         context["title"] = "Edit $name"
 #         context["id"] = str(id)
-#         return nyx.ctrl.render(200, "app/views/$sn/edit.html", context)
+#         context["form_start"] = nyx.csrf.form_with(nyx.routes.path_show("$table", id), "POST", secret)
+#         context["form_end"] = nyx.form.form_end()
+#         context["submit"] = nyx.form.submit("Update")
+#         return nyx.ctrl.render_unescaped(200, "app/views/$sn/edit.html", context)
 #
 #     def ${sn}_update(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
 #         id: int = ac.path_int("id")
+#         raw: dict[str, str] = nyx.params.from_request(ctx.request)
+#         keys: list[str] = []
+${key_appends}#         permitted: dict[str, str] = nyx.params.permit(raw, keys)
 #         attrs: Attributes = nyx.model.attributes()
 ${update_sets}
 #         nyx.model.update_attrs(ac.db(), "$table", id, attrs)
-#         return nyx.ctrl.redirect("/$table/" + str(id))
+#         return nyx.ctrl.redirect(nyx.routes.path_show("$table", id))
 #
 #     def ${sn}_destroy(ctx: Context) -> HttpResponse:
 #         ac: AppContext = nyx.ctx.wrap(application, ctx)
 #         id: int = ac.path_int("id")
 #         nyx.model.destroy(ac.db(), "$table", id)
-#         return nyx.ctrl.redirect("/$table")
+#         return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
 #
 #     nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF

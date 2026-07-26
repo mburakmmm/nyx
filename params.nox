@@ -324,6 +324,54 @@ def require_keys(params: dict[str, str], keys: list[str]) -> dict[str, str]:
         return empty
     return permit(params, keys)
 
+# Alan uzunlugu kontrolu — hata yoksa bos liste.
+def validate_max_length(params: dict[str, str], key: str, max_len: int) -> list[str]:
+    errors: list[str] = []
+    try:
+        v: str = params[key]
+        if len(v) > max_len:
+            errors.append(key + " too long (max " + str(max_len) + ")")
+    except KeyError:
+        a: int = 0
+    return errors
+
+def validate_min_length(params: dict[str, str], key: str, min_len: int) -> list[str]:
+    errors: list[str] = []
+    try:
+        v: str = params[key]
+        if len(v) < min_len:
+            errors.append(key + " too short (min " + str(min_len) + ")")
+    except KeyError:
+        errors.append("required param missing: " + key)
+    return errors
+
+# Basit e-posta sekli: bir '@', yerel/domain bos degil, bosluk yok.
+def looks_like_email(value: str) -> bool:
+    if len(value) < 3:
+        return False
+    if nox.strings.contains(value, " "):
+        return False
+    at: int = nox.strings.index_of(value, "@")
+    if at <= 0:
+        return False
+    if at >= len(value) - 1:
+        return False
+    if nox.strings.contains(_substr(value, at + 1, len(value)), "@"):
+        return False
+    return True
+
+def validate_email(params: dict[str, str], key: str) -> list[str]:
+    errors: list[str] = []
+    try:
+        v: str = params[key]
+        if len(v) == 0:
+            errors.append("required param empty: " + key)
+        elif not looks_like_email(v):
+            errors.append(key + " invalid email")
+    except KeyError:
+        errors.append("required param missing: " + key)
+    return errors
+
 def _header_ci(headers: dict[str, str], name: str) -> str:
     try:
         return headers[name]

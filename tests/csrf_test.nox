@@ -25,14 +25,17 @@ tok_bob: str = nyx.csrf.token(secret)
 nox.test.assert_true(nyx.csrf.check(secret, tok_bob), "bob kendi jetonuyla dogrulanir")
 nyx.runtime.end()
 
-# --- protect / protect_except: /api/ muafiyeti ---
+# --- protect: guvenli default ( /api/ muaf DEGIL ) ---
 
 mw: (Context) -> HttpResponse | None = nyx.csrf.protect(secret)
 
 api_headers: dict[str, str] = {}
 api_req: HttpRequest = HttpRequest("POST", "/api/posts", "{}", api_headers)
 api_ctx: Context = Context(api_req, {})
-nox.test.assert_true(mw(api_ctx) == None, "/api/ altindaki yollar CSRF korumasindan muaf")
+r_api: HttpResponse | None = mw(api_ctx)
+nox.test.assert_true(r_api != None, "protect varsayilaninda /api/ CSRF ister")
+if r_api != None:
+    nox.test.assert_eq_int(r_api.status, 403, "/api/ jeton yoksa 403")
 
 html_headers: dict[str, str] = {}
 html_req: HttpRequest = HttpRequest("POST", "/posts", "title=x", html_headers)
@@ -46,6 +49,13 @@ get_headers: dict[str, str] = {}
 get_req: HttpRequest = HttpRequest("GET", "/posts", "", get_headers)
 get_ctx: Context = Context(get_req, {})
 nox.test.assert_true(mw(get_ctx) == None, "GET gibi guvenli metodlar CSRF korumasindan gecer")
+
+# --- protect_api_exempt: /api/ opt-in muaf ---
+
+api_mw: (Context) -> HttpResponse | None = nyx.csrf.protect_api_exempt(secret)
+nox.test.assert_true(api_mw(api_ctx) == None, "protect_api_exempt /api/ yollarini muaf tutar")
+r_html_still: HttpResponse | None = api_mw(html_ctx)
+nox.test.assert_true(r_html_still != None, "protect_api_exempt HTML yollarini korumaya devam eder")
 
 custom_mw: (Context) -> HttpResponse | None = nyx.csrf.protect_except(secret, ["/webhooks/"])
 webhook_headers: dict[str, str] = {}

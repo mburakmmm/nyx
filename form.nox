@@ -3,9 +3,11 @@
 # import nyx.form
 # nyx.form.text("title", value)
 # nyx.form.hidden("_csrf", token)
+# nyx.form.form_with_token("/posts", "POST", csrf_token)
 # nyx.form.submit("Kaydet")
 
 import nox.template
+import nox.strings
 
 def _esc(s: str) -> str:
     return nox.template.escape_html(s)
@@ -22,6 +24,43 @@ def hidden(name: str, value: str) -> str:
 def textarea(name: str, value: str) -> str:
     return "<textarea name=\"" + _esc(name) + "\">" + _esc(value) + "</textarea>"
 
+def checkbox(name: str, value: str, checked: bool) -> str:
+    out: str = "<input type=\"checkbox\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\""
+    if checked:
+        out = out + " checked"
+    return out + ">"
+
+# `options` her eleman `value` veya `value|label`. `selected` eslesen value.
+def select(name: str, options: list[str], selected: str) -> str:
+    out: str = "<select name=\"" + _esc(name) + "\">"
+    i: int = 0
+    while i < len(options):
+        raw: str = options[i]
+        value: str = raw
+        label: str = raw
+        pipe: int = nox.strings.index_of(raw, "|")
+        if pipe >= 0:
+            value = ""
+            label = ""
+            j: int = 0
+            while j < pipe:
+                value = value + raw[j]
+                j = j + 1
+            j = pipe + 1
+            while j < len(raw):
+                label = label + raw[j]
+                j = j + 1
+        out = out + "<option value=\"" + _esc(value) + "\""
+        if value == selected:
+            out = out + " selected"
+        out = out + ">" + _esc(label) + "</option>"
+        i = i + 1
+    return out + "</select>"
+
+# Rails `_method` gizli alani (HTML form yalnizca GET/POST gonderebilir).
+def method_override(method: str) -> str:
+    return hidden("_method", nox.strings.upper(method))
+
 def submit(label: str) -> str:
     return "<button type=\"submit\">" + _esc(label) + "</button>"
 
@@ -30,3 +69,16 @@ def form_start(action: str, method: str) -> str:
 
 def form_end() -> str:
     return "</form>"
+
+# Acilis `<form>` + CSRF hidden. GET icin CSRF eklenmez.
+# PUT/PATCH/DELETE icin method=post + `_method` override.
+def form_with_token(action: str, method: str, csrf_token: str) -> str:
+    m: str = nox.strings.upper(method)
+    if m == "GET":
+        return form_start(action, "get")
+    out: str = form_start(action, "post")
+    if len(csrf_token) > 0:
+        out = out + hidden("_csrf", csrf_token)
+    if m != "POST":
+        out = out + method_override(m)
+    return out

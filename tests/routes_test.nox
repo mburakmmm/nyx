@@ -38,4 +38,11 @@ get_req: HttpRequest = HttpRequest("GET", "/items/1", "", {})
 get_resp: HttpResponse = router.dispatch(get_req)
 nox.test.assert_eq_int(get_resp.status, 404, "GET, POST-only rotayla eslesmemeli")
 
+nox.test.assert_eq_str(nyx.routes.path_index("comments"), "/comments", "path_index")
+nox.test.assert_eq_str(nyx.routes.path_new("comments"), "/comments/new", "path_new")
+nox.test.assert_eq_str(nyx.routes.path_show("comments", 3), "/comments/3", "path_show")
+nox.test.assert_eq_str(nyx.routes.path_edit("comments", 3), "/comments/3/edit", "path_edit")
+nox.test.assert_eq_str(nyx.routes.path_destroy("comments", 3), "/comments/3/delete", "path_destroy")
+nox.test.assert_eq_str(nyx.routes.path_posts(), "/posts", "path_posts compat")
+
 print("routes_test ok")

@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.4.1 · **License:** MIT · **Required alias:** `nyx`
+**Version:** 0.5.0 · **License:** MIT · **Required alias:** `nyx`
 
 ---
 
@@ -23,7 +23,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.4.1"
+      "ref": "v0.5.0"
     }
   ]
 }
@@ -151,12 +151,21 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 | `NYX_ENV` | `development` / `test` / `production` |
 | `NYX_SECRET_KEY` | ≥32 chars in production |
 | `NYX_DB_PATH` / `DATABASE_URL` | SQLite path |
-| `NYX_AUTO_MIGRATE` | `1`/`0` (prefer `0` + CLI migrate in production) |
-| `NYX_CSRF` / `NYX_CSP` / `NYX_LOCALE` | security & i18n |
+| `NYX_AUTO_MIGRATE` | `1`/`0` (production default `0`; prefer CLI migrate) |
+| `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | security & i18n (`CSRF_API_EXEMPT` opts into `/api/` CSRF skip) |
 
 ---
 
 ## Changelog
+
+### 0.5.0 — Security core + Rails-ish DX
+
+- CSRF: `/api/` no longer exempt by default; opt in via `protect_api_exempt` / `NYX_CSRF_API_EXEMPT=1`
+- CSRF: empty sessions get a stable `_nyx` seed cookie so form tokens work across requests
+- Auth: `require_bearer_unless_paths` (exact path match); production rejects placeholder secrets; `auto_migrate` defaults off in production
+- Params: `validate_max_length` / `min_length` / `validate_email`; form: `select`, `checkbox`, `method_override`, `form_with_token` / `csrf.form_with`
+- Routes: generic `path_index` / `path_show` / `path_edit` / `path_destroy`; ctrl: HTML/JSON error pages + `errors_html`
+- Generators emit permit + path helpers + CSRF forms; blog integration smoke test; dispatch maps known errors to 500 pages
 
 ### 0.4.1 — Generator DX & hardening
 

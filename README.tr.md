@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.4.1 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
+**Sürüm:** 0.5.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
 
 ---
 
@@ -23,7 +23,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.4.1"
+      "ref": "v0.5.0"
     }
   ]
 }
@@ -151,12 +151,19 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 | `NYX_ENV` | `development` / `test` / `production` |
 | `NYX_SECRET_KEY` | production’da ≥32 karakter |
 | `NYX_DB_PATH` / `DATABASE_URL` | SQLite |
-| `NYX_AUTO_MIGRATE` | `1`/`0` (production’da `0` + CLI migrate) |
-| `NYX_CSRF` / `NYX_CSP` / `NYX_LOCALE` | güvenlik ve i18n |
+| `NYX_AUTO_MIGRATE` | `1`/`0` (production varsayılan `0`; CLI migrate tercih) |
+| `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | güvenlik & i18n (`CSRF_API_EXEMPT` = `/api/` CSRF muafiyeti opt-in) |
 
 ---
 
 ## Sürüm notları
+
+### 0.5.0 — Güvenlik çekirdeği + Rails-ish DX
+
+- CSRF: `/api/` artık varsayılan muaf değil; `protect_api_exempt` / `NYX_CSRF_API_EXEMPT=1` ile opt-in
+- Auth: `require_bearer_unless_paths` (exact path); production placeholder secret reddi; production’da `auto_migrate` kapalı
+- Params validation + form `select`/`form_with`; generic path helpers; HTML/JSON hata sayfaları
+- Generator + blog integration smoke test
 
 ### 0.4.1 — Generator DX & sertleştirme
 

@@ -96,18 +96,34 @@ def effective_method(ctx: Context) -> str:
     return "POST"
 
 def path_posts() -> str:
-    return "/posts"
+    return path_index("posts")
 
 def path_post(id: int) -> str:
-    return "/posts/" + str(id)
+    return path_show("posts", id)
 
 def path_new_post() -> str:
-    return "/posts/new"
+    return path_new("posts")
 
 def path_edit_post(id: int) -> str:
-    return "/posts/" + str(id) + "/edit"
+    return path_edit("posts", id)
+
+# Generic resource path helpers (preferred over path_post*).
+def path_index(resource: str) -> str:
+    return "/" + resource
+
+def path_new(resource: str) -> str:
+    return "/" + resource + "/new"
+
+def path_show(resource: str, id: int) -> str:
+    return "/" + resource + "/" + str(id)
+
+def path_edit(resource: str, id: int) -> str:
+    return "/" + resource + "/" + str(id) + "/edit"
+
+def path_destroy(resource: str, id: int) -> str:
+    return "/" + resource + "/" + str(id) + "/delete"
 
 def path_for(resource: str, id: int) -> str:
     if id <= 0:
-        return "/" + resource
-    return "/" + resource + "/" + str(id)
+        return path_index(resource)
+    return path_show(resource, id)

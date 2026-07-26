@@ -142,11 +142,22 @@ def protect_except(secret: str, exempt_prefixes: list[str]) -> (Context) -> Http
         return None
     return handler
 
-# `protect_except`in varsayilan hali: `/api/` altindaki tum yollar CSRF
-# korumasindan MUAFTIR (bkz. yukarisi).
+# Guvenli varsayilan: hicbir onek muaf DEGIL. Cookie-session kullanan
+# `/api/` rotalari da CSRF ister. Bearer-only JSON API icin acikca
+# `protect_api_exempt` veya `Config.csrf_api_exempt` / `NYX_CSRF_API_EXEMPT=1`.
 def protect(secret: str) -> (Context) -> HttpResponse | None:
+    none_exempt: list[str] = []
+    return protect_except(secret, none_exempt)
+
+# Eski davranis: `/api/` altini CSRF'den muaf tut (yalnizca Bearer/API-key
+# kimlik dogrulamasina guvenen API'ler icin opt-in).
+def protect_api_exempt(secret: str) -> (Context) -> HttpResponse | None:
     exempt: list[str] = ["/api/"]
     return protect_except(secret, exempt)
 
 def field(secret: str) -> str:
     return nyx.form.hidden("_csrf", token(secret))
+
+# CSRF token uretip `form_with_token` doner (bkz. nyx.form).
+def form_with(action: str, method: str, secret: str) -> str:
+    return nyx.form.form_with_token(action, method, token(secret))

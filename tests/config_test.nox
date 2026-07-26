@@ -7,11 +7,16 @@ cfg: Config = nyx.config.defaults("development")
 nox.test.assert_eq_str(cfg.env, "development", "env")
 nox.test.assert_true(cfg.is_development(), "is_dev")
 nox.test.assert_true(len(cfg.secret_key) >= 16, "secret len")
-nox.test.assert_true(cfg.auto_migrate, "auto_migrate default true")
+nox.test.assert_true(cfg.auto_migrate, "auto_migrate default true in development")
+nox.test.assert_true(not cfg.csrf_api_exempt, "csrf_api_exempt default false")
 
 t: Config = nyx.config.defaults("test")
 nox.test.assert_eq_str(t.db_path, ":memory:", "test db")
 nox.test.assert_true(t.is_test(), "is_test")
+
+p: Config = nyx.config.defaults("production")
+nox.test.assert_true(not p.auto_migrate, "production auto_migrate default false")
+nox.test.assert_true(p.secure_cookies, "production secure cookies")
 
 loaded: Config = nyx.config.load()
 nox.test.assert_true(len(loaded.env) > 0, "load env")

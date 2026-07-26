@@ -8,6 +8,7 @@
 
 import nox.strings
 import nox.json
+import nox.template
 from nox.http import HttpResponse
 from nox.router import Context
 import nyx.response
@@ -84,6 +85,10 @@ def render(status: int, path: str, context: dict[str, str]) -> HttpResponse:
     body: str = nyx.view.render(path, context)
     return html(status, body)
 
+def render_unescaped(status: int, path: str, context: dict[str, str]) -> HttpResponse:
+    body: str = nyx.view.render_unescaped(path, context)
+    return html(status, body)
+
 # Layout icinde `{{ yield }}` konumuna `view`in render edilmis govdesini
 # yerlestirip tek bir HTML yaniti doner (bkz. nyx.view.render_with_layout).
 def render_layout(status: int, layout: str, view: str, context: dict[str, str]) -> HttpResponse:
@@ -91,13 +96,40 @@ def render_layout(status: int, layout: str, view: str, context: dict[str, str]) 
     return html(status, body)
 
 def not_found() -> HttpResponse:
-    return html(404, "<h1>Not Found</h1>")
+    return html(404, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Not Found</title></head><body><h1>Not Found</h1></body></html>")
+
+def not_found_json() -> HttpResponse:
+    return json(404, "{\"error\":\"not_found\"}")
 
 def forbidden() -> HttpResponse:
-    return html(403, "<h1>Forbidden</h1>")
+    return html(403, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Forbidden</title></head><body><h1>Forbidden</h1></body></html>")
+
+def forbidden_json() -> HttpResponse:
+    return json(403, "{\"error\":\"forbidden\"}")
+
+def server_error() -> HttpResponse:
+    return html(500, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Error</title></head><body><h1>Internal Server Error</h1></body></html>")
+
+def server_error_json() -> HttpResponse:
+    return json(500, "{\"error\":\"internal_server_error\"}")
 
 def unprocessable() -> HttpResponse:
-    return html(422, "<h1>Unprocessable Entity</h1>")
+    return html(422, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Unprocessable</title></head><body><h1>Unprocessable Entity</h1></body></html>")
+
+# Form re-render icin kacisli HTML hata listesi.
+def errors_html(errors: list[str]) -> str:
+    if len(errors) == 0:
+        return ""
+    out: str = "<ul class=\"errors\">"
+    i: int = 0
+    while i < len(errors):
+        out = out + "<li>" + nox.template.escape_html(errors[i]) + "</li>"
+        i = i + 1
+    return out + "</ul>"
+
+def unprocessable_html(errors: list[str]) -> HttpResponse:
+    body: str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Unprocessable</title></head><body><h1>Unprocessable Entity</h1>" + errors_html(errors) + "</body></html>"
+    return html(422, body)
 
 # `nyx.model.validate_required` gibi fonksiyonlardan gelen hata mesaji
 # listesini `{"errors":[...]}` JSON govdeli 422 yaniti olarak doner
@@ -112,3 +144,21 @@ def unprocessable_json(errors: list[str]) -> HttpResponse:
         i = i + 1
     body = body + "]}"
     return json(422, body)
+
+# Accept: application/json ise JSON, aksi halde HTML hata sayfasi.
+def not_found_for(ctx: Context) -> HttpResponse:
+    if _wants_json(ctx):
+        return not_found_json()
+    return not_found()
+
+def server_error_for(ctx: Context) -> HttpResponse:
+    if _wants_json(ctx):
+        return server_error_json()
+    return server_error()
+
+def _wants_json(ctx: Context) -> bool:
+    accept: str | None = _header_get(ctx.request.headers, "Accept")
+    if accept == None:
+        return False
+    else:
+        return nox.strings.contains(accept, "application/json")

@@ -9,4 +9,23 @@ nox.test.assert_true(nox.strings.contains(t, "&lt;"), "escaped")
 h: str = nyx.form.hidden("_csrf", "abc")
 nox.test.assert_true(nox.strings.contains(h, "type=\"hidden\""), "hidden")
 
+opts: list[str] = []
+opts.append("a|Alpha")
+opts.append("b|Beta")
+sel: str = nyx.form.select("kind", opts, "b")
+nox.test.assert_true(nox.strings.contains(sel, "selected"), "select selected")
+nox.test.assert_true(nox.strings.contains(sel, "Beta"), "select label")
+
+cb: str = nyx.form.checkbox("on", "1", True)
+nox.test.assert_true(nox.strings.contains(cb, "checked"), "checkbox checked")
+
+mo: str = nyx.form.method_override("delete")
+nox.test.assert_true(nox.strings.contains(mo, "name=\"_method\""), "method override")
+nox.test.assert_true(nox.strings.contains(mo, "value=\"DELETE\""), "method upper")
+
+ft: str = nyx.form.form_with_token("/posts", "PUT", "tok123")
+nox.test.assert_true(nox.strings.contains(ft, "method=\"post\""), "form_with post")
+nox.test.assert_true(nox.strings.contains(ft, "_csrf"), "form_with csrf")
+nox.test.assert_true(nox.strings.contains(ft, "_method"), "form_with method")
+
 print("form_test ok")

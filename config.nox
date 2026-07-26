@@ -35,7 +35,8 @@ class Config:
         mail_api_key: str,
         jobs_db_path: str,
         csp: str,
-        auto_migrate: bool
+        auto_migrate: bool,
+        csrf_api_exempt: bool
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -65,6 +66,9 @@ class Config:
         # True ise `nyx.app.boot` migrate calistirir. CLI `nyx db migrate`
         # ile ayri yonetmek icin False yapin (onerilen production).
         self.auto_migrate = auto_migrate
+        # True ise CSRF middleware `/api/` onekini muaf tutar (Bearer API
+        # icin opt-in). Varsayilan False — cookie-session + /api/ guvenli.
+        self.csrf_api_exempt = csrf_api_exempt
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -108,6 +112,7 @@ def defaults(env: str) -> Config:
     csrf: bool = True
     log_req: bool = True
     db: str = "db/app.sqlite"
+    auto_mig: bool = True
     if env == "test":
         secret = "nyx-test-secret-change-me-32bytes!"
         db = ":memory:"
@@ -116,6 +121,8 @@ def defaults(env: str) -> Config:
         secret = ""
         secure = True
         log_req = True
+        # Production'da migrate'i CLI ile ayri calistirin.
+        auto_mig = False
     return Config(
         env,
         secret,
@@ -138,7 +145,8 @@ def defaults(env: str) -> Config:
         "",
         "db/jobs.sqlite",
         "",
-        True
+        auto_mig,
+        False
     )
 
 def from_env() -> Config:
@@ -173,6 +181,7 @@ def from_env() -> Config:
     cfg.jobs_db_path = _env_or("NYX_JOBS_DB_PATH", cfg.jobs_db_path)
     cfg.csp = _env_or("NYX_CSP", cfg.csp)
     cfg.auto_migrate = _env_bool("NYX_AUTO_MIGRATE", cfg.auto_migrate)
+    cfg.csrf_api_exempt = _env_bool("NYX_CSRF_API_EXEMPT", cfg.csrf_api_exempt)
     return cfg
 
 def load() -> Config:

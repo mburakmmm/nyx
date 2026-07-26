@@ -26,6 +26,7 @@ import nox.time
 import nox.uuid
 import nox.strings
 import nox.fs
+import nox.json
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
 from nox.sqlite import Connection
@@ -37,10 +38,12 @@ import nyx.cookie
 import nyx.csrf
 import nyx.response
 import nyx.security
+import nyx.ctrl
 from nyx.config import Config
 from nyx.runtime import RequestBag
 from nyx.cookie import CookieError
 from nyx.db import DbError
+from nyx.model import ModelError
 
 class AppError:
     def __init__(self: AppError, message: str) -> None:
@@ -69,11 +72,22 @@ def config(application: Application) -> Config:
 
 # Validates config, opens DB, runs migrations, installs framework middleware
 # first, then calls `setup` so app routes/middleware register after session/CSRF.
+def _is_placeholder_secret(secret: str) -> bool:
+    if nox.strings.contains(secret, "change-me"):
+        return True
+    if nox.strings.contains(secret, "nyx-dev-secret"):
+        return True
+    if nox.strings.contains(secret, "nyx-test-secret"):
+        return True
+    return False
+
 def boot(cfg: Config, setup: (Application) -> None) -> Application:
     if len(cfg.secret_key) < 16:
         raise AppError("secret_key must be at least 16 characters")
     if cfg.is_production() and len(cfg.secret_key) < 32:
         raise AppError("production secret_key must be at least 32 characters")
+    if cfg.is_production() and _is_placeholder_secret(cfg.secret_key):
+        raise AppError("production secret_key looks like a placeholder; set NYX_SECRET_KEY")
     conn: Connection = nyx.db.open(cfg.db_path)
     if cfg.auto_migrate:
         if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
@@ -94,7 +108,10 @@ def _install_framework_middleware(application: Application) -> None:
     router: Router = application.router
     router.use_before(_session_before(cfg))
     if cfg.csrf_enabled:
-        router.use_before(nyx.csrf.protect(cfg.secret_key))
+        if cfg.csrf_api_exempt:
+            router.use_before(nyx.csrf.protect_api_exempt(cfg.secret_key))
+        else:
+            router.use_before(nyx.csrf.protect(cfg.secret_key))
     router.use_after(_session_after(cfg))
     router.use_after(nyx.security.headers_after(cfg))
     if cfg.log_requests:
@@ -121,6 +138,15 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             d: int = 0
     return None
 
+def _ensure_session_seed() -> None:
+    # Bos oturumda CSRF `anon:request_id` baglar — sonraki istekte request_id
+    # degistigi icin HTML form jetonlari KIRILIR. Ilk istekte kucuk bir
+    # session seed yazip cookie ile kalici baglama saglariz.
+    sess: str = nyx.runtime.session_json()
+    if len(sess) == 0 or sess == "{}":
+        seed: str = nox.uuid.uuid4()
+        nyx.runtime.set_session("{\"_nyx\":" + nox.json.encode_string(seed) + "}")
+
 def _load_session_from_cookie(cfg: Config, raw: str) -> None:
     try:
         cookies: dict[str, str] = nyx.cookie.parse(raw)
@@ -130,10 +156,13 @@ def _load_session_from_cookie(cfg: Config, raw: str) -> None:
             nyx.runtime.load_session(data)
         else:
             nyx.runtime.load_session("{}")
+            _ensure_session_seed()
     except KeyError:
         nyx.runtime.load_session("{}")
+        _ensure_session_seed()
     except CookieError:
         nyx.runtime.load_session("{}")
+        _ensure_session_seed()
 
 def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
@@ -142,6 +171,7 @@ def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
             _load_session_from_cookie(cfg, raw)
         else:
             nyx.runtime.load_session("{}")
+            _ensure_session_seed()
         return None
     return handler
 
@@ -190,9 +220,18 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     nyx.runtime.set_request_target(req.target)
     path: str = _strip_query(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
+    empty_params: dict[str, str] = {}
+    err_ctx: Context = Context(routed, empty_params)
     resp: HttpResponse = HttpResponse(500, "", {})
     try:
-        resp = application.router.dispatch(routed)
+        try:
+            resp = application.router.dispatch(routed)
+        except ModelError:
+            resp = nyx.ctrl.server_error_for(err_ctx)
+        except AppError:
+            resp = nyx.ctrl.server_error_for(err_ctx)
+        except DbError:
+            resp = nyx.ctrl.server_error_for(err_ctx)
     finally:
         nyx.runtime.end()
     return resp

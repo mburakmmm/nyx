@@ -46,6 +46,17 @@ try:
 except KeyError:
     nox.test.assert_true(True, "require_keys empty on miss")
 
+long_errs: list[str] = nyx.params.validate_max_length(form, "title", 1)
+nox.test.assert_eq_int(len(long_errs), 1, "max_length")
+short_errs: list[str] = nyx.params.validate_min_length(form, "title", 100)
+nox.test.assert_eq_int(len(short_errs), 1, "min_length")
+nox.test.assert_true(nyx.params.looks_like_email("a@b.c"), "email ok")
+nox.test.assert_true(not nyx.params.looks_like_email("not-an-email"), "email bad")
+email_params: dict[str, str] = {}
+email_params["email"] = "x@y.z"
+email_ok: list[str] = nyx.params.validate_email(email_params, "email")
+nox.test.assert_eq_int(len(email_ok), 0, "validate_email ok")
+
 mh: dict[str, str] = {}
 mh["Content-Type"] = "multipart/form-data; boundary=x"
 mreq: HttpRequest = HttpRequest("POST", "/upload?x=1", "ignored-body", mh)

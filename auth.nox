@@ -64,6 +64,29 @@ def _drop_prefix(s: str, n: int) -> str:
         i = i + 1
     return out
 
+def _request_path(target: str) -> str:
+    q: int = nox.strings.index_of(target, "?")
+    if q < 0:
+        return target
+    out: str = ""
+    i: int = 0
+    while i < q:
+        out = out + target[i]
+        i = i + 1
+    return out
+
+def path_is_exempt(target: str, exempt_path: str) -> bool:
+    return _request_path(target) == exempt_path
+
+def path_is_exempt_any(target: str, exempt_paths: list[str]) -> bool:
+    path: str = _request_path(target)
+    i: int = 0
+    while i < len(exempt_paths):
+        if path == exempt_paths[i]:
+            return True
+        i = i + 1
+    return False
+
 # `json_str` (bir JSON nesnesi) icinde `field` adinda bir metin alani ararsa
 # onu, yoksa (veya metin degilse/JSON gecersizse) bos string doner.
 def _json_field_str(json_str: str, field: str) -> str:
@@ -105,20 +128,22 @@ def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
                 return _unauthorized("invalid_token")
     return handler
 
-# `exempt_path` dışındaki rotalarda Bearer JWT zorunlu kılar (ör. "/login").
-def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpResponse | None:
+# `exempt_paths` listesindeki yollar (query haric exact match) disinda
+# Bearer JWT zorunlu. Ornek: ["/login", "/health"].
+def require_bearer_unless_paths(secret: str, exempt_paths: list[str]) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
-        if ctx.request.target == exempt_path:
+        if path_is_exempt_any(ctx.request.target, exempt_paths):
             return None
-        if nox.strings.starts_with(ctx.request.target, exempt_path):
-            rest_start: int = len(exempt_path)
-            if rest_start == len(ctx.request.target):
-                return None
-            if ctx.request.target[rest_start] == "?":
-                return None
         inner: (Context) -> HttpResponse | None = require_bearer(secret)
         return inner(ctx)
     return handler
+
+# Tek yol muafiyeti — exact path match (query string yok sayilir).
+# Prefix match YOKTUR (`/login` `/login/extra`yi muaf tutmaz).
+def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpResponse | None:
+    paths: list[str] = []
+    paths.append(exempt_path)
+    return require_bearer_unless_paths(secret, paths)
 
 # NOT: Oturum (cookie) verisinde `user_id` alani ZORUNLUDUR — imzasi
 # GECERLI ama `user_id`si eksik/bos bir oturum "kimlik dogrulanmis DEGIL"

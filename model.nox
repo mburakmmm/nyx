@@ -358,6 +358,17 @@ def validate_attrs_required(attrs: Attributes, fields: list[str]) -> list[str]:
         fi = fi + 1
     return errors
 
+def validate_attrs_max_length(attrs: Attributes, field: str, max_len: int) -> list[str]:
+    errors: list[str] = []
+    i: int = 0
+    while i < len(attrs.keys):
+        if attrs.keys[i] == field:
+            if attrs.kinds[i] == "str" and len(attrs.str_vals[i]) > max_len:
+                errors.append(field + " too long (max " + str(max_len) + ")")
+            return errors
+        i = i + 1
+    return errors
+
 def create_attrs_valid(db: Connection, table: str, attrs: Attributes, required_fields: list[str]) -> int:
     errors: list[str] = validate_attrs_required(attrs, required_fields)
     if len(errors) > 0:
