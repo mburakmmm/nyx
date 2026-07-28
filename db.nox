@@ -1,15 +1,27 @@
-# nyx.db — SQLite açma + migration runner.
+# nyx.db — SQLite açma + migration runner (+ ham PG/MySQL open).
 #
 # import nyx.db
 #
 # db: Connection = nyx.db.open("db/app.sqlite")
 # nyx.db.migrate(db, "db/migrate")
+#
+# # Ham sürücüler (Nox >= 1.11) — nyx.model/job/Application.db DEĞİL:
+# pg = nyx.db.open_postgres("postgres://user:pass@localhost:5432/app")
+# my = nyx.db.open_mysql("mysql://user:pass@localhost:3306/app")
+#
+# PG/MySQL v1: parametreli sorgu (prepare/bind) YOK — SQL enjeksiyonuna dikkat.
 
 import nox.sqlite
+import nox.postgres
+import nox.mysql
 import nox.fs
 import nox.path
 import nox.strings
+import nox.url
 from nox.sqlite import Connection, Statement, Row, SqliteError
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.mysql import Connection as MysqlConnection, MysqlError
+from nox.url import URL, UrlError
 
 class DbError:
     def __init__(self: DbError, message: str) -> None:
@@ -23,24 +35,41 @@ def _drop_prefix(s: str, n: int) -> str:
         i = i + 1
     return out
 
-# `path` düz dosya yolu, `:memory:`, veya URL:
+def _scheme_of(url: str) -> str:
+    if nox.strings.contains(url, "://"):
+        try:
+            u: URL = nox.url.parse(url)
+            return u.scheme
+        except UrlError:
+            return ""
+    return ""
+
+# `path` düz dosya yolu, `:memory:`, veya SQLite URL:
 #   sqlite:///absolute/path   sqlite://relative/path   sqlite::memory:
-# Postgres URL'leri net hata verir — Nox stdlib'de henüz sürücü yok.
+# Postgres/MySQL URL'leri bu fonksiyonda HATA verir — `open_postgres` /
+# `open_mysql` kullanın (Application.db tipi SQLite Connection).
 def open(path: str) -> Connection:
     return open_url(path)
 
 def open_url(url: str) -> Connection:
     if url == ":memory:" or url == "sqlite::memory:":
         return nox.sqlite.open(":memory:")
-    if nox.strings.starts_with(url, "postgres://") or nox.strings.starts_with(url, "postgresql://"):
+    scheme: str = _scheme_of(url)
+    if scheme == "postgres" or scheme == "postgresql":
         raise DbError(
-            "Postgres is not available yet (needs nox.postgres in the Nox stdlib). Use SQLite: NYX_DB_PATH or sqlite:///path/to.db"
+            "postgres/postgresql URLs require nyx.db.open_postgres(...). " +
+            "nyx.model / Application.db stay SQLite until parameterized queries exist. " +
+            "Use NYX_DB_PATH or sqlite:///path/to.db for the app ORM."
+        )
+    if scheme == "mysql":
+        raise DbError(
+            "mysql URLs require nyx.db.open_mysql(...). " +
+            "nyx.model / Application.db stay SQLite. Use sqlite:///path/to.db for the app ORM."
         )
     path: str = url
     if nox.strings.starts_with(url, "sqlite://"):
         rest: str = _drop_prefix(url, 9)
         if nox.strings.starts_with(rest, "/"):
-            # sqlite:///abs → /abs  |  sqlite://rel → rel (after one slash strip below)
             if nox.strings.starts_with(rest, "//"):
                 path = _drop_prefix(rest, 1)
             else:
@@ -52,16 +81,28 @@ def open_url(url: str) -> Connection:
         nox.fs.create_dir(parent)
     return nox.sqlite.open(path)
 
+# libpq URI veya keyword-value conninfo. Donus: nox.postgres.Connection.
+# Parametreli sorgu YOK — degerleri kendiniz kacisin / birlestirin.
+def open_postgres(conninfo: str) -> PgConnection:
+    try:
+        return nox.postgres.open(conninfo)
+    except PostgresError as e:
+        raise DbError("postgres open failed: " + e.message)
+
+# mysql://[user[:pass]@]host[:port]/db
+def open_mysql(conn_url: str) -> MysqlConnection:
+    try:
+        return nox.mysql.open_url(conn_url)
+    except MysqlError as e:
+        raise DbError("mysql open failed: " + e.message)
+
 def _ends_with_sql(name: str) -> bool:
     return nox.strings.ends_with(name, ".sql")
 
-# "*.down.sql" dosyalari `rollback()` tarafindan kullanilir, `migrate()`
-# tarafindan DUZ ("up") migration olarak calistirilmamalidir.
 def _is_up_migration(name: str) -> bool:
     return _ends_with_sql(name) and not nox.strings.ends_with(name, ".down.sql")
 
 def _str_less(a: str, b: str) -> bool:
-    # lexicographic ASCII (byte) karşılaştırma
     i: int = 0
     na: int = len(a)
     nb: int = len(b)
@@ -76,7 +117,6 @@ def _str_less(a: str, b: str) -> bool:
     return na < nb
 
 def _sort_names(names: list[str]) -> list[str]:
-    # Basit insertion sort — migration dosya adları kısa.
     out: list[str] = []
     i: int = 0
     while i < len(names):
@@ -112,16 +152,6 @@ def _record_applied(db: Connection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
-# `dir_path` altındaki `*.sql` dosyalarını ada göre sırayla uygular.
-# Her dosya bir kez çalışır; `schema_migrations` tablosunda izlenir. HER
-# migration KENDI `BEGIN IMMEDIATE`/`COMMIT` bloguna sarilir (bkz. SQLite
-# dokumantasyonu — `IMMEDIATE` yazma kilidini HEMEN alir, bir baska
-# baglantinin ORTASINDA bulundugu bir "deferred" islemle YARIS durumuna
-# GIRMEZ) — bir migration dosyasi BASARISIZ olursa (sozdizimi hatasi,
-# kisitlama ihlali) o dosyanin YARIM kalmis etkileri ROLLBACK edilir VE
-# `schema_migrations`a ASLA kaydedilmez (aksi halde bir sonraki `migrate()`
-# cagrisi onu "zaten uygulanmis" sanip ATLARDI, veritabani kalici olarak
-# tutarsiz kalirdi).
 def migrate(db: Connection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
@@ -165,19 +195,11 @@ def _drop_last_n(s: str, n: int) -> str:
         i = i + 1
     return out
 
-# "001_create_users.sql" -> "001_create_users.down.sql" (ayni dizinde).
 def _down_name(version: str) -> str:
     if _ends_with_sql(version):
         return _drop_last_n(version, 4) + ".down.sql"
     return version + ".down.sql"
 
-# `dir_path`taki migration'lardan `schema_migrations`a EN SON kaydedileni
-# (rowid'e gore) geri alir: eslesen `<version>.down.sql` dosyasini
-# calistirip `schema_migrations`dan siler. Geri alinan versiyonu doner.
-# `migrate()` gibi TEK bir `BEGIN IMMEDIATE`/`COMMIT` blogu icinde calisir —
-# down-migration BASARISIZ olursa `schema_migrations` kaydi SILINMEDEN
-# ROLLBACK edilir (yari-uygulanmis bir geri alma, veritabanini KOD ile
-# `schema_migrations` arasinda tutarsiz birakmaz).
 def rollback(db: Connection, dir_path: str) -> str:
     _ensure_migrations_table(db)
     stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
@@ -202,8 +224,6 @@ def rollback(db: Connection, dir_path: str) -> str:
     db.execute("COMMIT")
     return version
 
-# Mevcut tum tablolarin CREATE TABLE ifadelerini `path`e yazar (sqlite_master
-# uzerinden) — hizli bir "schema.sql" enstantanesi icin.
 def schema_dump(db: Connection, path: str) -> None:
     rows: list[Row] = db.query(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL ORDER BY name"

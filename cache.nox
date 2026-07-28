@@ -1,16 +1,17 @@
-# nyx.cache — bellek (L1) + SQLite (L2, kalici) yedekli anahtar/deger onbellegi.
+# nyx.cache - bellek (L1) + SQLite (L2, kalici) yedekli anahtar/deger onbellegi.
+# Nox >= 1.11: open_memory - yalnizca LRU bellek (kalici degil).
 #
 # import nyx.cache
 #
 # c: Cache = nyx.cache.open("tmp/cache.sqlite")
+# m: MemoryCache = nyx.cache.open_memory(256)
 # nyx.cache.set(c, "home:posts", posts_json, 60)
 # v: str | None = nyx.cache.get(c, "home:posts")
-# nyx.cache.delete(c, "home:posts")
-# nyx.cache.clear(c)
 
 import nox.sqlite
 import nox.time
 from nox.sqlite import Connection, Statement, Row
+from nox.collections import LRUCache
 import nyx.db
 
 class CacheError:
@@ -80,9 +81,6 @@ class Cache:
         stmt.bind_str(0, key)
         stmt.execute()
 
-    # Once bellekten (L1), yoksa SQLite'tan (L2) okur; SQLite'ta bulunursa
-    # bellege de yazar (warm-up). Suresi gecmis girdiler her iki katmandan
-    # da SESSIZCE silinir ("expire old on get").
     def get(self: Cache, key: str) -> str | None:
         now: int = nox.time.now_ms()
         idx: int = self._mem_find(key)
@@ -109,8 +107,6 @@ class Cache:
         self._mem_set(key, value, exp2)
         return value
 
-    # `ttl_sec <= 0` ise girdi SUREZ (asla suresi dolmaz). Aksi halde
-    # `expires_at_ms = simdi + ttl_sec*1000`.
     def set(self: Cache, key: str, value: str, ttl_sec: int) -> None:
         now: int = nox.time.now_ms()
         expires_at_ms: int = -1
@@ -134,16 +130,120 @@ class Cache:
 
     def clear(self: Cache) -> None:
         self.db.execute("DELETE FROM cache_entries")
-        self.mem_keys = []
-        self.mem_vals = []
-        self.mem_exp = []
+        empty_k: list[str] = []
+        empty_v: list[str] = []
+        empty_e: list[int] = []
+        self.mem_keys = empty_k
+        self.mem_vals = empty_v
+        self.mem_exp = empty_e
 
-    # Alttaki SQLite baglantisini kapatir — `nyx.db.open`/`nyx.cache.open`in
-    # actigi dosya tanitici (file descriptor) sizintisini ONLEMEK icin
-    # cagiran, Cache'i kullanimi bittiginde (ör. istek sonu/uygulama
-    # kapanisi) BUNU cagirmalidir.
     def close(self: Cache) -> None:
         self.db.close()
+
+# Yalnizca bellek: LRU kapasite + TTL. Kalici degil; process/worker lokal.
+class MemoryCache:
+    lru: LRUCache[str, str]
+    exp_keys: list[str]
+    exp_vals: list[int]
+
+    def __init__(self: MemoryCache, capacity: int) -> None:
+        self.lru = LRUCache[str, str](capacity)
+        empty_k: list[str] = []
+        empty_v: list[int] = []
+        self.exp_keys = empty_k
+        self.exp_vals = empty_v
+
+    def _exp_find(self: MemoryCache, key: str) -> int:
+        i: int = 0
+        keys: list[str] = self.exp_keys
+        while i < len(keys):
+            if keys[i] == key:
+                return i
+            i = i + 1
+        return -1
+
+    def _exp_set(self: MemoryCache, key: str, expires_at_ms: int) -> None:
+        idx: int = self._exp_find(key)
+        if idx >= 0:
+            vals: list[int] = self.exp_vals
+            vals[idx] = expires_at_ms
+            self.exp_vals = vals
+            return
+        keys: list[str] = self.exp_keys
+        vals2: list[int] = self.exp_vals
+        keys.append(key)
+        vals2.append(expires_at_ms)
+        self.exp_keys = keys
+        self.exp_vals = vals2
+
+    def _exp_del(self: MemoryCache, key: str) -> None:
+        idx: int = self._exp_find(key)
+        if idx < 0:
+            return
+        keys: list[str] = self.exp_keys
+        vals: list[int] = self.exp_vals
+        nk: list[str] = []
+        nv: list[int] = []
+        i: int = 0
+        while i < len(keys):
+            if i != idx:
+                nk.append(keys[i])
+                nv.append(vals[i])
+            i = i + 1
+        self.exp_keys = nk
+        self.exp_vals = nv
+
+    def get(self: MemoryCache, key: str) -> str | None:
+        if not self.lru.contains(key):
+            return None
+        now: int = nox.time.now_ms()
+        idx: int = self._exp_find(key)
+        if idx >= 0:
+            exp: int = self.exp_vals[idx]
+            if exp >= 0 and now >= exp:
+                self.delete(key)
+                return None
+        return self.lru.get(key)
+
+    def set(self: MemoryCache, key: str, value: str, ttl_sec: int) -> None:
+        now: int = nox.time.now_ms()
+        expires_at_ms: int = -1
+        if ttl_sec > 0:
+            expires_at_ms = now + ttl_sec * 1000
+        self.lru.put(key, value)
+        self._exp_set(key, expires_at_ms)
+
+    def delete(self: MemoryCache, key: str) -> None:
+        if not self.lru.contains(key):
+            self._exp_del(key)
+            return
+        keep_keys: list[str] = []
+        keep_vals: list[str] = []
+        all_keys: list[str] = self.exp_keys
+        i: int = 0
+        while i < len(all_keys):
+            k: str = all_keys[i]
+            if k != key and self.lru.contains(k):
+                keep_keys.append(k)
+                keep_vals.append(self.lru.get(k))
+            i = i + 1
+        fresh: LRUCache[str, str] = LRUCache[str, str](self.lru.capacity)
+        j: int = 0
+        while j < len(keep_keys):
+            fresh.put(keep_keys[j], keep_vals[j])
+            j = j + 1
+        self.lru = fresh
+        self._exp_del(key)
+
+    def clear(self: MemoryCache) -> None:
+        self.lru = LRUCache[str, str](self.lru.capacity)
+        empty_k: list[str] = []
+        empty_v: list[int] = []
+        self.exp_keys = empty_k
+        self.exp_vals = empty_v
+
+    def close(self: MemoryCache) -> None:
+        self.clear()
 
 def _ensure_schema(db: Connection) -> None:
     db.execute(
@@ -158,6 +258,12 @@ def open(path: str) -> Cache:
     db: Connection = nyx.db.open(path)
     _ensure_schema(db)
     return Cache(db)
+
+def open_memory(capacity: int) -> MemoryCache:
+    cap: int = capacity
+    if cap < 1:
+        cap = 1
+    return MemoryCache(cap)
 
 def close(c: Cache) -> None:
     c.close()

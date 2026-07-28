@@ -104,17 +104,6 @@ def _header_get(headers: dict[str, str], name: str) -> str:
 def _unsafe_method(method: str) -> bool:
     return method == "POST" or method == "PUT" or method == "PATCH" or method == "DELETE"
 
-def _target_path(target: str) -> str:
-    q: int = nox.strings.index_of(target, "?")
-    if q < 0:
-        return target
-    out: str = ""
-    i: int = 0
-    while i < q:
-        out = out + target[i]
-        i = i + 1
-    return out
-
 def _starts_with_any(path: str, prefixes: list[str]) -> bool:
     i: int = 0
     while i < len(prefixes):
@@ -131,7 +120,7 @@ def protect_except(secret: str, exempt_prefixes: list[str]) -> (Context) -> Http
     def handler(ctx: Context) -> HttpResponse | None:
         if not _unsafe_method(ctx.request.method):
             return None
-        if _starts_with_any(_target_path(ctx.request.target), exempt_prefixes):
+        if _starts_with_any(nyx.params.path_only(ctx.request.target), exempt_prefixes):
             return None
         tok: str = _header_get(ctx.request.headers, "X-CSRF-Token")
         if len(tok) == 0:

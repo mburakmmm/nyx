@@ -4,19 +4,18 @@
 # q: dict[str, str] = nyx.params.query(req.target)
 # f: dict[str, str] = nyx.params.form(req.body)
 # all: dict[str, str] = nyx.params.from_request(req)
+#
+# Nox >= 1.11: percent/query decode `nox.url` uzerinden (form `+` = bosluk).
 
 import nox.strings
+import nox.url
 from nox.http import HttpRequest
+from nox.url import UrlError
 import nyx.runtime
 
 class ParamsError:
     def __init__(self: ParamsError, message: str) -> None:
         self.message = message
-
-
-
-
-
 
 def _substr(s: str, start: int, end: int) -> str:
     out: str = ""
@@ -26,227 +25,31 @@ def _substr(s: str, start: int, end: int) -> str:
         i = i + 1
     return out
 
-def _hex_val(c: int) -> int:
-    if c >= 48 and c <= 57:
-        return c - 48
-    if c >= 65 and c <= 70:
-        return c - 55
-    if c >= 97 and c <= 102:
-        return c - 87
-    return -1
-
-def _ascii_char(b: int) -> str:
-    if b == 9:
-        return "\t"
-    if b == 10:
-        return "\n"
-    if b == 13:
-        return "\r"
-    if b < 32 or b > 126:
-        raise ParamsError("desteklenmeyen ASCII bayt: " + str(b))
-    table: str = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-    return table[b - 32]
-
-def _read_pct(s: str, i: int) -> int:
-    if i + 2 >= len(s):
-        return -1
-    if s[i] != "%":
-        return -1
-    h1: int = _hex_val(nox.strings.byte_at(s, i + 1))
-    h2: int = _hex_val(nox.strings.byte_at(s, i + 2))
-    if h1 < 0 or h2 < 0:
-        return -1
-    return h1 * 16 + h2
-
-def _utf8_2(b1: int, b2: int) -> str:
-    cp: int = ((b1 % 32) * 64) + (b2 % 64)
-    if cp == 192:
-        return "À"
-    if cp == 193:
-        return "Á"
-    if cp == 194:
-        return "Â"
-    if cp == 195:
-        return "Ã"
-    if cp == 196:
-        return "Ä"
-    if cp == 199:
-        return "Ç"
-    if cp == 200:
-        return "È"
-    if cp == 201:
-        return "É"
-    if cp == 202:
-        return "Ê"
-    if cp == 204:
-        return "Ì"
-    if cp == 205:
-        return "Í"
-    if cp == 206:
-        return "Î"
-    if cp == 208:
-        return "Ð"
-    if cp == 209:
-        return "Ñ"
-    if cp == 210:
-        return "Ò"
-    if cp == 211:
-        return "Ó"
-    if cp == 212:
-        return "Ô"
-    if cp == 213:
-        return "Õ"
-    if cp == 214:
-        return "Ö"
-    if cp == 217:
-        return "Ù"
-    if cp == 218:
-        return "Ú"
-    if cp == 219:
-        return "Û"
-    if cp == 220:
-        return "Ü"
-    if cp == 223:
-        return "ß"
-    if cp == 224:
-        return "à"
-    if cp == 225:
-        return "á"
-    if cp == 226:
-        return "â"
-    if cp == 227:
-        return "ã"
-    if cp == 228:
-        return "ä"
-    if cp == 231:
-        return "ç"
-    if cp == 232:
-        return "è"
-    if cp == 233:
-        return "é"
-    if cp == 234:
-        return "ê"
-    if cp == 236:
-        return "ì"
-    if cp == 237:
-        return "í"
-    if cp == 238:
-        return "î"
-    if cp == 241:
-        return "ñ"
-    if cp == 242:
-        return "ò"
-    if cp == 243:
-        return "ó"
-    if cp == 244:
-        return "ô"
-    if cp == 245:
-        return "õ"
-    if cp == 246:
-        return "ö"
-    if cp == 249:
-        return "ù"
-    if cp == 250:
-        return "ú"
-    if cp == 251:
-        return "û"
-    if cp == 252:
-        return "ü"
-    if cp == 253:
-        return "ý"
-    if cp == 255:
-        return "ÿ"
-    # Latin Extended-A (Türkçe): ğ Ğ ı İ ş Ş
-    if cp == 286:
-        return "Ğ"
-    if cp == 287:
-        return "ğ"
-    if cp == 304:
-        return "İ"
-    if cp == 305:
-        return "ı"
-    if cp == 350:
-        return "Ş"
-    if cp == 351:
-        return "ş"
-    raise ParamsError("desteklenmeyen unicode codepoint: " + str(cp))
-
+# application/x-www-form-urlencoded: `+` bosluk; sonra nox.url.percent_decode.
 def decode(s: str) -> str:
-    out: str = ""
-    i: int = 0
-    n: int = len(s)
-    while i < n:
-        ch: str = s[i]
-        if ch == "+":
-            out = out + " "
-            i = i + 1
-        else:
-            if ch == "%":
-                b: int = _read_pct(s, i)
-                if b < 0:
-                    out = out + ch
-                    i = i + 1
-                else:
-                    if b < 128:
-                        out = out + _ascii_char(b)
-                        i = i + 3
-                    else:
-                        if b >= 192 and b < 224:
-                            b2: int = _read_pct(s, i + 3)
-                            if b2 < 0:
-                                raise ParamsError("eksik utf-8 devam bayti")
-                            out = out + _utf8_2(b, b2)
-                            i = i + 6
-                        else:
-                            if b >= 224 and b < 240:
-                                b2b: int = _read_pct(s, i + 3)
-                                b3: int = _read_pct(s, i + 6)
-                                if b2b < 0 or b3 < 0:
-                                    raise ParamsError("eksik utf-8 devam bayti")
-                                cp: int = ((b % 16) * 4096) + ((b2b % 64) * 64) + (b3 % 64)
-                                if cp == 286:
-                                    out = out + "Ğ"
-                                else:
-                                    if cp == 287:
-                                        out = out + "ğ"
-                                    else:
-                                        if cp == 304:
-                                            out = out + "İ"
-                                        else:
-                                            if cp == 305:
-                                                out = out + "ı"
-                                            else:
-                                                if cp == 350:
-                                                    out = out + "Ş"
-                                                else:
-                                                    if cp == 351:
-                                                        out = out + "ş"
-                                                    else:
-                                                        raise ParamsError("desteklenmeyen 3-bayt unicode: " + str(cp))
-                                i = i + 9
-                            else:
-                                raise ParamsError("desteklenmeyen percent-encoding bayti: " + str(b))
-            else:
-                out = out + ch
-                i = i + 1
-    return out
+    normalized: str = nox.strings.replace(s, "+", "%20")
+    try:
+        return nox.url.percent_decode(normalized)
+    except UrlError as e:
+        raise ParamsError(e.message)
 
+def _form_query_decode(raw: str) -> dict[str, str]:
+    normalized: str = nox.strings.replace(raw, "+", "%20")
+    try:
+        return nox.url.query_decode(normalized)
+    except UrlError as e:
+        raise ParamsError(e.message)
+
+# Uyumluluk: anahtar/deger ciftleri duz liste (query sonra body birlestirme).
 def parse_qs_flat(raw: str) -> list[str]:
     flat: list[str] = []
-    if len(raw) == 0:
-        return flat
-    parts: list[str] = nox.strings.split(raw, "&")
+    d: dict[str, str] = _form_query_decode(raw)
+    keys: list[str] = d.keys()
     i: int = 0
-    while i < len(parts):
-        p: str = parts[i]
-        if len(p) > 0:
-            eq: int = nox.strings.index_of(p, "=")
-            if eq < 0:
-                flat.append(decode(p))
-                flat.append("")
-            else:
-                flat.append(decode(_substr(p, 0, eq)))
-                flat.append(decode(_substr(p, eq + 1, len(p))))
+    while i < len(keys):
+        k: str = keys[i]
+        flat.append(k)
+        flat.append(d[k])
         i = i + 1
     return flat
 
@@ -259,8 +62,9 @@ def flat_to_dict(flat: list[str]) -> dict[str, str]:
     return result
 
 def parse_qs(raw: str) -> dict[str, str]:
-    return flat_to_dict(parse_qs_flat(raw))
+    return _form_query_decode(raw)
 
+# Request target'lari semasiz (`/path?q=1`) — nox.url.parse kullanilmaz.
 def query_string(target: str) -> str:
     q: int = nox.strings.index_of(target, "?")
     if q < 0:
@@ -285,8 +89,6 @@ def get(params: dict[str, str], key: str, default: str) -> str:
     except KeyError:
         return default
 
-# Strong parameters: yalnizca izin verilen anahtarlari kopyalar (Rails
-# `params.permit(:a, :b)` benzeri). Bilinmeyen anahtarlar sessizce dusulur.
 def permit(params: dict[str, str], keys: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
     i: int = 0
@@ -299,9 +101,6 @@ def permit(params: dict[str, str], keys: list[str]) -> dict[str, str]:
         i = i + 1
     return out
 
-# Eksik veya bos zorunlu anahtarlarin listesini doner (bos liste = OK).
-# Nox'ta bazi ParamsError raise yollari paket sinirinda segfault
-# uretebildigi icin require API istisna yerine hata listesi kullanir.
 def missing_required(params: dict[str, str], keys: list[str]) -> list[str]:
     errors: list[str] = []
     i: int = 0
@@ -316,7 +115,6 @@ def missing_required(params: dict[str, str], keys: list[str]) -> list[str]:
         i = i + 1
     return errors
 
-# Tum `keys` mevcut ve bos degilse `permit` sonucu, aksi halde bos dict.
 def require_keys(params: dict[str, str], keys: list[str]) -> dict[str, str]:
     errs: list[str] = missing_required(params, keys)
     if len(errs) > 0:
@@ -324,7 +122,6 @@ def require_keys(params: dict[str, str], keys: list[str]) -> dict[str, str]:
         return empty
     return permit(params, keys)
 
-# Alan uzunlugu kontrolu — hata yoksa bos liste.
 def validate_max_length(params: dict[str, str], key: str, max_len: int) -> list[str]:
     errors: list[str] = []
     try:
@@ -345,7 +142,6 @@ def validate_min_length(params: dict[str, str], key: str, min_len: int) -> list[
         errors.append("required param missing: " + key)
     return errors
 
-# Basit e-posta sekli: bir '@', yerel/domain bos degil, bosluk yok.
 def looks_like_email(value: str) -> bool:
     if len(value) < 3:
         return False
@@ -399,8 +195,6 @@ def from_request(req: HttpRequest) -> dict[str, str]:
     if method == "POST" or method == "PUT" or method == "PATCH":
         if len(req.body) > 0:
             ct: str = _header_ci(req.headers, "Content-Type")
-            # multipart desteklenmez — govdeyi form olarak parse ETME
-            # (raise bazi Nox surumlerinde segfault; query yine doner).
             if nox.strings.contains(ct, "multipart/form-data"):
                 return flat_to_dict(flat)
             trimmed: str = nox.strings.trim(req.body)

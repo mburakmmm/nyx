@@ -1,7 +1,7 @@
 import nox.test
 import nox.time
 import nyx.cache
-from nyx.cache import Cache
+from nyx.cache import Cache, MemoryCache
 
 c: Cache = nyx.cache.open(":memory:")
 
@@ -49,5 +49,20 @@ c.close()
 c2: Cache = nyx.cache.open(":memory:")
 c2.set("a", "b", 0)
 nyx.cache.close(c2)
+
+mem: MemoryCache = nyx.cache.open_memory(4)
+mem.set("m1", "v1", 0)
+mv: str | None = mem.get("m1")
+if mv != None:
+    nox.test.assert_eq_str(mv, "v1", "memory cache get")
+else:
+    nox.test.assert_true(False, "memory cache miss")
+mem.set("m2", "v2", 1)
+nox.time.sleep_ms(1100)
+nox.test.assert_true(mem.get("m2") == None, "memory TTL expires")
+mem.set("d", "x", 0)
+mem.delete("d")
+nox.test.assert_true(mem.get("d") == None, "memory delete")
+mem.close()
 
 print("cache_test ok")

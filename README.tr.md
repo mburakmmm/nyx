@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.6.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx` · **Nox ≥ 1.10**
+**Sürüm:** 0.7.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx` · **Nox ≥ 1.11**
 
 ---
 
@@ -23,7 +23,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.6.0"
+      "ref": "v0.7.0"
     }
   ]
 }
@@ -84,7 +84,7 @@ def handle(req: HttpRequest) -> HttpResponse:
 nox.http.serve(8080, handle)
 ```
 
-**Bir kez** boot edin (Nox ≥ 1.10 modül global). Handler’ları **`setup` içinde** tanımlayın. `nyx.ctx.wrap` + `create_attrs` tercih edin.
+**Bir kez** boot edin (Nox ≥ 1.11). Handler’ları **`setup` içinde** tanımlayın. `nyx.ctx.wrap` + `create_attrs` tercih edin.
 
 ---
 
@@ -147,13 +147,20 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 |---|---|
 | `NYX_ENV` | `development` / `test` / `production` |
 | `NYX_SECRET_KEY` | production’da ≥32 karakter |
-| `NYX_DB_PATH` / `DATABASE_URL` | SQLite |
+| `NYX_DB_PATH` / `DATABASE_URL` | SQLite (ORM); ham PG/MySQL için `open_postgres` / `open_mysql` |
 | `NYX_AUTO_MIGRATE` | `1`/`0` (production varsayılan `0`; CLI migrate tercih) |
 | `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | güvenlik & i18n (`CSRF_API_EXEMPT` = `/api/` CSRF muafiyeti opt-in) |
 
 ---
 
 ## Sürüm notları
+
+### 0.7.0 — Nox 1.11 stdlib entegrasyonu
+
+- **Nox ≥ 1.11** zorunlu
+- Params → `nox.url`; `open_postgres` / `open_mysql` (ham; ORM SQLite)
+- `cache.open_memory` (LRU); CI `noxc` v1.11.0
+- `nyx.runtime` hâlâ `NYX_RT_*` (karmaşık paket-global codegen)
 
 ### 0.6.0 — Nox 1.10 açılımları (boot-once)
 
@@ -194,15 +201,16 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.10** gerekir (uygulama scripti modül-global, bare `except:`, `list[dict]`)
+- **Nox ≥ 1.11** gerekir
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
-- İstek durumu `nyx.runtime` / `NYX_RT_*` (paket-modül global codegen henüz güvenli değil)
-- SQLite; TLS reverse proxy’de; cable = SSE/long-poll
+- App ORM / migrate / jobs: **SQLite**; ham PG/MySQL: `open_postgres` / `open_mysql` (bind yok)
+- İstek durumu `nyx.runtime` / `NYX_RT_*`
+- TLS reverse proxy’de; cable = SSE/long-poll
 - Alias zorunlu `nyx`
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
-**Uygun:** reverse-proxy, tek instance, SQLite, düşük–orta trafik.  
-**Henüz değil:** process’ler arası paylaşılan istek state, yatay ölçek, WebSocket chat.
+**Uygun:** reverse-proxy, tek instance, SQLite app DB, düşük–orta trafik.  
+**Henüz değil:** multi-driver ActiveRecord, process’ler arası paylaşılan istek state, WebSocket chat.
 
 ---
 

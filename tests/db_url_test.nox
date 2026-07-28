@@ -1,4 +1,5 @@
 import nox.test
+import nox.strings
 import nyx.db
 from nox.sqlite import Connection
 from nyx.db import DbError
@@ -13,8 +14,14 @@ db2.close()
 
 try:
     nyx.db.open_url("postgresql://user:pass@localhost:5432/app")
-    nox.test.assert_true(False, "should raise")
-except DbError:
-    nox.test.assert_true(True, "postgres blocked")
+    nox.test.assert_true(False, "open_url must reject postgres")
+except DbError as e:
+    nox.test.assert_true(nox.strings.contains(e.message, "open_postgres"), "points to open_postgres")
+
+try:
+    nyx.db.open_url("mysql://user:pass@localhost:3306/app")
+    nox.test.assert_true(False, "open_url must reject mysql")
+except DbError as e2:
+    nox.test.assert_true(nox.strings.contains(e2.message, "open_mysql"), "points to open_mysql")
 
 print("db_url_test ok")

@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.6.0 · **License:** MIT · **Required alias:** `nyx` · **Requires Nox ≥ 1.10**
+**Version:** 0.7.0 · **License:** MIT · **Required alias:** `nyx` · **Requires Nox ≥ 1.11**
 
 ---
 
@@ -23,7 +23,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.6.0"
+      "ref": "v0.7.0"
     }
   ]
 }
@@ -147,13 +147,23 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 |---|---|
 | `NYX_ENV` | `development` / `test` / `production` |
 | `NYX_SECRET_KEY` | ≥32 chars in production |
-| `NYX_DB_PATH` / `DATABASE_URL` | SQLite path |
+| `NYX_DB_PATH` / `DATABASE_URL` | SQLite for app ORM (`sqlite:///...`); use `open_postgres` / `open_mysql` for raw drivers |
 | `NYX_AUTO_MIGRATE` | `1`/`0` (production default `0`; prefer CLI migrate) |
 | `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | security & i18n (`CSRF_API_EXEMPT` opts into `/api/` CSRF skip) |
 
 ---
 
 ## Changelog
+
+### 0.7.0 — Nox 1.11 stdlib integration
+
+- **Requires Nox ≥ 1.11**
+- Params decode/query via `nox.url` (form `+` → space); app/csrf path stripping via `params.path_only`
+- `nyx.db.open_postgres` / `open_mysql` for raw drivers; `open_url` stays SQLite-only (clear errors for pg/mysql URLs)
+- `nyx.cache.open_memory(capacity)` — LRU memory cache (`nox.collections.LRUCache`)
+- CI pins `noxc` v1.11.0
+- ORM / migrate / jobs remain SQLite (PG/MySQL have no prepare/bind yet)
+- `nyx.runtime` still uses `NYX_RT_*` (complex package-module globals still codegen-break when transitive)
 
 ### 0.6.0 — Nox 1.10 unlocks (boot-once)
 
@@ -198,17 +208,17 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.10** (app-script module globals, bare `except:`, `list[dict]`, `\r` escapes)
+- Requires **Nox ≥ 1.11** (`nox.url`, `nox.postgres`/`mysql`, `nox.collections`, bare `except:`, app-script module globals)
 - Boot once at app-script top-level; set `NYX_AUTO_MIGRATE=0` in production
-- Request state via `nyx.runtime` (`NYX_RT_*` env) until package-module globals are codegen-safe
-- SQLite only until `nox.postgres`
-- TLS at reverse proxy; SSE/long-poll cable (not WebSocket)
+- App ORM / migrate / jobs: **SQLite**; raw `open_postgres` / `open_mysql` (no bind — escape SQL yourself)
+- Request state via `nyx.runtime` (`NYX_RT_*` env) until complex package-module globals are fully codegen-safe
+- SQLite file DB; TLS at reverse proxy; SSE/long-poll cable (not WebSocket)
 - Alias must be `nyx` (package-manager limitation)
 - No `{% for %}` in templates → `render_records` / `render_each`
 - Prefer `Attributes` / `create_attrs` over hand-built JSON strings
 
-**Fit:** reverse-proxy, single instance, SQLite, low–medium traffic, MVP/internal tools.  
-**Not yet:** multi-process shared request state, horizontal scale without sticky design, realtime WebSocket chat, strong multi-tenant SaaS.
+**Fit:** reverse-proxy, single instance, SQLite app DB, low–medium traffic, MVP/internal tools.  
+**Not yet:** multi-driver ActiveRecord, multi-process shared request state, WebSocket chat, strong multi-tenant SaaS.
 
 ---
 

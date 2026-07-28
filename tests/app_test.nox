@@ -1,5 +1,6 @@
 import nox.test
 import nox.fs
+import nox.strings
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Context
 import nyx.app
@@ -64,7 +65,7 @@ nox.test.assert_true(threw_placeholder, "production placeholder secret rejected"
 try:
     nyx.db.open_url("postgres://localhost/db")
     nox.test.assert_true(False, "postgres should raise")
-except DbError:
-    nox.test.assert_true(True, "postgres error")
+except DbError as e:
+    nox.test.assert_true(nox.strings.contains(e.message, "open_postgres"), "postgres hint")
 
 print("app_test ok")

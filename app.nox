@@ -31,6 +31,7 @@ import nyx.csrf
 import nyx.response
 import nyx.security
 import nyx.ctrl
+import nyx.params
 from nyx.config import Config
 from nyx.runtime import RequestBag
 from nyx.cookie import CookieError
@@ -186,23 +187,12 @@ def _log_after() -> (Context, HttpResponse) -> HttpResponse:
         return resp
     return handler
 
-def _strip_query(target: str) -> str:
-    q: int = nox.strings.index_of(target, "?")
-    if q < 0:
-        return target
-    out: str = ""
-    i: int = 0
-    while i < q:
-        out = out + target[i]
-        i = i + 1
-    return out
-
 def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
     rid: str = nox.uuid.uuid4()
     nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
     nyx.runtime.set_request_target(req.target)
-    path: str = _strip_query(req.target)
+    path: str = nyx.params.path_only(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
     empty_params: dict[str, str] = {}
     err_ctx: Context = Context(routed, empty_params)
