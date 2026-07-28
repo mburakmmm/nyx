@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.5.0 · **License:** MIT · **Required alias:** `nyx`
+**Version:** 0.6.0 · **License:** MIT · **Required alias:** `nyx` · **Requires Nox ≥ 1.10**
 
 ---
 
@@ -23,7 +23,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.5.0"
+      "ref": "v0.6.0"
     }
   ]
 }
@@ -75,20 +75,16 @@ def setup(application: Application) -> None:
     application.router.get("/", home)
     application.router.post("/posts", create)
 
+cfg: Config = nyx.config.load()
+application: Application = nyx.app.boot(cfg, setup)
+
 def handle(req: HttpRequest) -> HttpResponse:
-    cfg: Config = nyx.config.load()
-    application: Application = nyx.app.boot(cfg, setup)
-    resp: HttpResponse = HttpResponse(500, "", {})
-    try:
-        resp = nyx.app.dispatch(application, req)
-    finally:
-        application.db.close()
-    return resp
+    return nyx.app.dispatch(application, req)
 
 nox.http.serve(8080, handle)
 ```
 
-Define handlers **inside** `setup` so they close over `application`. Prefer `nyx.ctx.wrap` + `create_attrs` over hand-built JSON strings.
+Boot **once** at module top-level (Nox ≥ 1.10 module globals). Define handlers **inside** `setup` so they close over `application`. Prefer `nyx.ctx.wrap` + `create_attrs`.
 
 ---
 
@@ -115,7 +111,7 @@ row: Record | None = nyx.model.find(db, "posts", id)
 if row == None:
     return nyx.ctrl.text(404, "not found")
 # Narrow first: get_opt / get_or need Record, not Record | None
-bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
+bio: str | None = row.get_opt("bio")   # SQL NULL -> None
 title: str = row.get_or("title", "")
 ```
 
@@ -123,13 +119,14 @@ JSON-string `create` / `update` remain for compatibility; new code should use `A
 
 ### Views without template loops
 
-Nox templates have no `{% for %}`, and `list[dict[str,str]]` is not codegen-safe. Use field-key partials:
+Nox templates have no `{% for %}`. Prefer field-key partials or `list[dict]` contexts (Nox ≥ 1.8.2):
 
 ```nox
 fields: list[str] = []
 fields.append("title")
 fields.append("body")
 html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
+# or: nyx.view.render_each(path, contexts)  # list[dict[str,str]]
 ```
 
 Default `render` / `render_with_layout` / `render_records` HTML-escape substitutions. Use `*_unescaped` only for trusted, already-safe HTML fragments (never raw user input). Layout body injection is slot-then-replace so `{{...}}` inside the view body is not re-parsed.
@@ -157,6 +154,16 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.6.0 — Nox 1.10 unlocks (boot-once)
+
+- **Requires Nox ≥ 1.10**
+- Boot-once `Application` in **app scripts** (module globals); examples/templates rewritten
+- Jobs/transactions/dispatch: bare `except:` safety net
+- `Record.get_opt` / `get_int_opt` methods; `view.render_each` / `render_each_unescaped`
+- `response.with_header` + testing header helpers copy via `headers.keys()`
+- CI pins `noxc` v1.10.0
+- Note: package-module module-globals still break Nox codegen when accessed from functions — `nyx.runtime` keeps `NYX_RT_*` env storage
 
 ### 0.5.0 — Security core + Rails-ish DX
 
@@ -191,18 +198,17 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Boot per request; set `NYX_AUTO_MIGRATE=0` in production
-- Request state via `nox.os` env — one concurrent HTTP worker assumed
+- Requires **Nox ≥ 1.10** (app-script module globals, bare `except:`, `list[dict]`, `\r` escapes)
+- Boot once at app-script top-level; set `NYX_AUTO_MIGRATE=0` in production
+- Request state via `nyx.runtime` (`NYX_RT_*` env) until package-module globals are codegen-safe
 - SQLite only until `nox.postgres`
 - TLS at reverse proxy; SSE/long-poll cable (not WebSocket)
-- Prefer ASCII in HTML templates (some Unicode glyphs have crashed template render)
 - Alias must be `nyx` (package-manager limitation)
-- No `{% for %}` in templates → use `nyx.view.render_records`
+- No `{% for %}` in templates → `render_records` / `render_each`
 - Prefer `Attributes` / `create_attrs` over hand-built JSON strings
-- Limited exception catching (no generic `Exception` base yet) → keep job/transaction handlers narrow
 
-**Fit:** reverse-proxy, single instance, SQLite, low traffic, MVP/internal tools.  
-**Not yet:** high concurrency, multi-worker, horizontal scale, realtime chat, strong multi-tenant SaaS.
+**Fit:** reverse-proxy, single instance, SQLite, low–medium traffic, MVP/internal tools.  
+**Not yet:** multi-process shared request state, horizontal scale without sticky design, realtime WebSocket chat, strong multi-tenant SaaS.
 
 ---
 

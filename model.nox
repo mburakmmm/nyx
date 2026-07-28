@@ -13,7 +13,7 @@
 # id: int = nyx.model.create(db, "users", "{\"email\":\"a@b.c\",\"name\":\"A\"}")
 #
 # u: Record | None = nyx.model.find(db, "users", 1)
-# bio: str | None = nyx.model.get_opt(u, "bio")   # SQL NULL -> None
+# bio: str | None = u.get_opt("bio")   # SQL NULL -> None
 # name: str = u.get_or("name", "")
 
 import nox.sqlite
@@ -50,9 +50,11 @@ class Record:
         return self.row.is_null(self._col_index(name))
 
     # Sutun yoksa ModelError. SQL NULL ise None.
-    # Not: metod icinde `str | None` donusu bazi Nox surumlerinde
-    # sonraki metodlarin tip kontrolunu bozabildigi icin modul-duzeyi
-    # `get_opt` / `get_int_opt` fonksiyonlari kullanilir (asagida).
+    def get_opt(self: Record, name: str) -> str | None:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return None
+        return self.row.get_str(i)
 
     def get_or(self: Record, name: str, fallback: str) -> str:
         i: int = self._col_index(name)
@@ -67,6 +69,12 @@ class Record:
             raise ModelError("sutun NULL, get_int_opt kullanin: " + name)
         out: int = self.row.get_int(i)
         return out
+
+    def get_int_opt(self: Record, name: str) -> int | None:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return None
+        return self.row.get_int(i)
 
     def get_int_or(self: Record, name: str, fallback: int) -> int:
         i: int = self._col_index(name)
@@ -84,17 +92,12 @@ class Record:
             i = i + 1
         return False
 
+# Uyumluluk sarmalayicilari — tercih edilen API: record.get_opt / get_int_opt.
 def get_opt(record: Record, name: str) -> str | None:
-    i: int = record._col_index(name)
-    if record.row.is_null(i):
-        return None
-    return record.row.get_str(i)
+    return record.get_opt(name)
 
 def get_int_opt(record: Record, name: str) -> int | None:
-    i: int = record._col_index(name)
-    if record.row.is_null(i):
-        return None
-    return record.row.get_int(i)
+    return record.get_int_opt(name)
 
 def _check_ident(name: str) -> None:
     if len(name) == 0:
@@ -464,15 +467,13 @@ def update(db: Connection, table: str, id: int, attrs_json: str) -> None:
     stmt.execute()
 
 # `fn`i tek bir SQLite islemi (transaction) icinde calistirir: basariliysa
-# COMMIT, `fn` BILINEN bir framework hatasi firlatirsa ROLLBACK edip AYNI
-# hatayi yeniden firlatir. Nox'ta genel bir "Exception" taban sinifi
-# olmadigindan yalnizca bu listedeki turler yakalanabilir — DIGER hata
-# siniflarini firlatan `fn`ler ROLLBACK ETMEDEN yayilir (cagiran kendi
-# temizligini yapmalidir).
+# COMMIT, hata olursa ROLLBACK. Nox >= 1.9: bilinen turler yeniden firlatilir;
+# digerleri `ModelError("transaction failed")` olarak sarilir.
 def transaction(db: Connection, fn: (Connection) -> None) -> None:
     db.execute("BEGIN")
     try:
         fn(db)
+        db.execute("COMMIT")
     except ModelError as e:
         db.execute("ROLLBACK")
         raise ModelError(e.message)
@@ -491,7 +492,9 @@ def transaction(db: Connection, fn: (Connection) -> None) -> None:
     except IndexError as e:
         db.execute("ROLLBACK")
         raise IndexError(e.message)
-    db.execute("COMMIT")
+    except:
+        db.execute("ROLLBACK")
+        raise ModelError("transaction failed")
 
 def _count_char(s: str, target: str) -> int:
     count: int = 0

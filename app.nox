@@ -1,24 +1,16 @@
 # nyx.app — Application boot + request lifecycle.
 #
-# def setup(application: Application) -> None:
-#     router: Router = application.router
-#     db: Connection = application.db
-#     router.get("/", home)
+# # Boot once (Nox >= 1.10 module globals), then serve:
+# cfg: Config = nyx.config.load()
+# application: Application = nyx.app.boot(cfg, setup)
 #
 # def handle(req: HttpRequest) -> HttpResponse:
-#     cfg: Config = nyx.config.load()
-#     application: Application = nyx.app.boot(cfg, setup)
-#     try:
-#         return nyx.app.dispatch(application, req)
-#     finally:
-#         application.db.close()
+#     return nyx.app.dispatch(application, req)
 #
 # nox.http.serve(8080, handle)
 #
-# Nox limits: (a) module-level vars are invisible inside functions, and
-# (b) nox.http.serve requires a bare top-level function name. Together these
-# prevent a process-wide Application singleton — boot per request (migrate
-# is idempotent / cheap when already applied). Caller must db.close().
+# `nox.http.serve` still needs a top-level bare function name; the Application
+# and Router live in module globals (per-worker / thread-local in multicore).
 
 import nox.http
 import nox.log
@@ -49,10 +41,6 @@ class AppError:
     def __init__(self: AppError, message: str) -> None:
         self.message = message
 
-# NOT: Kurucu parametreleri asagidaki `config()`/`db()` modul-duzeyi
-# fonksiyonlarla AYNI ADI TASIMAZ (`cfg`/`conn`) — bkz. nyx.runtime'daki
-# ayni sinif/isim cakismasi notu (codegen'de "nested function" hatasina
-# yol acan GERCEK bir derleyici kisiti).
 class Application:
     def __init__(
         self: Application,
@@ -70,8 +58,6 @@ def db(application: Application) -> Connection:
 def config(application: Application) -> Config:
     return application.config
 
-# Validates config, opens DB, runs migrations, installs framework middleware
-# first, then calls `setup` so app routes/middleware register after session/CSRF.
 def _is_placeholder_secret(secret: str) -> bool:
     if nox.strings.contains(secret, "change-me"):
         return True
@@ -81,6 +67,8 @@ def _is_placeholder_secret(secret: str) -> bool:
         return True
     return False
 
+# Validates config, opens DB, optional migrate, framework middleware, then setup.
+# Call once at process/worker start (module top-level), not per request.
 def boot(cfg: Config, setup: (Application) -> None) -> Application:
     if len(cfg.secret_key) < 16:
         raise AppError("secret_key must be at least 16 characters")
@@ -139,9 +127,6 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
     return None
 
 def _ensure_session_seed() -> None:
-    # Bos oturumda CSRF `anon:request_id` baglar — sonraki istekte request_id
-    # degistigi icin HTML form jetonlari KIRILIR. Ilk istekte kucuk bir
-    # session seed yazip cookie ile kalici baglama saglariz.
     sess: str = nyx.runtime.session_json()
     if len(sess) == 0 or sess == "{}":
         seed: str = nox.uuid.uuid4()
@@ -216,7 +201,6 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
     rid: str = nox.uuid.uuid4()
     nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
-    # Keep full target (with query) for nyx.params; router matches on path only.
     nyx.runtime.set_request_target(req.target)
     path: str = _strip_query(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
@@ -232,7 +216,8 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
             resp = nyx.ctrl.server_error_for(err_ctx)
         except DbError:
             resp = nyx.ctrl.server_error_for(err_ctx)
+        except:
+            resp = nyx.ctrl.server_error_for(err_ctx)
     finally:
         nyx.runtime.end()
     return resp
-

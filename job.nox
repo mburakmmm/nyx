@@ -10,12 +10,9 @@
 # registry.register("SendWelcomeEmail", send_welcome_handler)
 # processed: int = nyx.job.work(db, registry, 10)
 #
-# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur — bu yuzden
-# `process_one` yalnizca framework'un BILINEN hata siniflarini (ModelError/
-# MailerError/SqliteError/DbError/JsonError/HttpError/ValueError) yakalayip
-# job'u `fail()` ile isaretleyebilir. Bunlarin DISINDA ozel bir hata sinifi
-# firlatan handler'lar bu hatayi KENDI icinde yakalayip normal donmelidir —
-# aksi halde istisna `process_one`i de asip `work` dongusunu durdurur.
+# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur — bilinen
+# framework hatalari ayri ayri, kalanlar Nox >= 1.9 `except:` ile yakalanir
+# ve job `fail()` ile isaretlenir. `finally` stuck-running korumasini saglar.
 
 import nox.sqlite
 import nox.json
@@ -253,8 +250,11 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
         except JobError as e:
             fail(db, id, e.message)
             finished = True
+        except:
+            # Nox >= 1.9 bare except: bilinmeyen handler hatalari job'u fail eder.
+            fail(db, id, "unhandled handler error")
+            finished = True
     finally:
-        # Uncaught / unexpected abort must not leave the job in `running`.
         if not finished:
             fail(db, id, "handler aborted without completion")
     return True

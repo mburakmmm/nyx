@@ -1,4 +1,5 @@
-# Nyx blog example — posts list + create via typed attrs + AppContext
+# Nyx blog example — boot-once + typed attrs + AppContext
+# Requires Nox >= 1.10
 # cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
 
 import nox.http
@@ -56,20 +57,16 @@ def setup(application: Application) -> None:
     router.get("/", index)
     router.post("/posts", create)
 
+cfg: Config = nyx.config.load()
+cfg.secret_key = "blog-example-secret-key-32chars!!!"
+cfg.db_path = "db/app.sqlite"
+cfg.migrate_path = "db/migrate"
+cfg.csrf_enabled = True
+cfg.log_requests = True
+application: Application = nyx.app.boot(cfg, setup)
+
 def handle(req: HttpRequest) -> HttpResponse:
-    cfg: Config = nyx.config.load()
-    cfg.secret_key = "blog-example-secret-key-32chars!!!"
-    cfg.db_path = "db/app.sqlite"
-    cfg.migrate_path = "db/migrate"
-    cfg.csrf_enabled = True
-    cfg.log_requests = True
-    application: Application = nyx.app.boot(cfg, setup)
-    resp: HttpResponse = HttpResponse(500, "", {})
-    try:
-        resp = nyx.app.dispatch(application, req)
-    finally:
-        application.db.close()
-    return resp
+    return nyx.app.dispatch(application, req)
 
 print("nyx blog on :8080")
 nox.http.serve(8080, handle)

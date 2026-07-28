@@ -141,11 +141,12 @@ prof: Record | None = nyx.model.find(db, "profiles", pid2)
 nox.test.assert_true(prof != None, "profile find")
 if prof != None:
     nox.test.assert_true(prof.is_null("bio"), "is_null bio")
-    nox.test.assert_true(nyx.model.get_opt(prof, "bio") == None, "get_opt NULL -> None")
+    nox.test.assert_true(prof.get_opt("bio") == None, "Record.get_opt NULL -> None")
+    nox.test.assert_true(nyx.model.get_opt(prof, "bio") == None, "module get_opt compat")
     nox.test.assert_eq_str(prof.get_or("bio", "yok"), "yok", "get_or fallback")
     nox.test.assert_eq_str(prof.get("bio"), "", "get NULL -> empty (compat)")
     nox.test.assert_eq_int(prof.get_int("user_id"), tid, "get_int typed")
-    nox.test.assert_true(nyx.model.get_int_opt(prof, "bio") == None, "get_int_opt NULL")
+    nox.test.assert_true(prof.get_int_opt("bio") == None, "Record.get_int_opt NULL")
     nox.test.assert_eq_int(prof.get_int_or("bio", -1), -1, "get_int_or fallback")
 
 keys: list[str] = []

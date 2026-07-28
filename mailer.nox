@@ -54,14 +54,8 @@ def _validate(mail: Mail) -> None:
     _reject_crlf("from", mail.from_addr)
     _reject_crlf("subject", mail.subject)
 
-# GERCEK bir hata, bu kontrolun ILK halinde BULUNDU: Nox'un lexer'i `"\r"`
-# KAÇIŞ dizisini TANIMAZ — `\` SESSIZCE düşürülüp `r` DÜZ karakter olarak
-# alınır (bkz. `nox.json.encode_string`in AYNI kisiti belgeleyen notu) —
-# bu YÜZDEN `nox.strings.contains(value, "\r")` GERCEK bir CR (bayt 13)
-# ARAMAZ, sadece kucuk harf `r` HARFINI arar ve "noreply@example.com" gibi
-# TAMAMEN GECERLI adresleri "header injection" SANIP REDDEDER (GERCEKTEN
-# gozlemlendi, testlerde yakalandi). Duzeltme: CR/LF'yi `nox.strings.
-# byte_at` ile HAM BAYT DEGERINE (13/10) gore, karakter-KARAKTER tara.
+# Header injection: CR/LF baytlarini reddet. Nox >= 1.8.2 `"\r"` kacisini
+# dogru cozer; yine de `byte_at` ile ham bayt kontrolu en guvenilir yoldur.
 def _contains_cr_or_lf(s: str) -> bool:
     i: int = 0
     n: int = len(s)

@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.5.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx`
+**Sürüm:** 0.6.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx` · **Nox ≥ 1.10**
 
 ---
 
@@ -23,7 +23,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.5.0"
+      "ref": "v0.6.0"
     }
   ]
 }
@@ -75,20 +75,16 @@ def setup(application: Application) -> None:
     application.router.get("/", home)
     application.router.post("/posts", create)
 
+cfg: Config = nyx.config.load()
+application: Application = nyx.app.boot(cfg, setup)
+
 def handle(req: HttpRequest) -> HttpResponse:
-    cfg: Config = nyx.config.load()
-    application: Application = nyx.app.boot(cfg, setup)
-    resp: HttpResponse = HttpResponse(500, "", {})
-    try:
-        resp = nyx.app.dispatch(application, req)
-    finally:
-        application.db.close()
-    return resp
+    return nyx.app.dispatch(application, req)
 
 nox.http.serve(8080, handle)
 ```
 
-Handler’ları **`setup` içinde** tanımlayın. JSON string birleştirmek yerine `nyx.ctx.wrap` + `create_attrs` kullanın.
+**Bir kez** boot edin (Nox ≥ 1.10 modül global). Handler’ları **`setup` içinde** tanımlayın. `nyx.ctx.wrap` + `create_attrs` tercih edin.
 
 ---
 
@@ -115,7 +111,7 @@ row: Record | None = nyx.model.find(db, "posts", id)
 if row == None:
     return nyx.ctrl.text(404, "not found")
 # Önce daraltın: get_opt / get_or Record ister, Record | None değil
-bio: str | None = nyx.model.get_opt(row, "bio")   # SQL NULL -> None
+bio: str | None = row.get_opt("bio")   # SQL NULL -> None
 title: str = row.get_or("title", "")
 ```
 
@@ -123,16 +119,17 @@ JSON `create` / `update` uyumluluk için duruyor; yeni kod `Attributes` kullanma
 
 ### Döngüsüz şablonlar
 
-Nox template’te `{% for %}` yok; `list[dict[str,str]]` codegen’de güvenli değil. Alan-adı listesi ile partial:
+Nox template’te `{% for %}` yok. Alan listesi veya `list[dict]` / map (Nox ≥ 1.8.2):
 
 ```nox
 fields: list[str] = []
 fields.append("title")
 fields.append("body")
 html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
+# veya: nyx.view.render_each(path, contexts)
 ```
 
-Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar. `*_unescaped` yalnızca güvenilir, önceden güvenli HTML parçaları için (ham kullanıcı girdisi için asla). Layout gövde enjeksiyonu slot-sonra-replace: view gövdesindeki `{{...}}` ikinci kez parse edilmez.
+Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar. `*_unescaped` yalnızca güvenilir HTML için. Layout: slot-sonra-replace.
 ### CLI
 
 ```sh
@@ -157,6 +154,14 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.6.0 — Nox 1.10 açılımları (boot-once)
+
+- **Nox ≥ 1.10** zorunlu
+- Boot-once `Application` (uygulama scripti); örnekler/template güncellendi
+- Job/transaction/dispatch bare `except:`; `Record.get_opt` metodları; `render_each`
+- `with_header` / testing: `headers.keys()`; CI `noxc` v1.10.0
+- Not: paket modülünde modül-global codegen kırık → `nyx.runtime` hâlâ `NYX_RT_*`
 
 ### 0.5.0 — Güvenlik çekirdeği + Rails-ish DX
 
@@ -189,17 +194,15 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- İstek başına boot; production’da `NYX_AUTO_MIGRATE=0`
-- İstek durumu `nox.os` env — tek HTTP worker varsayımı
+- **Nox ≥ 1.10** gerekir (uygulama scripti modül-global, bare `except:`, `list[dict]`)
+- Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
+- İstek durumu `nyx.runtime` / `NYX_RT_*` (paket-modül global codegen henüz güvenli değil)
 - SQLite; TLS reverse proxy’de; cable = SSE/long-poll
-- HTML’de ASCII tercih edin (bazı Unicode glifler template’te çökertmişti)
 - Alias zorunlu `nyx`
-- Şablonda `{% for %}` yok → `nyx.view.render_records`
-- JSON string yerine `Attributes` / `create_attrs` tercih edin
-- Genel `Exception` yok → job/transaction handler’ları dar tutun
+- Şablonda `{% for %}` yok → `render_records` / `render_each`
 
-**Uygun:** reverse-proxy, tek instance, SQLite, düşük trafik, MVP/internal.  
-**Henüz değil:** yüksek concurrency, multi-worker, yatay ölçek, realtime chat.
+**Uygun:** reverse-proxy, tek instance, SQLite, düşük–orta trafik.  
+**Henüz değil:** process’ler arası paylaşılan istek state, yatay ölçek, WebSocket chat.
 
 ---
 

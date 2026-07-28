@@ -30,7 +30,7 @@ version() {
   if [[ -f "$ROOT/VERSION" ]]; then
     cat "$ROOT/VERSION"
   else
-    echo "0.5.0"
+    echo "0.6.0"
   fi
 }
 

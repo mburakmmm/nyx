@@ -2,91 +2,35 @@
 #
 # import nyx.response
 #
-# with_header, bilinen + runtime'da izlenen tüm başlıkları korur
-# (Nox dict anahtar iterasyonu olmadığı için).
+# with_header onceki yanittaki TUM basliklari korur (Nox 1.10+ headers.keys()).
 
 from nox.http import HttpResponse
-import nyx.runtime
 
 def json(status: int, body: str) -> HttpResponse:
     headers: dict[str, str] = {}
     headers["Content-Type"] = "application/json; charset=utf-8"
-    nyx.runtime.track_header_key("Content-Type")
     return HttpResponse(status, body, headers)
 
 def text(status: int, body: str) -> HttpResponse:
     headers: dict[str, str] = {}
     headers["Content-Type"] = "text/plain; charset=utf-8"
-    nyx.runtime.track_header_key("Content-Type")
     return HttpResponse(status, body, headers)
 
 def redirect(location: str, status: int) -> HttpResponse:
     headers: dict[str, str] = {}
     headers["Location"] = location
-    nyx.runtime.track_header_key("Location")
     return HttpResponse(status, "", headers)
 
-def _try_copy(dst: dict[str, str], src: dict[str, str], key: str) -> None:
-    try:
-        dst[key] = src[key]
-    except KeyError:
-        x: int = 0
-
-def _base_keys() -> list[str]:
-    keys: list[str] = []
-    keys.append("Content-Type")
-    keys.append("Location")
-    keys.append("Set-Cookie")
-    keys.append("Cache-Control")
-    keys.append("WWW-Authenticate")
-    keys.append("Access-Control-Allow-Origin")
-    keys.append("Access-Control-Allow-Methods")
-    keys.append("Access-Control-Allow-Headers")
-    keys.append("Access-Control-Allow-Credentials")
-    keys.append("Access-Control-Max-Age")
-    keys.append("Vary")
-    keys.append("Authorization")
-    keys.append("X-Content-Type-Options")
-    keys.append("X-Frame-Options")
-    keys.append("Referrer-Policy")
-    keys.append("X-XSS-Protection")
-    keys.append("Strict-Transport-Security")
-    keys.append("Content-Security-Policy")
-    keys.append("Content-Disposition")
-    keys.append("ETag")
-    keys.append("Last-Modified")
-    keys.append("X-Request-Id")
-    keys.append("Retry-After")
-    keys.append("Link")
-    keys.append("Content-Length")
-    keys.append("Pragma")
-    keys.append("Expires")
-    return keys
-
-# Önceki yanıttaki bilinen + izlenen başlıkları koruyarak `key` yazar.
 def with_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
     out: dict[str, str] = {}
-    keys: list[str] = _base_keys()
-    tracked: list[str] = nyx.runtime.tracked_header_keys()
-    ti: int = 0
-    while ti < len(tracked):
-        keys.append(tracked[ti])
-        ti = ti + 1
-    keys.append(key)
+    keys: list[str] = resp.headers.keys()
     i: int = 0
     while i < len(keys):
-        _try_copy(out, resp.headers, keys[i])
+        k: str = keys[i]
+        out[k] = resp.headers[k]
         i = i + 1
     out[key] = value
-    nyx.runtime.track_header_key(key)
     return HttpResponse(resp.status, resp.body, out)
 
 def with_status_body_headers(status: int, body: str, headers: dict[str, str]) -> HttpResponse:
     return HttpResponse(status, body, headers)
-
-# Uygulama birden fazla başlıkla yanıt üretirken anahtarları runtime'a kaydet.
-def track_keys(keys: list[str]) -> None:
-    i: int = 0
-    while i < len(keys):
-        nyx.runtime.track_header_key(keys[i])
-        i = i + 1

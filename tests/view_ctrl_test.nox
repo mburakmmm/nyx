@@ -98,6 +98,17 @@ fields.append("title")
 each_html: str = nyx.view.render_records(item_path, posts, fields)
 nox.test.assert_true(nox.strings.contains(each_html, "<li>One</li>"), "render_records one")
 nox.test.assert_true(nox.strings.contains(each_html, "<li>Two</li>"), "render_records two")
+
+ctxs: list[dict[str, str]] = []
+c1: dict[str, str] = {}
+c1["title"] = "Alpha"
+c2: dict[str, str] = {}
+c2["title"] = "Beta"
+ctxs.append(c1)
+ctxs.append(c2)
+each2: str = nyx.view.render_each(item_path, ctxs)
+nox.test.assert_true(nox.strings.contains(each2, "<li>Alpha</li>"), "render_each alpha")
+nox.test.assert_true(nox.strings.contains(each2, "<li>Beta</li>"), "render_each beta")
 vdb.close()
 
 # --- layout second-pass: body icindeki {{...}} yeniden parse edilmemeli ---

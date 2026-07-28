@@ -33,9 +33,7 @@ def partial_unescaped(path: str, context: dict[str, str]) -> str:
     return render_unescaped(path, context)
 
 # Nox template'te `{% for %}` yok. Her Record icin `field_keys` alanlarini
-# context'e yazip partial render eder (HTML string birlestirme yerine).
-# Not: `list[dict[str,str]]` Nox codegen'de DESTEKLENMEZ; bu yuzden
-# callback/`list[dict]` API'si yerine alan adi listesi kullanilir.
+# context'e yazip partial render eder.
 def render_records(partial_path: str, rows: list[Record], field_keys: list[str]) -> str:
     out: str = ""
     i: int = 0
@@ -61,6 +59,23 @@ def render_records_unescaped(partial_path: str, rows: list[Record], field_keys: 
             context[key] = rows[i].get_or(key, "")
             j = j + 1
         out = out + partial_unescaped(partial_path, context)
+        i = i + 1
+    return out
+
+# Nox >= 1.8.2: `list[dict[str,str]]` desteklenir. Her context bir partial.
+def render_each(partial_path: str, contexts: list[dict[str, str]]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(contexts):
+        out = out + partial(partial_path, contexts[i])
+        i = i + 1
+    return out
+
+def render_each_unescaped(partial_path: str, contexts: list[dict[str, str]]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(contexts):
+        out = out + partial_unescaped(partial_path, contexts[i])
         i = i + 1
     return out
 
