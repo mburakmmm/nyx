@@ -1,0 +1,5 @@
+{
+  "name": "repro",
+  "entry": "c2_inline.nox",
+  "requires": []
+}

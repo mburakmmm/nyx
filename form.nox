@@ -1,13 +1,12 @@
-# nyx.form — HTML form alanı yardımcıları (kaçışlı).
+# nyx.form - HTML form alanı yardımcıları (kaçışlı).
 #
-# import nyx.form
-# nyx.form.text("title", value)
-# nyx.form.hidden("_csrf", token)
-# nyx.form.form_with_token("/posts", "POST", csrf_token)
-# nyx.form.submit("Kaydet")
+# str donen API uyumluluk icin durur (render_unescaped context).
+# Tercih edilen: *_safe -> SafeHtml + nyx.html.put(context, key, frag).
 
 import nox.template
 import nox.strings
+import nyx.html
+from nyx.html import SafeHtml
 
 def _esc(s: str) -> str:
     return nox.template.escape_html(s)
@@ -15,20 +14,35 @@ def _esc(s: str) -> str:
 def text(name: str, value: str) -> str:
     return "<input type=\"text\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\">"
 
+def text_safe(name: str, value: str) -> SafeHtml:
+    return nyx.html.safe(text(name, value))
+
 def password(name: str) -> str:
     return "<input type=\"password\" name=\"" + _esc(name) + "\">"
+
+def password_safe(name: str) -> SafeHtml:
+    return nyx.html.safe(password(name))
 
 def hidden(name: str, value: str) -> str:
     return "<input type=\"hidden\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\">"
 
+def hidden_safe(name: str, value: str) -> SafeHtml:
+    return nyx.html.safe(hidden(name, value))
+
 def textarea(name: str, value: str) -> str:
     return "<textarea name=\"" + _esc(name) + "\">" + _esc(value) + "</textarea>"
+
+def textarea_safe(name: str, value: str) -> SafeHtml:
+    return nyx.html.safe(textarea(name, value))
 
 def checkbox(name: str, value: str, checked: bool) -> str:
     out: str = "<input type=\"checkbox\" name=\"" + _esc(name) + "\" value=\"" + _esc(value) + "\""
     if checked:
         out = out + " checked"
     return out + ">"
+
+def checkbox_safe(name: str, value: str, checked: bool) -> SafeHtml:
+    return nyx.html.safe(checkbox(name, value, checked))
 
 # `options` her eleman `value` veya `value|label`. `selected` eslesen value.
 def select(name: str, options: list[str], selected: str) -> str:
@@ -57,18 +71,33 @@ def select(name: str, options: list[str], selected: str) -> str:
         i = i + 1
     return out + "</select>"
 
+def select_safe(name: str, options: list[str], selected: str) -> SafeHtml:
+    return nyx.html.safe(select(name, options, selected))
+
 # Rails `_method` gizli alani (HTML form yalnizca GET/POST gonderebilir).
 def method_override(method: str) -> str:
     return hidden("_method", nox.strings.upper(method))
 
+def method_override_safe(method: str) -> SafeHtml:
+    return nyx.html.safe(method_override(method))
+
 def submit(label: str) -> str:
     return "<button type=\"submit\">" + _esc(label) + "</button>"
+
+def submit_safe(label: str) -> SafeHtml:
+    return nyx.html.safe(submit(label))
 
 def form_start(action: str, method: str) -> str:
     return "<form action=\"" + _esc(action) + "\" method=\"" + _esc(method) + "\">"
 
+def form_start_safe(action: str, method: str) -> SafeHtml:
+    return nyx.html.safe(form_start(action, method))
+
 def form_end() -> str:
     return "</form>"
+
+def form_end_safe() -> SafeHtml:
+    return nyx.html.safe(form_end())
 
 # Acilis `<form>` + CSRF hidden. GET icin CSRF eklenmez.
 # PUT/PATCH/DELETE icin method=post + `_method` override.
@@ -82,3 +111,6 @@ def form_with_token(action: str, method: str, csrf_token: str) -> str:
     if m != "POST":
         out = out + method_override(m)
     return out
+
+def form_with_token_safe(action: str, method: str, csrf_token: str) -> SafeHtml:
+    return nyx.html.safe(form_with_token(action, method, csrf_token))

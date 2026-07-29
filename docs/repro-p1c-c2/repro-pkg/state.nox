@@ -1,0 +1,10 @@
+# P1c: package-module global that is READ/WRITTEN from functions.
+# Alone: OK. Combined with Router.get or nested closure in consumer: FAIL.
+
+_x: int = 0
+
+def get_x() -> int:
+    return _x
+
+def set_x(n: int) -> None:
+    _x = n

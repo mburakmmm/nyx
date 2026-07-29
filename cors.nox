@@ -1,4 +1,4 @@
-# nyx.cors — Router before/after CORS ara katmanları.
+# nyx.cors - Router before/after CORS ara katmanları.
 #
 # import nyx.cors
 
@@ -14,7 +14,7 @@ class CorsConfig:
     # Fetch/CORS spesifikasyonu `Access-Control-Allow-Origin: *` ile
     # `Access-Control-Allow-Credentials: true`nin BIRLIKTE kullanimini
     # ZATEN tarayici tarafinda REDDEDER (kimlik-bilgili istekler "*" origin'i
-    # KABUL ETMEZ) — ama bu SESSIZ bir tarayici-tarafi basarisizliktir
+    # KABUL ETMEZ) - ama bu SESSIZ bir tarayici-tarafi basarisizliktir
     # (gelistirici curl/Postman ile test EDERKEN "calisiyor" SANIR, gercek
     # tarayicida CORS hatasi ALIR). Bu yuzden burada YAPILANDIRMA ANINDA
     # ACIKCA CorsError firlatilir.

@@ -1,4 +1,4 @@
-# nyx.ctrl — controller yanıt kısayolları (nox.http tarzı sadelik).
+# nyx.ctrl - controller yanıt kısayolları (nox.http tarzı sadelik).
 #
 # import nyx.ctrl
 # return nyx.ctrl.redirect("/posts")
@@ -13,16 +13,18 @@ from nox.http import HttpResponse
 from nox.router import Context
 import nyx.response
 import nyx.view
+import nyx.runtime
+from nyx.config import Config
 
 def redirect(location: str) -> HttpResponse:
     return nyx.response.redirect(location, 302)
 
 # Acik yonlendirme (open redirect) korumasi: yalnizca `/` ile baslayan,
-# `//` (sema-goreli/protocol-relative — tarayici bunu farkli bir HOST'a
+# `//` (sema-goreli/protocol-relative - tarayici bunu farkli bir HOST'a
 # yonlendirir) ile BASLAMAYAN ve `://` (mutlak URL, farkli bir origin'e
 # isaret edebilir) ICERMEYEN goreli yollara izin verilir. `redirect_back`/
 # `redirect_back_to` kullanici-kontrollu `Referer` basligina KOR KOR
-# guvenmez — guvenli degilse `fallback`e doner.
+# guvenmez - guvenli degilse `fallback`e doner.
 def _is_safe_relative_redirect(target: str) -> bool:
     if len(target) == 0:
         return False
@@ -52,7 +54,7 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
     return None
 
 # Istegin `Referer` basligina (varsa) yonlendirir, yoksa `fallback`e.
-# `Referer` GUVENILMEYEN bir istemci girdisidir — acik yonlendirmeyi
+# `Referer` GUVENILMEYEN bir istemci girdisidir - acik yonlendirmeyi
 # ONLEMEK icin yalnizca `_is_safe_relative_redirect` KABUL ETTIGI goreli
 # yollara izin verilir (bkz. yukarisi).
 def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
@@ -155,6 +157,39 @@ def server_error_for(ctx: Context) -> HttpResponse:
     if _wants_json(ctx):
         return server_error_json()
     return server_error()
+
+# development: ayrıntılı HTML/JSON; production: generic 500.
+# `cfg` - nyx.config.Config (is_development).
+def server_error_detail_for(
+    ctx: Context,
+    cfg: Config,
+    kind: str,
+    message: str
+) -> HttpResponse:
+    if not cfg.is_development():
+        return server_error_for(ctx)
+    rid: str = nyx.runtime.request_id()
+    target: str = ctx.request.target
+    method: str = ctx.request.method
+    if _wants_json(ctx):
+        body: str = "{"
+        body = body + "\"error\":" + nox.json.encode_string(kind) + ","
+        body = body + "\"message\":" + nox.json.encode_string(message) + ","
+        body = body + "\"request_id\":" + nox.json.encode_string(rid) + ","
+        body = body + "\"method\":" + nox.json.encode_string(method) + ","
+        body = body + "\"target\":" + nox.json.encode_string(target)
+        body = body + "}"
+        return json(500, body)
+    html_body: str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+    html_body = html_body + "<title>Error</title></head><body>"
+    html_body = html_body + "<h1>Internal Server Error</h1>"
+    html_body = html_body + "<p><b>Type:</b> " + nox.template.escape_html(kind) + "</p>"
+    html_body = html_body + "<p><b>Message:</b> " + nox.template.escape_html(message) + "</p>"
+    html_body = html_body + "<p><b>Request ID:</b> " + nox.template.escape_html(rid) + "</p>"
+    html_body = html_body + "<p><b>Request:</b> " + nox.template.escape_html(method + " " + target) + "</p>"
+    html_body = html_body + "<p><b>Env:</b> " + nox.template.escape_html(cfg.env) + "</p>"
+    html_body = html_body + "</body></html>"
+    return html(500, html_body)
 
 def _wants_json(ctx: Context) -> bool:
     accept: str | None = _header_get(ctx.request.headers, "Accept")

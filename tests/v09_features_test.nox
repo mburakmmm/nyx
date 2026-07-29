@@ -1,0 +1,81 @@
+# 0.9 feature smoke tests
+import nox.test
+import nox.fs
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+from nox.sqlite import Connection
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.db
+import nyx.html
+import nyx.form
+import nyx.model
+import nyx.job
+import nyx.cable
+from nyx.app import Application
+from nyx.config import Config
+from nyx.model import Attributes
+from nyx.html import SafeHtml
+from nyx.cable import Store
+
+nox.test.assert_eq_str(nyx.db.dialect_of_url("db/app.sqlite"), "sqlite", "sqlite path")
+nox.test.assert_eq_str(nyx.db.dialect_of_url("postgres://u@h/db"), "postgres", "pg url")
+
+frag: SafeHtml = nyx.form.text_safe("t", "<script>")
+nox.test.assert_true(nox.strings.contains(nyx.html.unwrap(frag), "&lt;script&gt;"), "form escapes")
+ctxd: dict[str, str] = {}
+nyx.html.put(ctxd, "f", frag)
+nox.test.assert_true(len(ctxd["f"]) > 0, "html.put")
+
+db: Connection = nyx.db.open(":memory:")
+db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, n INTEGER NOT NULL)")
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "name", "a")
+nyx.model.set_int(attrs, "n", 1)
+id1: int = nyx.model.create_attrs(db, "items", attrs)
+uniq_ok: list[str] = nyx.model.validate_attrs_unique(db, "items", "name", "a", -1)
+nox.test.assert_true(len(uniq_ok) == 1, "unique taken")
+uniq_self: list[str] = nyx.model.validate_attrs_unique(db, "items", "name", "a", id1)
+nox.test.assert_true(len(uniq_self) == 0, "unique exclude self")
+
+jdb: Connection = nyx.db.open(":memory:")
+nyx.job.ensure_schema(jdb)
+jid: int = nyx.job.enqueue(jdb, "X", "{}", 0)
+i: int = 0
+while i < nyx.job.max_attempts():
+    nyx.job.fail(jdb, jid, "boom")
+    i = i + 1
+nox.test.assert_eq_int(nyx.job.count_dead(jdb), 1, "dead count")
+dead: list[str] = nyx.job.list_dead(jdb, 10)
+nox.test.assert_eq_int(len(dead), 1, "list_dead")
+
+store_path: str = "/tmp/nyx_cable_store_test.sqlite"
+if nox.fs.exists(store_path):
+    nox.fs.remove_file(store_path)
+store: Store = nyx.cable.open_store(store_path)
+since: str = nyx.cable.store_subscribe(store, "room")
+bid: int = nyx.cable.store_broadcast(store, "room", "ping", "{\"ok\":true}")
+nox.test.assert_true(bid > 0, "store broadcast")
+poll: str = nyx.cable.store_stream_poll(store, "room", int(since))
+nox.test.assert_true(nox.strings.contains(poll, "ping"), "store poll")
+nyx.cable.close_store(store)
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "x")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.log_requests = False
+cfg.auto_migrate = False
+app: Application = nyx.app.boot(cfg, setup)
+nyx.app.shutdown(app)
+nyx.app.shutdown(app)
+
+db.close()
+jdb.close()
+print("v09_features_test ok")

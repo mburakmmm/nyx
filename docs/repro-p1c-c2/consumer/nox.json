@@ -1,0 +1,11 @@
+{
+  "name": "consumer",
+  "entry": "c2_import_inline.nox",
+  "requires": [
+    {
+      "alias": "repro",
+      "repo": "/Users/melihburakmemis/Documents/nyx/docs/repro-p1c-c2/repro-pkg",
+      "ref": "master"
+    }
+  ]
+}

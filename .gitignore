@@ -4,5 +4,3 @@ nox.lock
 /zig-out/
 /tmp/
 .nox/
-# Yerel Nox dil notlari (public repo'ya gitmez)
-docs/NOX_LIMITATIONS.md

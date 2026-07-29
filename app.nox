@@ -1,4 +1,4 @@
-# nyx.app — Application boot + request lifecycle.
+# nyx.app - Application boot + request lifecycle.
 #
 # # Boot once (Nox >= 1.10 module globals), then serve:
 # cfg: Config = nyx.config.load()
@@ -47,14 +47,22 @@ class Application:
         self: Application,
         cfg: Config,
         conn: Connection,
-        router: Router
+        router: Router,
+        dialect: str,
+        jobs: Connection
     ) -> None:
         self.config = cfg
         self.db = conn
         self.router = router
+        self.dialect = dialect
+        self.jobs_db = jobs
+        self._closed = False
 
 def db(application: Application) -> Connection:
     return application.db
+
+def jobs_db(application: Application) -> Connection:
+    return application.jobs_db
 
 def config(application: Application) -> Config:
     return application.config
@@ -70,6 +78,39 @@ def _is_placeholder_secret(secret: str) -> bool:
 
 # Validates config, opens DB, optional migrate, framework middleware, then setup.
 # Call once at process/worker start (module top-level), not per request.
+
+def shutdown(application: Application) -> None:
+    if application._closed:
+        return
+    application._closed = True
+    application.jobs_db.close()
+    application.db.close()
+
+# Custom teardown: wrap serve in try/finally and call shutdown.
+# Package-module HookRegistry on Application trips Nox codegen with nested routers.
+def on_shutdown(application: Application, run: () -> None) -> None:
+    raise AppError(
+        "on_shutdown hooks are not registered on Application in 0.9 " +
+        "(Nox package codegen limit); put cleanup in finally before nyx.app.shutdown"
+    )
+
+def mount_health(application: Application) -> None:
+    def health(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.json(200, "{\"status\":\"ok\"}")
+
+    def ready(ctx: Context) -> HttpResponse:
+        try:
+            application.db.query("SELECT 1")
+            return nyx.ctrl.json(200, "{\"status\":\"ready\"}")
+        except DbError:
+            return nyx.ctrl.json(503, "{\"status\":\"not_ready\"}")
+        except:
+            return nyx.ctrl.json(503, "{\"status\":\"not_ready\"}")
+
+    application.router.get("/health", health)
+    application.router.get("/healthz", health)
+    application.router.get("/ready", ready)
+
 def boot(cfg: Config, setup: (Application) -> None) -> Application:
     if len(cfg.secret_key) < 16:
         raise AppError("secret_key must be at least 16 characters")
@@ -77,6 +118,11 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
         raise AppError("production secret_key must be at least 32 characters")
     if cfg.is_production() and _is_placeholder_secret(cfg.secret_key):
         raise AppError("production secret_key looks like a placeholder; set NYX_SECRET_KEY")
+    dialect: str = nyx.db.dialect_of_url(cfg.db_path)
+    if dialect == "":
+        dialect = "sqlite"
+    if dialect != "sqlite":
+        raise AppError("Application.db supports sqlite; use nyx.pg_model for postgres")
     conn: Connection = nyx.db.open(cfg.db_path)
     if cfg.auto_migrate:
         if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
@@ -87,8 +133,10 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
         else:
             if cfg.is_production():
                 raise AppError("migration directory missing: " + cfg.migrate_path)
-    application: Application = Application(cfg, conn, Router())
+    jobs: Connection = nyx.db.open(cfg.jobs_db_path)
+    application: Application = Application(cfg, conn, Router(), dialect, jobs)
     _install_framework_middleware(application)
+    mount_health(application)
     setup(application)
     return application
 

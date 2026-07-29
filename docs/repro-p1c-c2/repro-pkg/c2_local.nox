@@ -1,0 +1,18 @@
+# C2 OK control — identical to c2_inline except callback result is stored
+# in a local before the sibling call.
+
+class Row:
+    def __init__(self: Row, title: str) -> None:
+        self.title = title
+
+def use_ctx(context: dict[str, str]) -> str:
+    return context["title"]
+
+def map_local(rows: list[Row], to_context: (Row) -> dict[str, str]) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        ctx: dict[str, str] = to_context(rows[i])
+        out = out + use_ctx(ctx)
+        i = i + 1
+    return out

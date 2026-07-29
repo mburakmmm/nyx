@@ -5,7 +5,8 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.7.0 · **License:** MIT · **Required alias:** `nyx` · **Requires Nox ≥ 1.11**
+**Version:** 0.9.0 · **License:** MIT · **Requires Nox ≥ 1.18.1**  
+Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
 
@@ -13,7 +14,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
 
 1. Add to your app’s **`nox.json`** under `requires`
 2. Run **`noxc fetch`** / **`noxc update`**
-3. Import with **`import nyx...`** (alias **must** be `nyx`)
+3. Import with **`import nyx...`** (recommended alias: `nyx`)
 
 ```json
 {
@@ -23,7 +24,7 @@ Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.7.0"
+      "ref": "v0.9.0"
     }
   ]
 }
@@ -155,6 +156,28 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.9.0 — Rails-core production path (Nox ≥ 1.18.1)
+
+- **Requires Nox ≥ 1.18.1** (CI pins `noxc` v1.18.1)
+- `nyx.runtime` worker-local **module globals** (P1c fixed); `NYX_RT_*` removed
+- `view.render_each_map` / `render_each_map_unescaped` (C2 fixed)
+- **App:** `shutdown` / `on_shutdown`, `/health` `/healthz` `/ready`, dialect-aware boot (`application.db` | `application.pg` + `jobs_db`), development error page
+- **CLI:** `nox.json` `bin` + `cli.nox` (`noxc install`); scaffold auto-wire (`<<NYX_GENERATED_ROUTES>>`); typed model generator (`find`/`create`/`save`)
+- **DB:** `dialect_of_url`, `migrate_postgres` / `rollback_url`, `nyx.pg_model` (RETURNING), jobs DB path
+- **Model:** query builder, uniqueness/format/numericality, callbacks, `Record` cell index, association preload
+- **Views:** `nyx.html.SafeHtml` + `form.*_safe` / `html.put`
+- **Jobs/mail/cable:** retry + dead-set; SMTP (SMTPS/TLS); SQLite cable store + `Channel` API
+- Deploy guide: `docs/DEPLOY.md` · Nox requests: `docs/NOX_REQUESTS.md`
+
+### 0.8.0 — Nox 1.14–1.17 integration
+
+- **Requires Nox ≥ 1.14** (CI pins `noxc` v1.17.0)
+- Raw PG/MySQL: document **prepare/bind** (Nox ≥ 1.13); ORM / migrate / jobs stay SQLite (separate Connection types; PG has no `last_insert_rowid`)
+- `nyx.tls` / `nyx.websocket` — thin client wrappers (`nox.tls` / `nox.websocket`); server Upgrade still absent → cable remains SSE/long-poll
+- Consumer package alias no longer must be `nyx` (Nox ≥ 1.12.1); internal imports still `import nyx...`
+- `nyx.runtime` remains `NYX_RT_*` — package-module globals that are read/written from functions still break codegen with `Router` / nested closures (see `docs/NOX_LIMITATIONS.md`)
+- `render_each_map` still omitted (package function-type params SIGSEGV on import)
+
 ### 0.7.0 — Nox 1.11 stdlib integration
 
 - **Requires Nox ≥ 1.11**
@@ -208,17 +231,16 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.11** (`nox.url`, `nox.postgres`/`mysql`, `nox.collections`, bare `except:`, app-script module globals)
-- Boot once at app-script top-level; set `NYX_AUTO_MIGRATE=0` in production
-- App ORM / migrate / jobs: **SQLite**; raw `open_postgres` / `open_mysql` (no bind — escape SQL yourself)
-- Request state via `nyx.runtime` (`NYX_RT_*` env) until complex package-module globals are fully codegen-safe
-- SQLite file DB; TLS at reverse proxy; SSE/long-poll cable (not WebSocket)
-- Alias must be `nyx` (package-manager limitation)
-- No `{% for %}` in templates → `render_records` / `render_each`
-- Prefer `Attributes` / `create_attrs` over hand-built JSON strings
+- Requires **Nox ≥ 1.18.1** (P1c/C2; prepare/bind; TLS/WS clients)
+- Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
+- App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
+- Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
+- Inbound TLS: reverse proxy; mail SMTP = SMTPS/465; cable = SSE/long-poll (+ optional SQLite store)
+- No `{% for %}` → `render_records` / `render_each` / `render_each_map`
+- Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
 
-**Fit:** reverse-proxy, single instance, SQLite app DB, low–medium traffic, MVP/internal tools.  
-**Not yet:** multi-driver ActiveRecord, multi-process shared request state, WebSocket chat, strong multi-tenant SaaS.
+**Fit:** reverse-proxy, SQLite or Postgres app DB, jobs on SQLite, low–medium traffic.  
+**Still Nox-bound:** server WebSocket Upgrade, task-local context, rich exception stacks — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
 
 ---
 

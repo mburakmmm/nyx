@@ -1,15 +1,20 @@
-# nyx.db — SQLite açma + migration runner (+ ham PG/MySQL open).
+# nyx.db - SQLite açma + migration runner (+ PG/MySQL open).
 #
 # import nyx.db
 #
 # db: Connection = nyx.db.open("db/app.sqlite")
 # nyx.db.migrate(db, "db/migrate")
 #
-# # Ham sürücüler (Nox >= 1.11) — nyx.model/job/Application.db DEĞİL:
+# # Ham sürücüler (Nox >= 1.13 prepare/bind):
 # pg = nyx.db.open_postgres("postgres://user:pass@localhost:5432/app")
+# stmt = pg.prepare("SELECT id FROM t WHERE name = $1")
+# stmt.bind_str(0, "alice")
+# rows = stmt.query()
 # my = nyx.db.open_mysql("mysql://user:pass@localhost:3306/app")
 #
-# PG/MySQL v1: parametreli sorgu (prepare/bind) YOK — SQL enjeksiyonuna dikkat.
+# Application.db / nyx.model / jobs: SQLite Connection tipi (tek tip).
+# PG/MySQL için ayrı open_* kullanın; prepare/bind stdlib'de vardır.
+# Postgres last_insert_rowid yok - INSERT ... RETURNING kullanın.
 
 import nox.sqlite
 import nox.postgres
@@ -19,7 +24,7 @@ import nox.path
 import nox.strings
 import nox.url
 from nox.sqlite import Connection, Statement, Row, SqliteError
-from nox.postgres import Connection as PgConnection, PostgresError
+from nox.postgres import Connection as PgConnection, PostgresError, Row as PgRow, Statement as PgStatement
 from nox.mysql import Connection as MysqlConnection, MysqlError
 from nox.url import URL, UrlError
 
@@ -46,7 +51,7 @@ def _scheme_of(url: str) -> str:
 
 # `path` düz dosya yolu, `:memory:`, veya SQLite URL:
 #   sqlite:///absolute/path   sqlite://relative/path   sqlite::memory:
-# Postgres/MySQL URL'leri bu fonksiyonda HATA verir — `open_postgres` /
+# Postgres/MySQL URL'leri bu fonksiyonda HATA verir - `open_postgres` /
 # `open_mysql` kullanın (Application.db tipi SQLite Connection).
 def open(path: str) -> Connection:
     return open_url(path)
@@ -58,13 +63,15 @@ def open_url(url: str) -> Connection:
     if scheme == "postgres" or scheme == "postgresql":
         raise DbError(
             "postgres/postgresql URLs require nyx.db.open_postgres(...). " +
-            "nyx.model / Application.db stay SQLite until parameterized queries exist. " +
+            "Application.db / nyx.model stay typed as SQLite Connection. " +
+            "Raw PG supports prepare/bind (Nox >= 1.13); use INSERT ... RETURNING for ids. " +
             "Use NYX_DB_PATH or sqlite:///path/to.db for the app ORM."
         )
     if scheme == "mysql":
         raise DbError(
             "mysql URLs require nyx.db.open_mysql(...). " +
-            "nyx.model / Application.db stay SQLite. Use sqlite:///path/to.db for the app ORM."
+            "Application.db / nyx.model stay SQLite. " +
+            "Raw MySQL supports prepare/bind + last_insert_rowid (Nox >= 1.13)."
         )
     path: str = url
     if nox.strings.starts_with(url, "sqlite://"):
@@ -82,19 +89,62 @@ def open_url(url: str) -> Connection:
     return nox.sqlite.open(path)
 
 # libpq URI veya keyword-value conninfo. Donus: nox.postgres.Connection.
-# Parametreli sorgu YOK — degerleri kendiniz kacisin / birlestirin.
+# Nox >= 1.13: Connection.prepare + bind_* + execute/query (PQexecParams).
 def open_postgres(conninfo: str) -> PgConnection:
     try:
         return nox.postgres.open(conninfo)
     except PostgresError as e:
         raise DbError("postgres open failed: " + e.message)
 
-# mysql://[user[:pass]@]host[:port]/db
+# mysql://[user[:pass]@]host[:port]/db - prepare/bind + last_insert_rowid.
 def open_mysql(conn_url: str) -> MysqlConnection:
     try:
         return nox.mysql.open_url(conn_url)
     except MysqlError as e:
         raise DbError("mysql open failed: " + e.message)
+
+# "sqlite" | "postgres" | "mysql" | ""
+def dialect_of_url(url: str) -> str:
+    scheme: str = _scheme_of(url)
+    if scheme == "sqlite" or scheme == "file" or len(scheme) == 0:
+        return "sqlite"
+    if scheme == "postgres" or scheme == "postgresql":
+        return "postgres"
+    if scheme == "mysql":
+        return "mysql"
+    return ""
+
+# INSERT ... RETURNING id - Postgres'te last_insert_rowid yerine.
+# `sql` örn: "INSERT INTO posts (title) VALUES ($1) RETURNING id"
+# Prefers prepare/bind via `postgres_insert_returning_id_bound`.
+def postgres_insert_returning_id(conn: PgConnection, sql: str) -> int:
+    try:
+        rows: list[PgRow] = conn.query(sql)
+        if len(rows) == 0:
+            raise DbError("postgres INSERT RETURNING returned no rows")
+        return rows[0].get_int(0)
+    except PostgresError as e:
+        raise DbError("postgres insert returning failed: " + e.message)
+
+# Parametreli INSERT ... RETURNING id ($1..$n sirasiyla binds).
+def postgres_insert_returning_id_bound(conn: PgConnection, sql: str, binds: list[str], nulls: list[bool]) -> int:
+    if len(binds) != len(nulls):
+        raise DbError("binds/nulls length mismatch")
+    try:
+        stmt: PgStatement = conn.prepare(sql)
+        i: int = 0
+        while i < len(binds):
+            if nulls[i]:
+                stmt.bind_null(i)
+            else:
+                stmt.bind_str(i, binds[i])
+            i = i + 1
+        rows: list[PgRow] = stmt.query()
+        if len(rows) == 0:
+            raise DbError("postgres INSERT RETURNING returned no rows")
+        return rows[0].get_int(0)
+    except PostgresError as e:
+        raise DbError("postgres insert returning failed: " + e.message)
 
 def _ends_with_sql(name: str) -> bool:
     return nox.strings.ends_with(name, ".sql")
@@ -234,3 +284,115 @@ def schema_dump(db: Connection, path: str) -> None:
         out = out + rows[i].get_str(0) + ";\n\n"
         i = i + 1
     nox.fs.write_string(path, out)
+
+def _ensure_migrations_table_pg(conn: PgConnection) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
+
+def _already_applied_pg(conn: PgConnection, version: str) -> bool:
+    stmt: PgStatement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = $1")
+    stmt.bind_str(0, version)
+    rows: list[PgRow] = stmt.query()
+    return len(rows) > 0
+
+def _record_applied_pg(conn: PgConnection, version: str) -> None:
+    stmt: PgStatement = conn.prepare("INSERT INTO schema_migrations (version) VALUES ($1)")
+    stmt.bind_str(0, version)
+    stmt.execute()
+
+# Postgres migration runner - ayni dosya adlandirmasi (*.sql / *.down.sql).
+# SQL diyalekti migration dosyasinda postgres uyumlu olmali.
+def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
+    if not nox.fs.exists(dir_path):
+        raise DbError("migration dizini yok: " + dir_path)
+    if not nox.fs.is_dir(dir_path):
+        raise DbError("migration yolu dizin degil: " + dir_path)
+    _ensure_migrations_table_pg(conn)
+    entries: list[str] = nox.fs.read_dir(dir_path)
+    sql_files: list[str] = []
+    i: int = 0
+    while i < len(entries):
+        name: str = entries[i]
+        if _is_up_migration(name):
+            sql_files.append(name)
+        i = i + 1
+    ordered: list[str] = _sort_names(sql_files)
+    applied: int = 0
+    j: int = 0
+    while j < len(ordered):
+        version: str = ordered[j]
+        if not _already_applied_pg(conn, version):
+            full: str = nox.path.join(dir_path, version)
+            sql: str = nox.fs.read_to_string(full)
+            conn.execute("BEGIN")
+            try:
+                conn.execute(sql)
+                _record_applied_pg(conn, version)
+                conn.execute("COMMIT")
+            except PostgresError as e:
+                conn.execute("ROLLBACK")
+                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+            applied = applied + 1
+        j = j + 1
+    return applied
+
+def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
+    _ensure_migrations_table_pg(conn)
+    rows: list[PgRow] = conn.query(
+        "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+    )
+    if len(rows) == 0:
+        raise DbError("geri alinacak migration yok")
+    version: str = rows[0].get_str(0)
+    down_name: str = _down_name(version)
+    down_path: str = nox.path.join(dir_path, down_name)
+    if not nox.fs.exists(down_path):
+        raise DbError("down migration dosyasi yok: " + down_path)
+    sql: str = nox.fs.read_to_string(down_path)
+    conn.execute("BEGIN")
+    try:
+        conn.execute(sql)
+        del_stmt: PgStatement = conn.prepare("DELETE FROM schema_migrations WHERE version = $1")
+        del_stmt.bind_str(0, version)
+        del_stmt.execute()
+        conn.execute("COMMIT")
+    except PostgresError as e:
+        conn.execute("ROLLBACK")
+        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+    return version
+
+# Dialect'e gore migrate - sqlite veya postgres URL.
+def migrate_url(url: str, dir_path: str) -> int:
+    dialect: str = dialect_of_url(url)
+    if dialect == "postgres":
+        conn: PgConnection = open_postgres(url)
+        try:
+            n: int = migrate_postgres(conn, dir_path)
+        finally:
+            conn.close()
+        return n
+    if dialect == "mysql":
+        raise DbError("migrate_url does not support mysql yet")
+    dbc: Connection = open(url)
+    try:
+        n2: int = migrate(dbc, dir_path)
+    finally:
+        dbc.close()
+    return n2
+
+def rollback_url(url: str, dir_path: str) -> str:
+    dialect: str = dialect_of_url(url)
+    if dialect == "postgres":
+        conn: PgConnection = open_postgres(url)
+        try:
+            v: str = rollback_postgres(conn, dir_path)
+        finally:
+            conn.close()
+        return v
+    if dialect == "mysql":
+        raise DbError("rollback_url does not support mysql yet")
+    dbc: Connection = open(url)
+    try:
+        v2: str = rollback(dbc, dir_path)
+    finally:
+        dbc.close()
+    return v2

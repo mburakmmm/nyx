@@ -9,13 +9,15 @@
 #   NYX_CSRF=true
 #   NYX_LOCALE=en
 #
-# TLS: terminate at a reverse proxy (nginx/caddy). Nyx sets security headers.
+# TLS: terminate inbound HTTPS at a reverse proxy (nginx/caddy). Nyx sets security headers.
+# Outbound TLS / WebSocket clients (Nox >= 1.14): nyx.tls.connect / nyx.websocket.connect
 #
-# Databases (Nox >= 1.11):
+# Databases (Nox >= 1.13 prepare/bind on raw drivers):
 #   - Application / nyx.model / jobs / migrate: SQLite only
 #     (DATABASE_URL=sqlite:///... or NYX_DB_PATH)
-#   - Raw drivers (no prepare/bind — escape yourself):
-#       nyx.db.open_postgres("postgres://user:pass@host:5432/db")
-#       nyx.db.open_mysql("mysql://user:pass@host:3306/db")
+#   - Raw drivers (prepare/bind available):
+#       pg = nyx.db.open_postgres("postgres://user:pass@host:5432/db")
+#       stmt = pg.prepare("SELECT id FROM t WHERE name = $1")
+#       my = nyx.db.open_mysql("mysql://user:pass@host:3306/db")
 #   - open_url(postgres|mysql://...) raises and points to open_* helpers
 #     so Application.db type stays SQLite Connection.

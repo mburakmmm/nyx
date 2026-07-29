@@ -1,4 +1,4 @@
-# nyx.session — HMAC-imzalı cookie oturumu.
+# nyx.session - HMAC-imzalı cookie oturumu.
 #
 # Cookie değeri: base64url(envelope) + "." + base64url(hmac_hex)
 # envelope: {"exp":<unix>,"d":<data_json-as-embedded-json>}
@@ -90,9 +90,9 @@ def load(secret: str, cookie_value: str) -> str | None:
 # Oturum sabitleme (session fixation, bkz. OWASP Session Management Cheat
 # Sheet) saldirilarina karsi korunma: giris (login) BASARILI olduktan veya
 # YETKI SEVIYESI DEGISTIGINDE (ör. rol yukseltme) cagrilip AYNI veriyle
-# YENI, imzasi (ve `exp`i) FARKLI bir cookie degeri uretir — bu, saldirganin
+# YENI, imzasi (ve `exp`i) FARKLI bir cookie degeri uretir - bu, saldirganin
 # giristen ONCE kurbana verdigi bir oturum tanimlayicisinin giristen SONRA
-# da GECERLI kalmasini (session fixation) ONLER. `create`in TAM ESDEGERI —
+# da GECERLI kalmasini (session fixation) ONLER. `create`in TAM ESDEGERI -
 # ayrimi SADECE cagiran koddaki NIYETI belgelemek icindir: cagiran
 # `nyx.runtime.set_session(data_json)` + `nyx.runtime.cycle_session()`i
 # BIRLIKTE kullanarak YENI degerin Set-Cookie ile yazilmasini saglamalidir.

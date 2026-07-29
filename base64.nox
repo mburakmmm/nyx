@@ -1,9 +1,9 @@
-# nyx.base64 — saf Nox base64 / base64url (RFC 4648).
+# nyx.base64 - saf Nox base64 / base64url (RFC 4648).
 #
 # Kodlama: girdinin UTF-8 baytları (`nox.strings.byte_at` + C-string uzunluğu).
-# Çözme: çıktı baytları YALNIZCA ASCII (0..127) — JWT JSON gövdeleri için yeterli.
+# Çözme: çıktı baytları YALNIZCA ASCII (0..127) - JWT JSON gövdeleri için yeterli.
 #
-# Tüketici alias'ı ZORUNLU olarak `nyx` olmalıdır: import nyx.base64
+# Tüketici alias'ı önerilir `nyx` (Nox >= 1.12.1 zorunlu değil): import nyx.base64
 
 import nox.strings
 
@@ -158,12 +158,12 @@ def _decode_to_ascii_impl(data: str, alphabet: str, pad: bool) -> str:
     if rem == 1:
         raise Base64Error("gecersiz base64 uzunlugu")
     if rem == 2:
-        # 1 çıktı baytı → 2 karakter; 2 pad baytı
+        # 1 çıktı baytı -> 2 karakter; 2 pad baytı
         if pad_bytes == 0:
             pad_bytes = 2
         raw = raw + "AA"
     elif rem == 3:
-        # 2 çıktı baytı → 3 karakter; 1 pad baytı
+        # 2 çıktı baytı -> 3 karakter; 1 pad baytı
         if pad_bytes == 0:
             pad_bytes = 1
         raw = raw + "A"

@@ -152,14 +152,68 @@ cmd_generate_model() {
   shift
   local table
   table="$(pluralize "$name")"
+  local sn
+  sn="$(snake "$name")"
   mkdir -p app/models
-  local model_file="app/models/$(snake "$name").nox"
+  local model_file="app/models/${sn}.nox"
+  local create_params=""
+  local create_sets=""
+  local save_params="id: int"
+  local save_sets=""
+  local spec field ftype
+  for spec in "$@"; do
+    field="${spec%%:*}"
+    ftype="${spec##*:}"
+    if [[ "$spec" != *:* ]]; then
+      ftype="string"
+    fi
+    case "$ftype" in
+      integer|int|boolean|bool)
+        if [[ -n "$create_params" ]]; then create_params="${create_params}, "; fi
+        create_params="${create_params}${field}: int"
+        create_sets="${create_sets}    nyx.model.set_int(attrs, \"${field}\", ${field})"$'\n'
+        save_params="${save_params}, ${field}: int"
+        save_sets="${save_sets}    nyx.model.set_int(attrs, \"${field}\", ${field})"$'\n'
+        ;;
+      *)
+        if [[ -n "$create_params" ]]; then create_params="${create_params}, "; fi
+        create_params="${create_params}${field}: str"
+        create_sets="${create_sets}    nyx.model.set_str(attrs, \"${field}\", ${field})"$'\n'
+        save_params="${save_params}, ${field}: str"
+        save_sets="${save_sets}    nyx.model.set_str(attrs, \"${field}\", ${field})"$'\n'
+        ;;
+    esac
+  done
+  if [[ -z "$create_params" ]]; then
+    create_params=""
+    create_sets="    # add nyx.model.set_* calls"$'\n'
+    save_sets="$create_sets"
+  fi
   cat > "$model_file" <<EOF
-# $name — nyx.model
-# nyx.model.find(db, "$table", id)
+# $name — typed nyx.model helpers (SQLite Application.db)
+import nyx.model
+from nyx.model import Record, Attributes
+from nox.sqlite import Connection
 
 def table_name() -> str:
     return "$table"
+
+def find(db: Connection, id: int) -> Record | None:
+    return nyx.model.find(db, table_name(), id)
+
+def all(db: Connection) -> list[Record]:
+    return nyx.model.all(db, table_name())
+
+def destroy(db: Connection, id: int) -> None:
+    nyx.model.destroy(db, table_name(), id)
+
+def create(db: Connection${create_params:+, $create_params}) -> int:
+    attrs: Attributes = nyx.model.attributes()
+${create_sets}    return nyx.model.create_attrs(db, table_name(), attrs)
+
+def save(db: Connection, ${save_params}) -> None:
+    attrs: Attributes = nyx.model.attributes()
+${save_sets}    nyx.model.update_attrs(db, table_name(), id, attrs)
 EOF
   write_migration_pair "$table" "$@"
   echo "created: $model_file"
@@ -317,16 +371,23 @@ cmd_generate_scaffold() {
   local create_sets update_sets key_appends
   create_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
   update_sets="$(scaffold_attr_sets "#         " "${fields[@]}")"
+  live_create_sets="$(scaffold_attr_sets "        " "${fields[@]}")"
+  live_update_sets="$(scaffold_attr_sets "        " "${fields[@]}")"
   key_appends=""
+  live_key_appends=""
   local spec field
   for spec in "${fields[@]}"; do
     field="${spec%%:*}"
     key_appends="${key_appends}#         keys.append(\"${field}\")"$'\n'
+    live_key_appends="${live_key_appends}        keys.append(\"${field}\")"$'\n'
   done
   if [[ -z "$create_sets" ]]; then
     create_sets='#         nyx.model.set_str(attrs, "field", ac.param("field", ""))'
     update_sets="$create_sets"
     key_appends='#         keys.append("field")'$'\n'
+    live_create_sets='        nyx.model.set_str(attrs, "field", ac.param("field", ""))'
+    live_update_sets="$live_create_sets"
+    live_key_appends='        keys.append("field")'$'\n'
   fi
   local snippet="config/scaffold_${sn}_routes.nox.snippet"
   cat > "$snippet" <<EOF
@@ -413,10 +474,98 @@ ${update_sets}
 #
 #     nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
 EOF
-  # Keep controller snippet aligned with scaffold (typed attrs).
   cp "$snippet" "config/${sn}_routes.nox.snippet"
   echo "created: $snippet"
   echo "updated: config/${sn}_routes.nox.snippet"
+
+  if [[ -f main.nox ]] && grep -q '<<NYX_GENERATED_ROUTES>>' main.nox; then
+    local live="config/scaffold_${sn}_routes.live.nox"
+    cat > "$live" <<LIVE
+    def ${sn}_index(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        rows: list[Record] = nyx.model.all(ac.db(), "$table")
+        context: dict[str, str] = {}
+        context["title"] = "$name"
+        context["count"] = str(len(rows))
+        return nyx.ctrl.render(200, "app/views/$sn/index.html", context)
+
+    def ${sn}_show(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        id: int = ac.path_int("id")
+        row: Record | None = nyx.model.find(ac.db(), "$table", id)
+        if row == None:
+            return nyx.ctrl.not_found_for(ctx)
+        context: dict[str, str] = {}
+        context["title"] = row.get_or("id", str(id))
+        return nyx.ctrl.render(200, "app/views/$sn/show.html", context)
+
+    def ${sn}_new(ctx: Context) -> HttpResponse:
+        secret: str = application.config.secret_key
+        context: dict[str, str] = {}
+        context["title"] = "New $name"
+        context["form_start"] = nyx.csrf.form_with(nyx.routes.path_index("$table"), "POST", secret)
+        context["form_end"] = nyx.form.form_end()
+        context["submit"] = nyx.form.submit("Save")
+        return nyx.ctrl.render_unescaped(200, "app/views/$sn/new.html", context)
+
+    def ${sn}_create(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        raw: dict[str, str] = nyx.params.from_request(ctx.request)
+        keys: list[str] = []
+${live_key_appends}        permitted: dict[str, str] = nyx.params.permit(raw, keys)
+        req_errs: list[str] = nyx.params.missing_required(permitted, keys)
+        if len(req_errs) > 0:
+            return nyx.ctrl.unprocessable_html(req_errs)
+        attrs: Attributes = nyx.model.attributes()
+${live_create_sets}
+        nyx.model.create_attrs(ac.db(), "$table", attrs)
+        return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
+
+    def ${sn}_edit(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        id: int = ac.path_int("id")
+        secret: str = application.config.secret_key
+        context: dict[str, str] = {}
+        context["title"] = "Edit $name"
+        context["id"] = str(id)
+        context["form_start"] = nyx.csrf.form_with(nyx.routes.path_show("$table", id), "POST", secret)
+        context["form_end"] = nyx.form.form_end()
+        context["submit"] = nyx.form.submit("Update")
+        return nyx.ctrl.render_unescaped(200, "app/views/$sn/edit.html", context)
+
+    def ${sn}_update(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        id: int = ac.path_int("id")
+        raw: dict[str, str] = nyx.params.from_request(ctx.request)
+        keys: list[str] = []
+${live_key_appends}        permitted: dict[str, str] = nyx.params.permit(raw, keys)
+        attrs: Attributes = nyx.model.attributes()
+${live_update_sets}
+        nyx.model.update_attrs(ac.db(), "$table", id, attrs)
+        return nyx.ctrl.redirect(nyx.routes.path_show("$table", id))
+
+    def ${sn}_destroy(ctx: Context) -> HttpResponse:
+        ac: AppContext = nyx.ctx.wrap(application, ctx)
+        id: int = ac.path_int("id")
+        nyx.model.destroy(ac.db(), "$table", id)
+        return nyx.ctrl.redirect(nyx.routes.path_index("$table"))
+
+    nyx.routes.resources(application.router, "$table", ${sn}_index, ${sn}_show, ${sn}_new, ${sn}_create, ${sn}_edit, ${sn}_update, ${sn}_destroy)
+LIVE
+    awk -v livefile="$live" '
+      /<<NYX_GENERATED_ROUTES>>/ {
+        while ((getline line < livefile) > 0) print line
+        close(livefile)
+        print
+        next
+      }
+      { print }
+    ' main.nox > main.nox.nyxgen && mv main.nox.nyxgen main.nox
+    echo "updated: main.nox (<<NYX_GENERATED_ROUTES>>)"
+    echo "ensure main.nox imports: nyx.ctx, nyx.csrf, nyx.form, nyx.model, nyx.params, nyx.routes, AppContext, Record, Attributes"
+  else
+    echo "tip: add '    # <<NYX_GENERATED_ROUTES>>' inside setup() for auto-wire"
+  fi
 }
 
 cmd_jobs() {
@@ -445,25 +594,23 @@ write_db_runner() {
 import nyx.db
 import nyx.config
 from nyx.config import Config
-from nox.sqlite import Connection
 
 cfg: Config = nyx.config.load()
-db: Connection = nyx.db.open(cfg.db_path)
 EOF
   if [[ "$mode" == "migrate" ]]; then
     cat >> "$tmp" <<EOF
-n: int = nyx.db.migrate(db, cfg.migrate_path)
+n: int = nyx.db.migrate_url(cfg.db_path, cfg.migrate_path)
 print("applied=" + str(n))
-db.close()
 EOF
   elif [[ "$mode" == "rollback" ]]; then
     cat >> "$tmp" <<EOF
-v: str = nyx.db.rollback(db, cfg.migrate_path)
+v: str = nyx.db.rollback_url(cfg.db_path, cfg.migrate_path)
 print("rolled_back=" + v)
-db.close()
 EOF
   elif [[ "$mode" == "schema" ]]; then
     cat >> "$tmp" <<EOF
+from nox.sqlite import Connection
+db: Connection = nyx.db.open(cfg.db_path)
 nyx.db.schema_dump(db, "db/schema.sql")
 print("wrote db/schema.sql")
 db.close()

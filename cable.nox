@@ -1,17 +1,15 @@
-# nyx.cable — SSE (Server-Sent Events) + long-poll tabanli gercek-zamanli
-# yayin. Nox stdlib'de WebSocket/soket-duzeyi push YOKTUR — bu yuzden her
-# "canal" (channel) bellekte SINIRLI sayida mesaj tutan bir tampon (buffer)
-# olarak modellenir; istemci ya `sse_response` ile o ana kadar biriken
-# olaylari tek bir HTTP yanitinda (text/event-stream govdesi) alir ya da
-# `stream_poll` ile duzenli araliklarla `since_id`den sonrasini JSON olarak
-# sorgular (long-poll fallback). Gercek, kalici cift-yonlu bir soket
-# baglantisi HTTP katmani SINIRLARI icinde saglanamaz.
+# nyx.cable - SSE (Server-Sent Events) + long-poll tabanli gercek-zamanli
+# yayin (tarayiciya giden sunucu kanali).
 #
-# OMUR: Hub surec-geneli DEGILDIR. `nyx.app.boot` her istekte yeniden
-# calistigi icin Hub'i `setup` icinde olusturmak isteklar ARASI durumu
-# KORUMAZ. Kalici yayin icin harici bir depolama (SQLite tablo / dosya)
-# veya Nox tarafında process-global durum gerekir. Hub, TEK bir istek
-# icinde broadcast + sse/poll birlestirmek icin uygundur.
+# Nox >= 1.14: `nox.websocket` / `nyx.websocket` YALNIZCA istemci
+# (`ws://`/`wss://`). Sunucu-tarafi WebSocket Upgrade yok - bu yuzden
+# her "canal" bellekte SINIRLI mesaj tamponu olarak modellenir; istemci
+# `sse_response` veya `stream_poll` (long-poll) kullanir.
+#
+# OMUR: Hub, uygulama SCRIPT'inde boot-once `Application` ile ayni
+# worker sureci boyunca yasayabilir (Nox >= 1.10 script modul-global).
+# `serve_multicore` worker'lari ARASI paylasilmaz; yatay olcek icin
+# SQLite/dosya/`nox.sharedmem` veya dis kuyruk kullanin.
 #
 # import nyx.cable
 #
@@ -19,10 +17,15 @@
 # since: str = nyx.cable.subscribe(hub, "room:1")
 # nyx.cable.broadcast(hub, "room:1", "message", "{\"text\":\"selam\"}")
 # return nyx.cable.sse_response_for(hub, "room:1", int(since))
+# Cross-worker: store = nyx.cable.open_store("tmp/cable.sqlite")
 
 import nox.json
 import nox.time
+import nox.fs
+import nox.path
+import nox.sqlite
 from nox.http import HttpResponse
+from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement, Row as SqliteRow
 
 class CableError:
     def __init__(self: CableError, message: str) -> None:
@@ -81,7 +84,7 @@ def _get_or_create(hub: Hub, name: str) -> int:
     return len(channels) - 1
 
 # `channel`i (yoksa OLUSTURARAK) kaydeder ve o ANKI son mesaj kimligini
-# metin olarak doner — cagiran taraf bunu ilk `stream_poll`/`sse_response_for`
+# metin olarak doner - cagiran taraf bunu ilk `stream_poll`/`sse_response_for`
 # cagrisinda `since_id` olarak kullanip yalnizca ABONELIKTEN SONRAKI
 # olaylari alir.
 def subscribe(hub: Hub, channel: str) -> str:
@@ -146,7 +149,7 @@ def _sse_format(events: list[Message]) -> str:
     return out
 
 # Verilen olay listesini `text/event-stream` govdeli bir HTTP yanitina
-# cevirir. Uzun-omurlu, kalici bir baglanti DEGILDIR — istemci tarayicisi
+# cevirir. Uzun-omurlu, kalici bir baglanti DEGILDIR - istemci tarayicisi
 # EventSource API'siyle bu ucu periyodik olarak yeniden acabilir (tarayici
 # `Last-Event-ID` basligini otomatik gonderir).
 def sse_response(events: list[Message]) -> HttpResponse:
@@ -169,7 +172,7 @@ def _message_json(m: Message) -> str:
     )
 
 # Long-poll fallback: `since_id`den SONRAKI olaylari duz bir JSON govdesi
-# olarak doner — istemci bu govdedeki en yuksek `id`yi bir SONRAKI
+# olarak doner - istemci bu govdedeki en yuksek `id`yi bir SONRAKI
 # `stream_poll` cagrisinda `since_id` olarak kullanir.
 def stream_poll(hub: Hub, channel: str, since_id: int) -> str:
     events: list[Message] = _messages_since(hub, channel, since_id)
@@ -187,3 +190,133 @@ def stream_poll_response(hub: Hub, channel: str, since_id: int) -> HttpResponse:
     headers: dict[str, str] = {}
     headers["Content-Type"] = "application/json; charset=utf-8"
     return HttpResponse(200, stream_poll(hub, channel, since_id), headers)
+
+# --- Cross-worker SQLite store (serve_multicore / multi-process) ---
+
+class Store:
+    def __init__(self: Store, db: SqliteConnection, capacity: int) -> None:
+        self.db = db
+        self.capacity = capacity
+
+def open_store(path: str) -> Store:
+    parent: str = nox.path.dirname(path)
+    if len(parent) > 0 and parent != "." and not nox.fs.exists(parent):
+        nox.fs.create_dir(parent)
+    db: SqliteConnection = nox.sqlite.open(path)
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS cable_messages (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "channel TEXT NOT NULL, " +
+        "event TEXT NOT NULL, " +
+        "data_json TEXT NOT NULL, " +
+        "ts_ms INTEGER NOT NULL)"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_cable_channel_id ON cable_messages (channel, id)")
+    return Store(db, default_capacity())
+
+def close_store(store: Store) -> None:
+    store.db.close()
+
+def store_subscribe(store: Store, channel: str) -> str:
+    stmt: SqliteStatement = store.db.prepare(
+        "SELECT COALESCE(MAX(id), 0) FROM cable_messages WHERE channel = ?"
+    )
+    stmt.bind_str(0, channel)
+    rows: list[SqliteRow] = stmt.query()
+    if len(rows) == 0:
+        return "0"
+    return str(rows[0].get_int(0))
+
+def store_broadcast(store: Store, channel: str, event: str, data_json: str) -> int:
+    now: int = nox.time.now_ms()
+    stmt: SqliteStatement = store.db.prepare(
+        "INSERT INTO cable_messages (channel, event, data_json, ts_ms) VALUES (?, ?, ?, ?)"
+    )
+    stmt.bind_str(0, channel)
+    stmt.bind_str(1, event)
+    stmt.bind_str(2, data_json)
+    stmt.bind_int(3, now)
+    stmt.execute()
+    id: int = store.db.last_insert_rowid()
+    # Cap per channel
+    cnt_stmt: SqliteStatement = store.db.prepare(
+        "SELECT COUNT(*) FROM cable_messages WHERE channel = ?"
+    )
+    cnt_stmt.bind_str(0, channel)
+    cnt_rows: list[SqliteRow] = cnt_stmt.query()
+    if len(cnt_rows) > 0 and cnt_rows[0].get_int(0) > store.capacity:
+        overflow: int = cnt_rows[0].get_int(0) - store.capacity
+        del_stmt: SqliteStatement = store.db.prepare(
+            "DELETE FROM cable_messages WHERE id IN (" +
+            "SELECT id FROM cable_messages WHERE channel = ? ORDER BY id ASC LIMIT ?" +
+            ")"
+        )
+        del_stmt.bind_str(0, channel)
+        del_stmt.bind_int(1, overflow)
+        del_stmt.execute()
+    return id
+
+def _store_messages_since(store: Store, channel: str, since_id: int) -> list[Message]:
+    stmt: SqliteStatement = store.db.prepare(
+        "SELECT id, event, data_json, ts_ms FROM cable_messages " +
+        "WHERE channel = ? AND id > ? ORDER BY id ASC"
+    )
+    stmt.bind_str(0, channel)
+    stmt.bind_int(1, since_id)
+    rows: list[SqliteRow] = stmt.query()
+    out: list[Message] = []
+    i: int = 0
+    while i < len(rows):
+        r: SqliteRow = rows[i]
+        out.append(Message(r.get_int(0), r.get_str(1), r.get_str(2), r.get_int(3)))
+        i = i + 1
+    return out
+
+def store_sse_response_for(store: Store, channel: str, since_id: int) -> HttpResponse:
+    return sse_response(_store_messages_since(store, channel, since_id))
+
+def store_stream_poll(store: Store, channel: str, since_id: int) -> str:
+    events: list[Message] = _store_messages_since(store, channel, since_id)
+    out: str = "{\"channel\":" + nox.json.encode_string(channel) + ",\"events\":["
+    i: int = 0
+    while i < len(events):
+        if i > 0:
+            out = out + ","
+        out = out + _message_json(events[i])
+        i = i + 1
+    out = out + "]}"
+    return out
+
+# Channel - sunucu WebSocket Upgrade geldiginde ayni yayin sozlesmesi.
+# Bugun SSE/long-poll; ileride WS frame'e map edilir.
+# backend: "hub" | "store"
+class Channel:
+    def __init__(self: Channel, name: str, backend: str, hub: Hub, store: Store) -> None:
+        self.name = name
+        self.backend = backend
+        self.hub = hub
+        self.store = store
+
+def channel_memory(hub: Hub, name: str) -> Channel:
+    # store placeholder unused when backend=hub
+    dummy: Store = Store(nox.sqlite.open(":memory:"), default_capacity())
+    return Channel(name, "hub", hub, dummy)
+
+def channel_store(store: Store, name: str) -> Channel:
+    dummy_hub: Hub = Hub()
+    return Channel(name, "store", dummy_hub, store)
+
+def channel_broadcast(ch: Channel, event: str, data_json: str) -> int:
+    if ch.backend == "store":
+        return store_broadcast(ch.store, ch.name, event, data_json)
+    return broadcast(ch.hub, ch.name, event, data_json)
+
+def channel_subscribe(ch: Channel) -> str:
+    if ch.backend == "store":
+        return store_subscribe(ch.store, ch.name)
+    return subscribe(ch.hub, ch.name)
+
+def channel_sse_response(ch: Channel, since_id: int) -> HttpResponse:
+    if ch.backend == "store":
+        return store_sse_response_for(ch.store, ch.name, since_id)
+    return sse_response_for(ch.hub, ch.name, since_id)

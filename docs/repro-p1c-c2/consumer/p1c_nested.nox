@@ -1,0 +1,16 @@
+# Expect: codegen "desteklenmeyen yapi"
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import repro.state
+
+def make_mw(flag: str) -> (Context) -> HttpResponse | None:
+    def handler(ctx: Context) -> HttpResponse | None:
+        if ctx.request.method == "GET":
+            return None
+        return HttpResponse(403, "no", {})
+    return handler
+
+mw: (Context) -> HttpResponse | None = make_mw("x")
+ctx: Context = Context(HttpRequest("GET", "/", "", {}), {})
+ignore: HttpResponse | None = mw(ctx)
+print("should not print")

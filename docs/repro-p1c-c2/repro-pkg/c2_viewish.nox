@@ -1,0 +1,17 @@
+# C2 FAIL variant (nyx.view.render_each_map shape):
+# sibling `partial(path, dict)` called with inline `to_context(row)`.
+
+def partial(path: str, context: dict[str, str]) -> str:
+    return path + ":" + context["title"]
+
+def render_each_map(
+    path: str,
+    rows: list[str],
+    to_context: (str) -> dict[str, str]
+) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        out = out + partial(path, to_context(rows[i]))
+        i = i + 1
+    return out

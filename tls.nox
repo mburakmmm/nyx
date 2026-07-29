@@ -1,0 +1,17 @@
+# nyx.tls — Nox TLS istemci sarmalayicisi (Nox >= 1.14).
+#
+# Yalnizca istemci: sunucu TLS yok (Zig std'de TLS server yok).
+# Uretimde gelen HTTPS genelde reverse-proxy'de sonlanir; bu modul
+# ozel ikili protokoller veya dogrudan TLS cikis baglantilari icindir.
+#
+# import nyx.tls
+# stream = nyx.tls.connect("example.com", 443)
+# stream.write("...")
+# data = stream.read(4096)
+# stream.close()
+
+import nox.tls
+from nox.tls import TlsStream, TlsError
+
+def connect(host: str, port: int) -> TlsStream:
+    return nox.tls.connect(host, port)

@@ -1,4 +1,4 @@
-# nyx.view — şablon render, layout, partial.
+# nyx.view - şablon render, layout, partial.
 #
 # nyx.view.render("app/views/home.html", ctx)
 # nyx.view.render_with_layout("app/views/layouts/application.html", "app/views/home.html", ctx)
@@ -79,8 +79,33 @@ def render_each_unescaped(partial_path: str, contexts: list[dict[str, str]]) -> 
         i = i + 1
     return out
 
+# Nox >= 1.18.1: paket modülünde function-type + inline dict sonucu güvenli (C2).
+def render_each_map(
+    partial_path: str,
+    rows: list[Record],
+    to_context: (Record) -> dict[str, str]
+) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        out = out + partial(partial_path, to_context(rows[i]))
+        i = i + 1
+    return out
+
+def render_each_map_unescaped(
+    partial_path: str,
+    rows: list[Record],
+    to_context: (Record) -> dict[str, str]
+) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(rows):
+        out = out + partial_unescaped(partial_path, to_context(rows[i]))
+        i = i + 1
+    return out
+
 # Layout: once layout render edilir ({{ yield }} icin benzersiz slot),
-# sonra body slot'a string replace ile konur — body icindeki `{{...}}`
+# sonra body slot'a string replace ile konur - body icindeki `{{...}}`
 # ikinci kez template olarak yorumlanmaz (second-pass injection onlemi).
 def _yield_slot() -> str:
     return "__NYX_YIELD_SLOT_7f3a9c__"

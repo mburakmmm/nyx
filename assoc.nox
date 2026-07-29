@@ -1,17 +1,15 @@
-# nyx.assoc — nyx.model uzerine belongs_to / has_many / has_one yardimcilari.
+# nyx.assoc - nyx.model uzerine belongs_to / has_many / has_one yardimcilari.
 #
 # import nyx.assoc
 #
 # author: Record | None = nyx.assoc.belongs_to(db, "posts", post_id, "users", "user_id")
 # comments: list[Record] = nyx.assoc.has_many(db, "posts", post_id, "comments", "post_id")
+# packed: list[Record] = nyx.assoc.preload_belongs_to_list(db, posts, "user_id", "users")
 
 import nyx.model
 from nyx.model import Record
-from nox.sqlite import Connection
+from nox.sqlite import Connection, Statement, Row
 
-# `child_table[child_id].fk_col` degerini `parent_table`da arar (Rails'in
-# `belongs_to`siyla ayni yon: cocuk -> ebeveyn). Cocuk kaydin KENDISI YOKSA
-# ya da `fk_col` ebeveynde eslesmiyorsa None doner.
 def belongs_to(db: Connection, child_table: str, child_id: int, parent_table: str, fk_col: str) -> Record | None:
     child: Record | None = nyx.model.find(db, child_table, child_id)
     if child != None:
@@ -19,15 +17,77 @@ def belongs_to(db: Connection, child_table: str, child_id: int, parent_table: st
         return nyx.model.find(db, parent_table, fk_val)
     return None
 
-# `child_table.fk_col = parent_id` olan TUM satirlari doner (Rails'in
-# `has_many`si).
 def has_many(db: Connection, parent_table: str, parent_id: int, child_table: str, fk_col: str) -> list[Record]:
     return nyx.model.where_int(db, child_table, fk_col, parent_id)
 
-# `has_many` ile AYNI sorgu ama TEK (ilk) satiri doner (Rails'in
-# `has_one`si) — eslesme yoksa None.
 def has_one(db: Connection, parent_table: str, parent_id: int, child_table: str, fk_col: str) -> Record | None:
     rows: list[Record] = nyx.model.where_int(db, child_table, fk_col, parent_id)
     if len(rows) == 0:
         return None
     return rows[0]
+
+# N+1 azaltma: tum parent satirlari tek sorguda yukler (id sirasi garantili degil).
+# Cagiran taraf FK ile eslemek icin Record.get_int("id") kullanir.
+def preload_belongs_to_list(db: Connection, rows: list[Record], fk_col: str, parent_table: str) -> list[Record]:
+    out: list[Record] = []
+    if len(rows) == 0:
+        return out
+    ids: list[int] = []
+    seen: dict[str, str] = {}
+    i: int = 0
+    while i < len(rows):
+        if rows[i].has(fk_col) and not rows[i].is_null(fk_col):
+            fid: int = rows[i].get_int(fk_col)
+            key: str = str(fid)
+            try:
+                skip: str = seen[key]
+            except KeyError:
+                seen[key] = "1"
+                ids.append(fid)
+        i = i + 1
+    if len(ids) == 0:
+        return out
+    placeholders: str = ""
+    j: int = 0
+    while j < len(ids):
+        if j > 0:
+            placeholders = placeholders + ", "
+        placeholders = placeholders + "?"
+        j = j + 1
+    sql: str = "SELECT * FROM \"" + parent_table + "\" WHERE \"id\" IN (" + placeholders + ")"
+    stmt: Statement = db.prepare(sql)
+    k: int = 0
+    while k < len(ids):
+        stmt.bind_int(k, ids[k])
+        k = k + 1
+    found: list[Row] = stmt.query()
+    m: int = 0
+    while m < len(found):
+        out.append(Record(found[m]))
+        m = m + 1
+    return out
+
+# has_many toplu: verilen parent_id listesi icin tum child satirlari (tek sorgu).
+def preload_has_many_list(db: Connection, parent_ids: list[int], child_table: str, fk_col: str) -> list[Record]:
+    out: list[Record] = []
+    if len(parent_ids) == 0:
+        return out
+    placeholders: str = ""
+    j: int = 0
+    while j < len(parent_ids):
+        if j > 0:
+            placeholders = placeholders + ", "
+        placeholders = placeholders + "?"
+        j = j + 1
+    sql: str = "SELECT * FROM \"" + child_table + "\" WHERE \"" + fk_col + "\" IN (" + placeholders + ")"
+    stmt: Statement = db.prepare(sql)
+    k: int = 0
+    while k < len(parent_ids):
+        stmt.bind_int(k, parent_ids[k])
+        k = k + 1
+    found: list[Row] = stmt.query()
+    m: int = 0
+    while m < len(found):
+        out.append(Record(found[m]))
+        m = m + 1
+    return out

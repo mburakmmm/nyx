@@ -615,3 +615,20 @@ def create_valid(db: Connection, table: str, attrs_json: str, required_fields: l
     if len(errors) > 0:
         raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
     return create(db, table, attrs_json)
+
+def validate_attrs_unique(db: Connection, table: str, col: str, value: str, exclude_id: int) -> list[str]:
+    _check_ident(table)
+    _check_ident(col)
+    errors: list[str] = []
+    sql: str = "SELECT \"id\" FROM " + _quote_ident(table) + " WHERE " + _quote_ident(col) + " = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_str(0, value)
+    rows: list[Row] = stmt.query()
+    i: int = 0
+    while i < len(rows):
+        id: int = rows[i].get_int(0)
+        if exclude_id < 0 or id != exclude_id:
+            errors.append(col + " already taken")
+            return errors
+        i = i + 1
+    return errors

@@ -1,16 +1,11 @@
-# nyx.ctx — request-scoped uygulama baglami (AppContext).
-#
-# def setup(application: Application) -> None:
-#     def index(ctx: Context) -> HttpResponse:
-#         ac: AppContext = nyx.ctx.wrap(application, ctx)
-#         rows = nyx.model.all(ac.db(), "posts")
-#         title = ac.param("q", "")
+# nyx.ctx - request-scoped uygulama baglami (AppContext).
 
 from nox.http import HttpRequest
 from nox.router import Context
 from nox.sqlite import Connection
 from nyx.app import Application
 from nyx.config import Config
+import nyx.app
 import nyx.params
 import nyx.runtime
 
@@ -20,7 +15,13 @@ class AppContext:
         self.router_ctx = router_ctx
 
     def db(self: AppContext) -> Connection:
-        return self.application.db
+        return nyx.app.db(self.application)
+
+    def jobs_db(self: AppContext) -> Connection:
+        return nyx.app.jobs_db(self.application)
+
+    def dialect(self: AppContext) -> str:
+        return self.application.dialect
 
     def config(self: AppContext) -> Config:
         return self.application.config

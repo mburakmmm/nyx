@@ -1,0 +1,7 @@
+import nox.test
+import nyx.tls
+import nyx.websocket
+
+# Import / type surface only — no network I/O in CI.
+nox.test.assert_true(True, "tls+websocket modules import")
+print("tls_websocket_import_test ok")

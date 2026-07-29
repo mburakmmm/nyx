@@ -5,7 +5,8 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.7.0 · **Lisans:** MIT · **Zorunlu alias:** `nyx` · **Nox ≥ 1.11**
+**Sürüm:** 0.9.0 · **Lisans:** MIT · **Nox ≥ 1.18.1**  
+İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
 
@@ -13,7 +14,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
 
 1. **`nox.json`** `requires` altına ekleyin  
 2. **`noxc fetch`** / **`noxc update`**  
-3. **`import nyx...`** (alias **mutlaka** `nyx`)
+3. **`import nyx...`** (önerilen alias: `nyx`)
 
 ```json
 {
@@ -23,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.7.0"
+      "ref": "v0.9.0"
     }
   ]
 }
@@ -155,6 +156,21 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.9.0 — Nox 1.18.1: runtime globals + render_each_map
+
+- **Nox ≥ 1.18.1** (CI `noxc` v1.18.1)
+- `nyx.runtime` worker-local **modül-global** (P1c); `NYX_RT_*` kaldırıldı
+- `view.render_each_map` (C2)
+- 0.8 birikimi: prepare/bind docs, `nyx.tls` / `nyx.websocket`, alias
+
+### 0.8.0 — Nox 1.14–1.17 entegrasyonu
+
+- **Nox ≥ 1.14** (CI `noxc` v1.17.0)
+- Ham PG/MySQL **prepare/bind** (1.13+); ORM hâlâ SQLite
+- `nyx.tls` / `nyx.websocket` istemci; sunucu WS yok → cable SSE/long-poll
+- Alias zorunluluğu kalktı (1.12.1); iç import `nyx.*`
+- `nyx.runtime` bilinçli `NYX_RT_*` (P1c); `render_each_map` yok (C2)
+
 ### 0.7.0 — Nox 1.11 stdlib entegrasyonu
 
 - **Nox ≥ 1.11** zorunlu
@@ -201,16 +217,16 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.11** gerekir
+- **Nox ≥ 1.18.1** gerekir
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
-- App ORM / migrate / jobs: **SQLite**; ham PG/MySQL: `open_postgres` / `open_mysql` (bind yok)
-- İstek durumu `nyx.runtime` / `NYX_RT_*`
-- TLS reverse proxy’de; cable = SSE/long-poll
-- Alias zorunlu `nyx`
+- App ORM / migrate / jobs: **SQLite**; ham PG/MySQL: prepare/bind var
+- İstek durumu `nyx.runtime` modül-global (worker/thread başına)
+- Gelen TLS: reverse proxy; giden: `nyx.tls` / `nyx.websocket`; cable = SSE/long-poll
+- Önerilen alias `nyx` (1.12.1+ zorunlu değil)
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
 **Uygun:** reverse-proxy, tek instance, SQLite app DB, düşük–orta trafik.  
-**Henüz değil:** multi-driver ActiveRecord, process’ler arası paylaşılan istek state, WebSocket chat.
+**Henüz değil:** multi-driver ActiveRecord, sunucu WebSocket chat.
 
 ---
 

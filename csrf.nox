@@ -1,4 +1,4 @@
-# nyx.csrf — HMAC tabanlı CSRF jetonu + protect middleware.
+# nyx.csrf - HMAC tabanlı CSRF jetonu + protect middleware.
 #
 # import nyx.csrf
 # t: str = nyx.csrf.token(secret)
@@ -25,11 +25,11 @@ def _sign(secret: str, payload: str) -> str:
     return nyx.base64.encode_hex_url(nox.crypto.hmac_sha256(secret, payload))
 
 # Jetonu GEÇERLİ oturuma bağlar (session-bound CSRF token, bkz. OWASP CSRF
-# Prevention Cheat Sheet "synchronizer token" deseni) — bu sayede saldirganin
+# Prevention Cheat Sheet "synchronizer token" deseni) - bu sayede saldirganin
 # KENDI oturumunda ürettigi (ama gecerli imzali) bir jeton, KURBANIN
 # oturumuna karsi ASLA gecerli olmaz (jeton yalnizca UretildIGI oturumla
 # eslesir). Oturum yoksa/bossa ("{}") istek-basina benzersiz `request_id`
-# ile "anon:" onekli bir baglanti kullanilir — YINE DE ayni istek icinde
+# ile "anon:" onekli bir baglanti kullanilir - YINE DE ayni istek icinde
 # uretilen jeton yine ayni istekte dogrulanabilir (login-oncesi formlar).
 def _session_binding() -> str:
     sess: str = nyx.runtime.session_json()
@@ -112,7 +112,7 @@ def _starts_with_any(path: str, prefixes: list[str]) -> bool:
         i = i + 1
     return False
 
-# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu —
+# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu -
 # `exempt_prefixes`teki oneklerle BASLAYAN yollar (ör. JSON/API istemcileri
 # genellikle CSRF cerezine DAYANMADIGINDAN, kendi Bearer/API-key kimlik
 # dogrulamalarini kullanir) atlanir.

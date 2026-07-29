@@ -1,0 +1,4 @@
+# Expect: OK — package globals WITHOUT Router / nested closure
+import repro.state
+repro.state.set_x(7)
+print(str(repro.state.get_x()))

@@ -1,0 +1,3 @@
+# Expect: SIGSEGV
+import repro.c2_viewish
+print("should not print")

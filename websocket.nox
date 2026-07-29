@@ -1,0 +1,17 @@
+# nyx.websocket — Nox WebSocket istemci sarmalayicisi (Nox >= 1.14).
+#
+# Yalnizca istemci (`ws://` / `wss://`). Sunucu-tarafi Upgrade / WS
+# serve henuz Nox stdlib'de yok — tarayiciya giden gercek-zamanli kanal
+# icin `nyx.cable` (SSE / long-poll) kullanin.
+#
+# import nyx.websocket
+# ws = nyx.websocket.connect("wss://example.com/socket")
+# ws.send_text("{\"type\":\"ping\"}")
+# msg = ws.recv()
+# ws.close()
+
+import nox.websocket
+from nox.websocket import WebSocketClient, WebSocketError
+
+def connect(url: str) -> WebSocketClient:
+    return nox.websocket.connect(url)

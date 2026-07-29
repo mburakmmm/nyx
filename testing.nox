@@ -1,4 +1,4 @@
-# nyx.testing — istek/yanit (request/response) test yardimcilari.
+# nyx.testing - istek/yanit (request/response) test yardimcilari.
 #
 # import nyx.testing
 #
@@ -61,7 +61,7 @@ def delete(handler: (HttpRequest) -> HttpResponse, path: str) -> HttpResponse:
     empty: dict[str, str] = {}
     return request(handler, "DELETE", path, "", empty)
 
-# with_bearer / with_cookie / with_csrf_token zincirlenebilir — headers.keys()
+# with_bearer / with_cookie / with_csrf_token zincirlenebilir - headers.keys()
 # ile onceki basliklarin tamamini korur (Nox >= 1.10).
 def with_bearer(headers: dict[str, str], token: str) -> dict[str, str]:
     out: dict[str, str] = _copy_headers(headers)

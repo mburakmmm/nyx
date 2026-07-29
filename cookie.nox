@@ -1,4 +1,4 @@
-# nyx.cookie — Cookie / Set-Cookie yardımcısı (saf Nox).
+# nyx.cookie - Cookie / Set-Cookie yardımcısı (saf Nox).
 #
 # import nyx.cookie
 
@@ -78,7 +78,7 @@ def serialize(name: str, value: str, path: str, max_age: int, http_only: bool, s
         if same_site != "Strict" and same_site != "Lax" and same_site != "None":
             raise CookieError("gecersiz SameSite: " + same_site)
         # Tarayicilarin GUNCEL cerez spesifikasyonu (RFC 6265bis): `SameSite=None`
-        # yalnizca `Secure` cerezlerde KABUL EDILIR — aksi halde Chrome/Firefox
+        # yalnizca `Secure` cerezlerde KABUL EDILIR - aksi halde Chrome/Firefox
         # gibi taraycilar cerezi SESSIZCE reddeder (ureten kodun DUZGUN
         # calistigini SANIP GERCEKTE kirik bir cross-site akisiyla kalmasi
         # yerine burada ACIKCA CookieError firlatilir).

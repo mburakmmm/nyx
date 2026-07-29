@@ -1,8 +1,8 @@
-# nyx.jwt — HS256 JWT (RFC 7519 alt kümesi).
+# nyx.jwt - HS256 JWT (RFC 7519 alt kümesi).
 #
 # import nyx.jwt
 #
-# İmza: nox.crypto.hmac_sha256 (hex) → nyx.base64.encode_hex_url.
+# İmza: nox.crypto.hmac_sha256 (hex) -> nyx.base64.encode_hex_url.
 # Alias ZORUNLU: nyx
 
 import nox.crypto

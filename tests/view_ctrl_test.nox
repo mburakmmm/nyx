@@ -109,6 +109,15 @@ ctxs.append(c2)
 each2: str = nyx.view.render_each(item_path, ctxs)
 nox.test.assert_true(nox.strings.contains(each2, "<li>Alpha</li>"), "render_each alpha")
 nox.test.assert_true(nox.strings.contains(each2, "<li>Beta</li>"), "render_each beta")
+
+def post_ctx(r: Record) -> dict[str, str]:
+    out: dict[str, str] = {}
+    out["title"] = r.get_or("title", "")
+    return out
+
+each_map: str = nyx.view.render_each_map(item_path, posts, post_ctx)
+nox.test.assert_true(nox.strings.contains(each_map, "<li>One</li>"), "render_each_map one")
+nox.test.assert_true(nox.strings.contains(each_map, "<li>Two</li>"), "render_each_map two")
 vdb.close()
 
 # --- layout second-pass: body icindeki {{...}} yeniden parse edilmemeli ---

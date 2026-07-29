@@ -1,0 +1,34 @@
+# nyx.html - SafeHtml + escape helpers (XSS-safe by default).
+#
+# import nyx.html
+# safe: SafeHtml = nyx.html.safe("<b>ok</b>")
+# esc: str = nyx.html.escape(user_input)
+# nyx.html.put(context, "form", nyx.form.text_safe("t", v))
+#
+# Template context hâlâ dict[str,str]. Trusted helper çıktısı için `put`;
+# kullanıcı metni için düz string + `render` (escape). `render_unescaped`
+# yalnızca SafeHtml.put ile doldurulmuş bağlamlar veya bilinçli raw için.
+
+import nox.template
+
+class SafeHtml:
+    def __init__(self: SafeHtml, value: str) -> None:
+        self.value = value
+
+# Bilinçli raw HTML - yalnızca güvenilir framework/helper çıktısı için.
+def safe(html: str) -> SafeHtml:
+    return SafeHtml(html)
+
+def escape(text: str) -> str:
+    return nox.template.escape_html(text)
+
+def unwrap(fragment: SafeHtml) -> str:
+    return fragment.value
+
+# Context'e trusted HTML koyar (render_unescaped ile kullanin).
+def put(context: dict[str, str], key: str, fragment: SafeHtml) -> None:
+    context[key] = fragment.value
+
+# Kullanici metnini escape ederek koyar (render veya render_unescaped guvenli).
+def put_text(context: dict[str, str], key: str, text: str) -> None:
+    context[key] = escape(text)

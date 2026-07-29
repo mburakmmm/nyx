@@ -1,0 +1,11 @@
+# Expect: codegen "desteklenmeyen yapi"
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context, Router
+import repro.state
+
+def home(ctx: Context) -> HttpResponse:
+    return HttpResponse(200, "ok", {})
+
+router: Router = Router()
+router.get("/", home)
+print(router.dispatch(HttpRequest("GET", "/", "", {})).body)

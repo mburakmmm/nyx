@@ -1,15 +1,15 @@
-# nyx.routes — resources tarzı rota DSL.
+# nyx.routes - resources tarzı rota DSL.
 #
 # import nyx.routes
 # nyx.routes.resources(router, "posts", posts_index, posts_show, posts_new, posts_create, posts_edit, posts_update, posts_destroy)
 #
 # Method override (Rails'in `_method` gizli form alanı deseni, bkz.
 # ActionDispatch::Http::URL): HTML `<form>` GERCEKTEN yalnizca GET/POST
-# gonderebilir (tarayicilarin KENDI kisitlamasi) — bu yuzden PUT/PATCH/
+# gonderebilir (tarayicilarin KENDI kisitlamasi) - bu yuzden PUT/PATCH/
 # DELETE gibi RESTful eylemler icin istemci bir `_method=PUT` gizli alani
 # TASIYAN bir POST istegi gonderir. `nox.router.Router.dispatch` isteklerini
 # GERCEK HTTP metoduna (`req.method`, DEGISTIRILEMEZ) gore eslestirdiginden
-# bu override ROUTER SEVIYESINDE degil, HANDLER SEVIYESINDE cozulur —
+# bu override ROUTER SEVIYESINDE degil, HANDLER SEVIYESINDE cozulur -
 # `effective_method(ctx)` `_method` form/query alanindan COZULMUS "etkin"
 # metodu doner, POST rotanizin ICINDE bunu okuyup KENDI dallanmanizi
 # (branching) yaparsiniz:
@@ -25,11 +25,11 @@
 # olarak alip ICERIDE `def wrapped(ctx): return handler(ctx, ...)` gibi
 # ic ice (nested) bir kapanis (closure) ureten genel bir
 # `post_with_override(router, pattern, handler)` sarmalayicisi KASITLI
-# OLARAK YOK — GERCEKTEN denenip DOGRULANDI: bir ic ice fonksiyon,
+# OLARAK YOK - GERCEKTEN denenip DOGRULANDI: bir ic ice fonksiyon,
 # CEVRELEYEN fonksiyonun FONKSIYON TIPINDEKI (ör. `(Context, str) ->
 # HttpResponse`) bir parametresini/yerel degiskenini YAKALADIGINDA
 # codegen "desteklenmeyen yapı" hatasiyla BASARISIZ olur (list[T]/dict/str
-# gibi VERI tipi degerleri YAKALAMAK sorunsuzdur — yalnizca FONKSIYON
+# gibi VERI tipi degerleri YAKALAMAK sorunsuzdur - yalnizca FONKSIYON
 # TIPI degerler bu kisita tabidir). Bagli (bound) metodlar da ilk-sinif
 # fonksiyon DEGERI olarak KULLANILAMAZ (yalnizca duz `def` isimleri).
 
@@ -84,7 +84,7 @@ def post(router: Router, pattern: str, handler: (Context) -> HttpResponse) -> No
     router.post(pattern, handler)
 
 # `ctx.request`teki `_method` form/query alanini (buyuk/kucuk harf
-# duyarsiz) okur — "PUT"/"PATCH"/"DELETE"den BIRIYSE onu, aksi halde
+# duyarsiz) okur - "PUT"/"PATCH"/"DELETE"den BIRIYSE onu, aksi halde
 # (alan yok/bos/taninmayan bir deger) GERCEK HTTP metodunu ("POST", zaten
 # bu fonksiyon yalnizca POST-olarak-kayitli rotalarda kullanilmasi
 # amaclandigindan) doner (bkz. modul basi belge notu).

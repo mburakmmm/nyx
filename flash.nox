@@ -1,4 +1,4 @@
-# nyx.flash — oturum JSON içinde tek kullanımlık mesajlar.
+# nyx.flash - oturum JSON içinde tek kullanımlık mesajlar.
 #
 # import nyx.flash
 # s2: str = nyx.flash.set(s, "notice", "Kaydedildi")

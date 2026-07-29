@@ -1,4 +1,4 @@
-# nyx.auth — Router `use_before` kimlik doğrulama ara katmanları.
+# nyx.auth - Router `use_before` kimlik doğrulama ara katmanları.
 #
 # import nyx.auth
 
@@ -16,7 +16,7 @@ from nyx.cookie import CookieError
 from nox.json import JsonError
 
 def _header_get(headers: dict[str, str], name: str) -> str | None:
-    # HTTP başlıkları büyük/küçük harf duyarsız — yaygın biçimleri dene.
+    # HTTP başlıkları büyük/küçük harf duyarsız - yaygın biçimleri dene.
     try:
         return headers[name]
     except KeyError:
@@ -51,7 +51,7 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
 # gibi, kullanici girdisi ICERMEZ), `nox.json.encode_string` KULLANMAK
 # gelecekte BASKA bir cagiran DEGISKEN/kullanici-kontrollu bir mesaj
 # GECIRIRSE (ör. hata ayrintisi) bozuk/enjekte edilebilir JSON URETILMESINI
-# BASTAN ONLER — elle `"\"" + msg + "\""` birlestirmesi TIRNAK/backslash
+# BASTAN ONLER - elle `"\"" + msg + "\""` birlestirmesi TIRNAK/backslash
 # icerebilecek bir `msg` icin GECERSIZ JSON uretirdi.
 def _unauthorized(msg: str) -> HttpResponse:
     return nyx.response.json(401, "{\"error\":" + nox.json.encode_string(msg) + "}")
@@ -138,14 +138,14 @@ def require_bearer_unless_paths(secret: str, exempt_paths: list[str]) -> (Contex
         return inner(ctx)
     return handler
 
-# Tek yol muafiyeti — exact path match (query string yok sayilir).
+# Tek yol muafiyeti - exact path match (query string yok sayilir).
 # Prefix match YOKTUR (`/login` `/login/extra`yi muaf tutmaz).
 def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpResponse | None:
     paths: list[str] = []
     paths.append(exempt_path)
     return require_bearer_unless_paths(secret, paths)
 
-# NOT: Oturum (cookie) verisinde `user_id` alani ZORUNLUDUR — imzasi
+# NOT: Oturum (cookie) verisinde `user_id` alani ZORUNLUDUR - imzasi
 # GECERLI ama `user_id`si eksik/bos bir oturum "kimlik dogrulanmis DEGIL"
 # olarak SAYILIR (401 doner). Bu, HMAC imzasi gecerli olsa bile icerigi
 # YANLIS/eksik olusturulmus (ör. login akisinda `user_id` unutulmus) bir

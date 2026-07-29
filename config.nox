@@ -1,4 +1,4 @@
-# nyx.config — ortam (development/test/production) + uygulama ayarları.
+# nyx.config - ortam (development/test/production) + uygulama ayarları.
 #
 # import nyx.config
 # cfg: Config = nyx.config.load()
@@ -33,7 +33,12 @@ class Config:
         mail_from: str,
         mail_api_url: str,
         mail_api_key: str,
+        mail_smtp_host: str,
+        mail_smtp_port: int,
+        mail_smtp_user: str,
+        mail_smtp_password: str,
         jobs_db_path: str,
+        cable_store_path: str,
         csp: str,
         auto_migrate: bool,
         csrf_api_exempt: bool
@@ -57,9 +62,15 @@ class Config:
         self.mail_from = mail_from
         self.mail_api_url = mail_api_url
         self.mail_api_key = mail_api_key
+        self.mail_smtp_host = mail_smtp_host
+        self.mail_smtp_port = mail_smtp_port
+        self.mail_smtp_user = mail_smtp_user
+        self.mail_smtp_password = mail_smtp_password
         self.jobs_db_path = jobs_db_path
+        # Bos ise in-memory cable hub; doluysa SQLite-backed cross-worker hub.
+        self.cable_store_path = cable_store_path
         # Bos ("") ise `nyx.security.headers_after` PRODUCTION'da KENDI
-        # sabit CSP'sini kullanir, aksi ortamlarda HICBIR CSP eklemez —
+        # sabit CSP'sini kullanir, aksi ortamlarda HICBIR CSP eklemez -
         # niyet ACIKCA burada belirtilmis bir deger DAIMA (ortamdan
         # BAGIMSIZ) uygulanir.
         self.csp = csp
@@ -67,7 +78,7 @@ class Config:
         # ile ayri yonetmek icin False yapin (onerilen production).
         self.auto_migrate = auto_migrate
         # True ise CSRF middleware `/api/` onekini muaf tutar (Bearer API
-        # icin opt-in). Varsayilan False — cookie-session + /api/ guvenli.
+        # icin opt-in). Varsayilan False - cookie-session + /api/ guvenli.
         self.csrf_api_exempt = csrf_api_exempt
 
     def is_development(self: Config) -> bool:
@@ -113,10 +124,12 @@ def defaults(env: str) -> Config:
     log_req: bool = True
     db: str = "db/app.sqlite"
     auto_mig: bool = True
+    jobs_path: str = "db/jobs.sqlite"
     if env == "test":
         secret = "nyx-test-secret-change-me-32bytes!"
         db = ":memory:"
         log_req = False
+        jobs_path = ":memory:"
     if env == "production":
         secret = ""
         secure = True
@@ -143,7 +156,12 @@ def defaults(env: str) -> Config:
         "noreply@example.com",
         "",
         "",
-        "db/jobs.sqlite",
+        "",
+        465,
+        "",
+        "",
+        jobs_path,
+        "",
         "",
         auto_mig,
         False
@@ -178,7 +196,12 @@ def from_env() -> Config:
     cfg.mail_from = _env_or("NYX_MAIL_FROM", cfg.mail_from)
     cfg.mail_api_url = _env_or("NYX_MAIL_API_URL", cfg.mail_api_url)
     cfg.mail_api_key = _env_or("NYX_MAIL_API_KEY", cfg.mail_api_key)
+    cfg.mail_smtp_host = _env_or("NYX_MAIL_SMTP_HOST", cfg.mail_smtp_host)
+    cfg.mail_smtp_port = _env_int("NYX_MAIL_SMTP_PORT", cfg.mail_smtp_port)
+    cfg.mail_smtp_user = _env_or("NYX_MAIL_SMTP_USER", cfg.mail_smtp_user)
+    cfg.mail_smtp_password = _env_or("NYX_MAIL_SMTP_PASSWORD", cfg.mail_smtp_password)
     cfg.jobs_db_path = _env_or("NYX_JOBS_DB_PATH", cfg.jobs_db_path)
+    cfg.cable_store_path = _env_or("NYX_CABLE_STORE_PATH", cfg.cable_store_path)
     cfg.csp = _env_or("NYX_CSP", cfg.csp)
     cfg.auto_migrate = _env_bool("NYX_AUTO_MIGRATE", cfg.auto_migrate)
     cfg.csrf_api_exempt = _env_bool("NYX_CSRF_API_EXEMPT", cfg.csrf_api_exempt)

@@ -1,0 +1,3 @@
+# Expect: OK
+import repro.c2_local
+print("c2_local ok")

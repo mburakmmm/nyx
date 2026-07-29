@@ -32,6 +32,7 @@ def setup(application: Application) -> None:
         )
 
     router.get("/", home)
+    # <<NYX_GENERATED_ROUTES>>
 
 cfg: Config = nyx.config.load()
 if not cfg.is_production() and len(cfg.secret_key) < 16:
@@ -43,5 +44,8 @@ application: Application = nyx.app.boot(cfg, setup)
 def handle(req: HttpRequest) -> HttpResponse:
     return nyx.app.dispatch(application, req)
 
-print("{{APP_NAME}} listening on :8080")
-nox.http.serve(8080, handle)
+print("{{APP_NAME}} listening on :" + str(cfg.port))
+try:
+    nox.http.serve(cfg.port, handle)
+finally:
+    nyx.app.shutdown(application)

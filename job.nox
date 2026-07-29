@@ -1,4 +1,4 @@
-# nyx.job — ActiveJob-benzeri SQLite tabanli is (job) kuyrugu.
+# nyx.job - ActiveJob-benzeri SQLite tabanli is (job) kuyrugu.
 #
 # import nyx.job
 #
@@ -10,7 +10,7 @@
 # registry.register("SendWelcomeEmail", send_welcome_handler)
 # processed: int = nyx.job.work(db, registry, 10)
 #
-# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur — bilinen
+# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur - bilinen
 # framework hatalari ayri ayri, kalanlar Nox >= 1.9 `except:` ile yakalanir
 # ve job `fail()` ile isaretlenir. `finally` stuck-running korumasini saglar.
 
@@ -65,7 +65,7 @@ def ensure_schema(db: Connection) -> None:
 def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) -> int:
     if len(job_name) == 0:
         raise JobError("job_name bos olamaz")
-    # payload_json'un GECERLI bir JSON olup olmadigini dogrula — hatali
+    # payload_json'un GECERLI bir JSON olup olmadigini dogrula - hatali
     # veriler kuyruga sessizce girmesin (gecersizse JsonError firlar).
     nox.json.decode(payload_json)
     now: int = nox.time.now_ms()
@@ -143,7 +143,7 @@ def complete(db: Connection, id: int) -> None:
     stmt.bind_int(2, id)
     stmt.execute()
 
-# Basarisiz isi isaretler — `max_attempts()`in altindaysa ussel geri
+# Basarisiz isi isaretler - `max_attempts()`in altindaysa ussel geri
 # cekilme (backoff) ile yeniden kuyruklar, aksi halde kalici olarak
 # "failed" yapar.
 def fail(db: Connection, id: int, error: str) -> None:
@@ -176,6 +176,33 @@ def fail(db: Connection, id: int, error: str) -> None:
         stmt2.bind_int(3, now)
         stmt2.bind_int(4, id)
         stmt2.execute()
+
+# Kalıcı failed (dead) işler - max_attempts aşımı. Dead-set listesi.
+def list_dead(db: Connection, limit: int) -> list[str]:
+    if limit <= 0:
+        raise JobError("limit must be positive")
+    stmt: Statement = db.prepare(
+        "SELECT id, job_name, payload, attempts, run_at_ms FROM jobs " +
+        "WHERE status = ? ORDER BY updated_at_ms DESC LIMIT ?"
+    )
+    stmt.bind_str(0, status_failed())
+    stmt.bind_int(1, limit)
+    rows: list[Row] = stmt.query()
+    out: list[str] = []
+    i: int = 0
+    while i < len(rows):
+        r: Row = rows[i]
+        out.append(_job_json(r.get_int(0), r.get_str(1), r.get_str(2), status_failed(), r.get_int(3), r.get_int(4)))
+        i = i + 1
+    return out
+
+def count_dead(db: Connection) -> int:
+    stmt: Statement = db.prepare("SELECT COUNT(*) FROM jobs WHERE status = ?")
+    stmt.bind_str(0, status_failed())
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return 0
+    return rows[0].get_int(0)
 
 class JobHandlerEntry:
     def __init__(self: JobHandlerEntry, name: str, handler: (str) -> None) -> None:

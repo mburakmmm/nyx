@@ -1,0 +1,55 @@
+# nyx CLI entry (noxc install). Generators için `bin/nyx` bash yardımcısını
+# çağırır; version/help burada çözülür.
+#
+# noxc install github.com/mburakmmm/nyx --ref v0.9.0
+
+import nox.os
+import nox.fs
+import nox.process
+from nox.process import Command, Output, ProcessError
+
+def _print_help() -> None:
+    print("nyx - Nox web framework CLI")
+    print("Usage:")
+    print("  nyx version")
+    print("  nyx help")
+    print("  nyx new|generate|db|jobs|console|server  (delegates to bin/nyx)")
+
+def _version() -> str:
+    if nox.fs.exists("VERSION"):
+        return nox.fs.read_to_string("VERSION")
+    return "0.9.0"
+
+def main() -> None:
+    n: int = nox.os.arg_count()
+    if n <= 1:
+        _print_help()
+        return
+    cmd: str = nox.os.arg(1)
+    if cmd == "version" or cmd == "-V" or cmd == "--version":
+        print(_version())
+        return
+    if cmd == "help" or cmd == "-h" or cmd == "--help":
+        _print_help()
+        return
+    helper: str = "bin/nyx"
+    if not nox.fs.exists(helper):
+        print("nyx: bin/nyx not found; run from an app directory (nyx new) or the nyx repo")
+        nox.os.exit(1)
+    c: Command = Command(helper)
+    i: int = 1
+    while i < n:
+        c.arg(nox.os.arg(i))
+        i = i + 1
+    try:
+        out: Output = c.run()
+        if len(out.stdout) > 0:
+            print(out.stdout)
+        if len(out.stderr) > 0:
+            print(out.stderr)
+        nox.os.exit(out.status)
+    except ProcessError as e:
+        print("nyx: failed to run bin/nyx: " + e.message)
+        nox.os.exit(1)
+
+main()

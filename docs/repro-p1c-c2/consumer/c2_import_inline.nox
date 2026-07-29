@@ -1,0 +1,3 @@
+# Expect: SIGSEGV (exit 139) — only importing the failing module.
+import repro.c2_inline
+print("should not print")

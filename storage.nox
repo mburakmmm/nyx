@@ -1,4 +1,4 @@
-# nyx.storage — ActiveStorage-benzeri yerel disk depolama.
+# nyx.storage - ActiveStorage-benzeri yerel disk depolama.
 #
 # import nyx.storage
 #
@@ -49,7 +49,7 @@ def _drop_last_n(s: str, n: int) -> str:
 
 # `key` (cagiran tarafindan verilen, GUVENILMEYEN olabilecek opak depolama
 # anahtari) icinde yol gezinme (`..`), mutlak yol veya backslash icerip
-# icermedigini denetler — hicbiri `store()`un URETTIGI (uuid4 + "/" +
+# icermedigini denetler - hicbiri `store()`un URETTIGI (uuid4 + "/" +
 # basename) anahtarlarda BULUNMAZ, bu yuzden burada YAKALANMASI HER ZAMAN
 # kotu niyetli/bozuk bir `key` anlamina gelir.
 def _validate_key(key: str) -> None:
@@ -63,7 +63,7 @@ def _validate_key(key: str) -> None:
         raise StorageError("gecersiz depolama anahtari (mutlak yol olamaz): " + key)
 
 # `full` (root+key birlestirilmis yol) HALA `root` altinda mi diye ikinci
-# bir savunma hatti (defense-in-depth) olarak dogrular — `_validate_key`
+# bir savunma hatti (defense-in-depth) olarak dogrular - `_validate_key`
 # `..`/mutlak yolu ZATEN reddettiginden bu normalde tetiklenmez, ama
 # `nox.path.join` GELECEKTE farkli davranirsa (ör. sembolik link cozme)
 # BILE `root` disina cikisi yakalar.
@@ -121,7 +121,7 @@ def metadata_json(root: str, key: str) -> str:
     return nox.fs.read_to_string(meta_path)
 
 # Diskteki mevcut icerigin sha256'sini yeniden hesaplayip `store` sirasinda
-# kaydedilen checksum ile karsilastirir — bozulma (corruption) tespiti icin.
+# kaydedilen checksum ile karsilastirir - bozulma (corruption) tespiti icin.
 def verify_checksum(root: str, key: str) -> bool:
     content: str = read(root, key)
     actual: str = nox.crypto.sha256(content)

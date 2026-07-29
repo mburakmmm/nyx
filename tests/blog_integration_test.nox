@@ -69,7 +69,7 @@ cfg.auto_migrate = False
 cfg.log_requests = False
 
 application: Application = nyx.app.boot(cfg, setup)
-application.db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
+nyx.app.db(application).execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
 
 get_req: HttpRequest = HttpRequest("GET", "/", "", {})
 get_resp: HttpResponse = nyx.app.dispatch(application, get_req)
@@ -133,5 +133,5 @@ api_req: HttpRequest = HttpRequest("POST", "/api/ping", "{}", api_headers)
 api_resp: HttpResponse = nyx.app.dispatch(application, api_req)
 nox.test.assert_eq_int(api_resp.status, 403, "/api/ kayitli rota da CSRF ister (default)")
 
-application.db.close()
+nyx.app.shutdown(application)
 print("blog_integration_test ok")

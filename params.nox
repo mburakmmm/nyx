@@ -1,4 +1,4 @@
-# nyx.params — query string + application/x-www-form-urlencoded.
+# nyx.params - query string + application/x-www-form-urlencoded.
 #
 # import nyx.params
 # q: dict[str, str] = nyx.params.query(req.target)
@@ -64,7 +64,7 @@ def flat_to_dict(flat: list[str]) -> dict[str, str]:
 def parse_qs(raw: str) -> dict[str, str]:
     return _form_query_decode(raw)
 
-# Request target'lari semasiz (`/path?q=1`) — nox.url.parse kullanilmaz.
+# Request target'lari semasiz (`/path?q=1`) - nox.url.parse kullanilmaz.
 def query_string(target: str) -> str:
     q: int = nox.strings.index_of(target, "?")
     if q < 0:

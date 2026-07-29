@@ -1,4 +1,4 @@
-# nyx.i18n — config/locales/{locale}.json (duz anahtar -> metin) tabanli
+# nyx.i18n - config/locales/{locale}.json (duz anahtar -> metin) tabanli
 # basit uluslararasilastirma.
 #
 # import nyx.i18n
@@ -12,7 +12,7 @@
 # msg2: str = nyx.i18n.t_with("welcome", ctx)
 #
 # NOT: Nox'ta modul-duzeyi degiskenler fonksiyon govdelerinden GORULEMEZ
-# (bkz. nyx.runtime'in belge notu) — bu yuzden yuklenen her locale'in HAM
+# (bkz. nyx.runtime'in belge notu) - bu yuzden yuklenen her locale'in HAM
 # JSON metni proses ortam degiskenlerinde (`nox.os.set_var`) saklanir;
 # `t()` her cagrida ilgili degeri yeniden coder (kucuk locale dosyalari
 # icin performans sorunu degildir).
@@ -105,7 +105,7 @@ def t(key: str) -> str:
     return "translation missing: " + current_locale() + "." + key
 
 # `{{ degisken }}` yer-tutuculariyla bir ceviriyi `context` ile
-# doldurur (nox.template.render — HTML-kacisli).
+# doldurur (nox.template.render - HTML-kacisli).
 def t_with(key: str, context: dict[str, str]) -> str:
     return nox.template.render(t(key), context)
 

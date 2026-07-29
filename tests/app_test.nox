@@ -33,7 +33,15 @@ req: HttpRequest = HttpRequest("GET", "/", "", {})
 resp: HttpResponse = nyx.app.dispatch(application, req)
 nox.test.assert_eq_int(resp.status, 200, "status")
 nox.test.assert_eq_str(resp.body, "ok", "body")
-application.db.close()
+
+# health + ready
+h: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/health", "", {}))
+nox.test.assert_eq_int(h.status, 200, "health")
+r: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/ready", "", {}))
+nox.test.assert_eq_int(r.status, 200, "ready")
+nox.test.assert_eq_str(application.dialect, "sqlite", "dialect")
+
+nyx.app.shutdown(application)
 
 # auto_migrate=False skips migrate even when migrate dir is missing
 cfg2: Config = nyx.config.defaults("test")
@@ -44,7 +52,7 @@ cfg2.auto_migrate = False
 cfg2.csrf_enabled = False
 cfg2.log_requests = False
 app2: Application = nyx.app.boot(cfg2, setup)
-app2.db.close()
+nyx.app.shutdown(app2)
 nox.test.assert_true(True, "auto_migrate false boots without migrate dir")
 
 # production placeholder secret rejected
