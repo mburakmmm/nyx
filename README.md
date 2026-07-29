@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.9.0 · **License:** MIT · **Requires Nox ≥ 1.18.1**  
+**Version:** 0.9.1 · **License:** MIT · **Requires Nox ≥ 1.18.1**  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.9.0"
+      "ref": "v0.9.1"
     }
   ]
 }
@@ -155,6 +155,9 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.9.1 — Fix CLI bin entry (`main` reserved)
+- Rename `cli.nox` entry from reserved `main` to `cli_main` so `noxc install nyx` works.
 
 ### 0.9.0 — Rails-core production path (Nox ≥ 1.18.1)
 

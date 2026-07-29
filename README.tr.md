@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.9.0 · **Lisans:** MIT · **Nox ≥ 1.18.1**  
+**Sürüm:** 0.9.1 · **Lisans:** MIT · **Nox ≥ 1.18.1**  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.9.0"
+      "ref": "v0.9.1"
     }
   ]
 }
@@ -155,6 +155,9 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.9.1 — CLI bin girişi düzeltmesi (`main` ayrılmış)
+- `cli.nox` giriş fonksiyonu ayrılmış `main` adından `cli_main` olarak değiştirildi; `noxc install nyx` çalışır.
 
 ### 0.9.0 — Nox 1.18.1: runtime globals + render_each_map
 

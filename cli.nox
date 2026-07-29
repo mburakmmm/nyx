@@ -1,7 +1,8 @@
 # nyx CLI entry (noxc install). Generators için `bin/nyx` bash yardımcısını
 # çağırır; version/help burada çözülür.
 #
-# noxc install github.com/mburakmmm/nyx --ref v0.9.0
+# noxc install github.com/mburakmmm/nyx --ref v0.9.1
+# Nox'ta `main` ayrılmış bir isimdir; giriş noktası üst düzey deyimlerdir.
 
 import nox.os
 import nox.fs
@@ -18,9 +19,9 @@ def _print_help() -> None:
 def _version() -> str:
     if nox.fs.exists("VERSION"):
         return nox.fs.read_to_string("VERSION")
-    return "0.9.0"
+    return "0.9.1"
 
-def main() -> None:
+def cli_main() -> None:
     n: int = nox.os.arg_count()
     if n <= 1:
         _print_help()
@@ -52,4 +53,4 @@ def main() -> None:
         print("nyx: failed to run bin/nyx: " + e.message)
         nox.os.exit(1)
 
-main()
+cli_main()

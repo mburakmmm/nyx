@@ -91,7 +91,7 @@ Forward `X-Forwarded-Proto` / `X-Request-Id` if you terminate TLS at the edge; s
 From a published tag:
 
 ```sh
-noxc install github.com/mburakmmm/nyx@v0.9.0
+noxc install github.com/mburakmmm/nyx@v0.9.1
 nyx version
 nyx new myapp
 ```

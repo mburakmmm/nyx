@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: boşluklar, bottlenecks, ilerleme planı
 
-**Durum:** Nyx **0.9.0** · Nox **≥ 1.18.1**  
+**Durum:** Nyx **0.9.1** · Nox **≥ 1.18.1**  
 **Hedef:** Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı)
 
 Bu belge ChatGPT strateji notu + güncel kod taramasının birleşimidir.
