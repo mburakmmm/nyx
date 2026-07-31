@@ -41,7 +41,9 @@ class Config:
         cable_store_path: str,
         csp: str,
         auto_migrate: bool,
-        csrf_api_exempt: bool
+        csrf_api_exempt: bool,
+        tls_cert_path: str,
+        tls_key_path: str
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -80,6 +82,9 @@ class Config:
         # True ise CSRF middleware `/api/` onekini muaf tutar (Bearer API
         # icin opt-in). Varsayilan False - cookie-session + /api/ guvenli.
         self.csrf_api_exempt = csrf_api_exempt
+        # Nox >= 1.22 `nox.http.serve_tls` / `serve_ws_tls` icin PEM yollari.
+        self.tls_cert_path = tls_cert_path
+        self.tls_key_path = tls_key_path
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -164,7 +169,9 @@ def defaults(env: str) -> Config:
         "",
         "",
         auto_mig,
-        False
+        False,
+        "",
+        ""
     )
 
 def from_env() -> Config:
@@ -205,6 +212,8 @@ def from_env() -> Config:
     cfg.csp = _env_or("NYX_CSP", cfg.csp)
     cfg.auto_migrate = _env_bool("NYX_AUTO_MIGRATE", cfg.auto_migrate)
     cfg.csrf_api_exempt = _env_bool("NYX_CSRF_API_EXEMPT", cfg.csrf_api_exempt)
+    cfg.tls_cert_path = _env_or("NYX_TLS_CERT", cfg.tls_cert_path)
+    cfg.tls_key_path = _env_or("NYX_TLS_KEY", cfg.tls_key_path)
     return cfg
 
 def load() -> Config:

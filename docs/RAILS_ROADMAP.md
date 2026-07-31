@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: boşluklar, bottlenecks, ilerleme planı
 
-**Durum:** Nyx **0.9.1** · Nox **≥ 1.18.1**  
+**Durum:** Nyx **0.10.0** · Nox **≥ 1.22.0** (önerilen **1.22.9**)  
 **Hedef:** Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı)
 
 Bu belge ChatGPT strateji notu + güncel kod taramasının birleşimidir.
@@ -11,16 +11,16 @@ Bu belge ChatGPT strateji notu + güncel kod taramasının birleşimidir.
 
 | Katman | Rails hissi | Durum |
 |---|---|---|
-| App lifecycle + middleware | Yüksek | Boot/dispatch + shutdown + health/ready |
+| App lifecycle + middleware | Yüksek | Boot/dispatch + shutdown hooks + health/ready |
 | Security (CSRF/session/headers/password) | Yüksek | Çekirdek production-ready’ye yakın |
 | Auth ürünü (Devise benzeri) | Düşük | Yalnızca middleware primitives |
-| ORM / ActiveRecord | Orta | SQLite ORM + PG path (`pg_model`/migrate_postgres); typed generator |
+| ORM / ActiveRecord | Orta | SQLite ORM + PG path (`pg` + `pg_model`/migrate_postgres); typed generator |
 | Views / templates | Orta | layout/partial/escape + SafeHtml + render_each_map |
-| Jobs / mail / storage / cache | MVP | Çalışır; Redis/SMTP/S3 yok |
-| Realtime | Düşük | SSE/long-poll; sunucu WS yok |
+| Jobs / mail / storage / cache | MVP | Çalışır; Redis/S3 yok; SMTP SMTPS |
+| Realtime | Orta | SSE/long-poll + sunucu WS (`serve_ws*`) Channel helpers |
 | CLI / generators | Yüksek | bin + scaffold auto-wire + typed model generator |
 | Testing | Orta | HTTP helpers; fixture/system yok |
-| Production scaling | Düşük | Tek instance / cookie session / process-local |
+| Production scaling | Orta | TLS native; cookie session; process-local hub (store ile çapraz) |
 
 **Nyx’in asıl gücü:** Nox’u dikey zorlamak (P1c/C2/alias/prepare zaten kanıt).  
 **Nyx’in asıl açığı:** Rails DX + multi-DB production path.

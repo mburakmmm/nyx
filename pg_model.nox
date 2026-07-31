@@ -1,10 +1,13 @@
 # nyx.pg_model - PostgreSQL ORM helpers (prepare/bind + RETURNING).
 #
-# Application.dialect == "postgres" iken:
-#   id = nyx.pg_model.create_attrs(application.pg, "posts", attrs)
-#   row = nyx.pg_model.find(application.pg, "posts", id)
+# Dialect-aware boot (Nox >= 1.21.3 + nyx 0.10):
+#   application = nyx.app.boot(cfg, setup)  # DATABASE_URL=postgres://...
+#   id = nyx.pg_model.create_attrs(nyx.app.pg(application), "posts", attrs)
+#   row = nyx.pg_model.find(nyx.app.pg(application), "posts", id)
 #
-# SQLite ORM icin nyx.model kullanin. Tipler ayri (PgConnection vs Connection).
+# SQLite ORM icin nyx.model + application.db kullanin.
+# Tipler ayri kalir (PgConnection vs sqlite.Connection) — ortak query
+# protokolu Nox'ta henuz yok (Row kovaryansi).
 
 import nox.strings
 from nox.postgres import Connection, Statement, Row, PostgresError

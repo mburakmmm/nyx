@@ -1,0 +1,91 @@
+# 0.10 feature smoke: on_shutdown, post_with_override, server helpers, ws types
+import nox.test
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context, Router
+from nox.sqlite import Connection
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.routes
+import nyx.server
+import nyx.websocket
+import nyx.cable
+from nyx.app import Application
+from nyx.config import Config
+
+hook_ran: list[int] = []
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+
+    def upd(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "updated")
+
+    def destroy(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "destroyed")
+
+    application.router.get("/", home)
+    nyx.routes.post_with_override(application.router, "/items/:id", upd, destroy)
+
+    def cleanup() -> None:
+        hook_ran.append(1)
+
+    nyx.app.on_shutdown(application, cleanup)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.log_requests = False
+cfg.auto_migrate = False
+app: Application = nyx.app.boot(cfg, setup)
+nox.test.assert_eq_str(app.dialect, "sqlite", "dialect sqlite")
+nox.test.assert_true(not nyx.app.has_pg(app), "no pg")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "plain", "serve plain")
+cfg.tls_cert_path = "/tmp/nyx-missing-cert.pem"
+cfg.tls_key_path = "/tmp/nyx-missing-key.pem"
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "serve ws_tls")
+
+headers: dict[str, str] = {}
+headers["Content-Type"] = "application/x-www-form-urlencoded"
+req: HttpRequest = HttpRequest("POST", "/items/1", "_method=DELETE", headers)
+resp: HttpResponse = nyx.app.dispatch(app, req)
+nox.test.assert_eq_int(resp.status, 200, "override status")
+nox.test.assert_eq_str(resp.body, "destroyed", "override destroy")
+
+req2: HttpRequest = HttpRequest("POST", "/items/2", "_method=PUT", headers)
+resp2: HttpResponse = nyx.app.dispatch(app, req2)
+nox.test.assert_eq_str(resp2.body, "updated", "override update")
+
+# development error detail
+cfg.env = "development"
+boom_headers: dict[str, str] = {}
+boom_headers["Accept"] = "application/json"
+
+def setup_err(application: Application) -> None:
+    def boom(ctx: Context) -> HttpResponse:
+        raise nyx.app.AppError("detail-me")
+    application.router.get("/boom", boom)
+
+cfg2: Config = nyx.config.defaults("development")
+cfg2.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg2.csrf_enabled = False
+cfg2.log_requests = False
+cfg2.auto_migrate = False
+cfg2.db_path = ":memory:"
+cfg2.jobs_db_path = ":memory:"
+app2: Application = nyx.app.boot(cfg2, setup_err)
+err_req: HttpRequest = HttpRequest("GET", "/boom", "", boom_headers)
+err_resp: HttpResponse = nyx.app.dispatch(app2, err_req)
+nox.test.assert_eq_int(err_resp.status, 500, "err status")
+nox.test.assert_true(nox.strings.contains(err_resp.body, "detail-me"), "err message")
+nox.test.assert_true(nox.strings.contains(err_resp.body, "AppError"), "err kind")
+nyx.app.shutdown(app2)
+
+nyx.app.shutdown(app)
+nox.test.assert_eq_int(len(hook_ran), 1, "shutdown hook ran")
+nyx.app.shutdown(app)
+nox.test.assert_eq_int(len(hook_ran), 1, "idempotent shutdown")
+
+print("v10_features_test ok")

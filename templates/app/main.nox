@@ -1,5 +1,5 @@
 # {{APP_NAME}} — nyx application entry
-# Requires Nox >= 1.10 (module globals / boot-once).
+# Requires Nox >= 1.22.0 (serve_tls / serve_ws; min for this template).
 # noxc fetch && NYX_ENV=development noxc run main.nox
 
 import nox.http
@@ -10,6 +10,7 @@ import nyx.app
 import nyx.config
 import nyx.ctrl
 import nyx.cors
+import nyx.server
 from nyx.app import Application
 from nyx.config import Config
 from nyx.cors import CorsConfig
@@ -38,6 +39,7 @@ cfg: Config = nyx.config.load()
 if not cfg.is_production() and len(cfg.secret_key) < 16:
     cfg.secret_key = "change-me-{{APP_NAME}}-secret-key-32b!"
 # Production: NYX_SECRET_KEY zorunlu; NYX_AUTO_MIGRATE varsayilan 0.
+# HTTPS: NYX_TLS_CERT + NYX_TLS_KEY -> nox.http.serve_tls
 # Bearer-only /api/ icin NYX_CSRF_API_EXEMPT=1.
 application: Application = nyx.app.boot(cfg, setup)
 
@@ -46,6 +48,10 @@ def handle(req: HttpRequest) -> HttpResponse:
 
 print("{{APP_NAME}} listening on :" + str(cfg.port))
 try:
-    nox.http.serve(cfg.port, handle)
+    if nyx.server.has_tls(cfg):
+        nyx.server.require_tls_files(cfg)
+        nox.http.serve_tls(cfg.port, handle, cfg.tls_cert_path, cfg.tls_key_path)
+    else:
+        nox.http.serve(cfg.port, handle)
 finally:
     nyx.app.shutdown(application)

@@ -1,12 +1,15 @@
-# Nyx 0.9 — Deployment guide
+# Nyx 0.10 — Deployment guide
 
-Production checklist for a Nyx app behind a reverse proxy (recommended).
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS de mümkün.
 
 ## 1. Process model
 
-- One OS process per worker (`nox.http.serve` / `serve_multicore`).
-- Boot **once** at module top-level; call `nyx.app.shutdown(application)` in `finally` (see `templates/app/main.nox`).
-- Inbound HTTPS terminates at the proxy (Nox has no server TLS). WebSocket Upgrade is also proxy/app-level until Nox adds it; use SSE/long-poll cable.
+- One OS process per worker (`nox.http.serve` / `serve_multicore` / `*_tls` / `*_ws`).
+- Boot **once** at module top-level; register cleanup with `nyx.app.on_shutdown`, then
+  `nyx.app.shutdown(application)` in `finally` (see `templates/app/main.nox`).
+- Inbound HTTPS: proxy **veya** `NYX_TLS_CERT` + `NYX_TLS_KEY` → `nox.http.serve_tls`.
+- WebSocket: `nox.http.serve_ws` / `serve_ws_tls` + `nyx.cable.ws_echo` / `ws_broadcast_loop`.
+  SSE/long-poll cable hâlâ desteklenir (eski istemciler / proxy kısıtları).
 
 ## 2. Required environment
 
@@ -19,10 +22,11 @@ Production checklist for a Nyx app behind a reverse proxy (recommended).
 | `NYX_SECURE_COOKIES` | `1` (behind HTTPS) |
 | `NYX_JOBS_DB_PATH` | Separate SQLite file (default `db/jobs.sqlite`) |
 | `NYX_MAIL_DELIVERY` | `smtp` / `http` / `file` |
-| `NYX_MAIL_SMTP_*` | When `smtp` — see below |
-| `NYX_PORT` / `NYX_HOST` | Bind address (proxy upstream) |
+| `NYX_MAIL_SMTP_*` | When `smtp` — SMTPS/465 |
+| `NYX_PORT` / `NYX_HOST` | Bind address |
+| `NYX_TLS_CERT` / `NYX_TLS_KEY` | Optional PEM paths for `serve_tls` |
 
-Optional: `NYX_CSP`, `NYX_CSRF_API_EXEMPT`, `NYX_CACHE_PATH`, `NYX_STORAGE_PATH`, `NYX_LOCALE`.
+Optional: `NYX_CSP`, `NYX_CSRF_API_EXEMPT`, `NYX_CACHE_PATH`, `NYX_STORAGE_PATH`, `NYX_LOCALE`, `NYX_CABLE_STORE_PATH`.
 
 ## 3. Database
 
@@ -38,67 +42,44 @@ noxc run main.nox
 
 ```sh
 export DATABASE_URL=postgres://user:pass@127.0.0.1:5432/myapp
-./bin/nyx db migrate   # uses nyx.db.migrate_postgres when URL is postgres
+export NYX_JOBS_DB_PATH=db/jobs.sqlite
+./bin/nyx db migrate   # migrate_url / migrate_postgres
+noxc run main.nox
 ```
 
-- App ORM for PG: `application.pg` + `nyx.pg_model` (RETURNING ids).
-- SQLite ORM (`nyx.model` / `ac.db()`) remains for SQLite dialect apps.
-- Jobs queue stays on SQLite at `NYX_JOBS_DB_PATH` (separate from app PG).
+In handlers: `nyx.pg_model.*` + `nyx.app.pg(application)`.  
+`application.db` remains a SQLite `Connection` placeholder when dialect is postgres
+(Nox `DbConnection` shares `execute`/`close` only — not `query`/`Row`).
 
-## 4. Migrations in CI/CD
+## 4. TLS / WebSocket
 
 ```sh
-NYX_ENV=production NYX_SECRET_KEY=… DATABASE_URL=… NYX_AUTO_MIGRATE=0 \
-  ./bin/nyx db migrate
+export NYX_TLS_CERT=/etc/ssl/certs/app.pem
+export NYX_TLS_KEY=/etc/ssl/private/app.key
+# macOS OpenSSL: brew install openssl@3 (libssl absolute path / NOX_OPENSSL_LIB)
 ```
 
-Do **not** rely on boot-time migrate in production.
+Template `main.nox` calls `serve_tls` when both paths are set. For WS:
 
-## 5. Health probes
+```nox
+from nyx.websocket import WebSocketServerConn
+import nyx.cable
 
-Boot mounts:
+def ws_handle(conn: WebSocketServerConn) -> None:
+    nyx.cable.ws_echo(conn)
 
-- `GET /health` / `GET /healthz` → `{"status":"ok"}`
-- `GET /ready` → `SELECT 1` on the active dialect DB (`200` / `503`)
+nox.http.serve_ws(cfg.port, handle, ws_handle)
+# or: nox.http.serve_ws_tls(cfg.port, handle, ws_handle, cert, key)
+```
 
-Point k8s/load-balancer readiness at `/ready`, liveness at `/healthz`.
+## 5. Health
 
-## 6. Mail (SMTP)
+- `GET /health` / `/healthz` → `{"status":"ok"}`
+- `GET /ready` → `SELECT 1` on app DB (sqlite or postgres)
+
+## 6. Install
 
 ```sh
-export NYX_MAIL_DELIVERY=smtp
-export NYX_MAIL_SMTP_HOST=smtp.example.com
-export NYX_MAIL_SMTP_PORT=465
-export NYX_MAIL_SMTP_USER=apikey
-export NYX_MAIL_SMTP_PASSWORD=secret
-export NYX_MAIL_FROM=noreply@example.com
+noxc install github.com/mburakmmm/nyx --ref v0.10.0
+# Requires Nox >= 1.22.0 (CI uses 1.22.9)
 ```
-
-Uses TLS client (`nox.tls`) — SMTPS on 465. STARTTLS/plain TCP is not available without a raw TCP stdlib.
-
-## 7. Proxy sketch (Caddy)
-
-```
-example.com {
-  reverse_proxy 127.0.0.1:8080
-}
-```
-
-Forward `X-Forwarded-Proto` / `X-Request-Id` if you terminate TLS at the edge; set `NYX_SECURE_COOKIES=1`.
-
-## 8. CLI install
-
-From a published tag:
-
-```sh
-noxc install github.com/mburakmmm/nyx@v0.9.1
-nyx version
-nyx new myapp
-```
-
-`nox.json` declares `"bin": { "name": "nyx", "path": "cli.nox" }` which delegates to `bin/nyx`.
-
-## 9. Multicore / cable
-
-- `serve_multicore`: each worker has its own `Application` and in-memory cable hub.
-- Cross-worker broadcasts: `nyx.cable.open_store(path)` (SQLite-backed hub) shared via filesystem.

@@ -1,15 +1,12 @@
-# nyx.cable - SSE (Server-Sent Events) + long-poll tabanli gercek-zamanli
-# yayin (tarayiciya giden sunucu kanali).
+# nyx.cable - gercek-zamanli yayin (SSE / long-poll / WebSocket).
 #
-# Nox >= 1.14: `nox.websocket` / `nyx.websocket` YALNIZCA istemci
-# (`ws://`/`wss://`). Sunucu-tarafi WebSocket Upgrade yok - bu yuzden
-# her "canal" bellekte SINIRLI mesaj tamponu olarak modellenir; istemci
-# `sse_response` veya `stream_poll` (long-poll) kullanir.
+# - SSE + long-poll: her ortamda calisir
+# - Cross-worker: open_store (SQLite)
+# - WebSocket sunucu (Nox >= 1.22): `nox.http.serve_ws*` + ws_echo /
+#   ws_broadcast_loop (WebSocketServerConn)
 #
-# OMUR: Hub, uygulama SCRIPT'inde boot-once `Application` ile ayni
-# worker sureci boyunca yasayabilir (Nox >= 1.10 script modul-global).
-# `serve_multicore` worker'lari ARASI paylasilmaz; yatay olcek icin
-# SQLite/dosya/`nox.sharedmem` veya dis kuyruk kullanin.
+# OMUR: Hub, boot-once Application ile ayni worker sureci boyunca yasayabilir.
+# `serve_multicore` worker'lari ARASI hub paylasilmaz; store veya dis kuyruk kullanin.
 #
 # import nyx.cable
 #
@@ -26,6 +23,7 @@ import nox.path
 import nox.sqlite
 from nox.http import HttpResponse
 from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement, Row as SqliteRow
+from nox.websocket import WebSocketServerConn
 
 class CableError:
     def __init__(self: CableError, message: str) -> None:
@@ -287,9 +285,10 @@ def store_stream_poll(store: Store, channel: str, since_id: int) -> str:
     out = out + "]}"
     return out
 
-# Channel - sunucu WebSocket Upgrade geldiginde ayni yayin sozlesmesi.
-# Bugun SSE/long-poll; ileride WS frame'e map edilir.
+# Channel - ActionCable-benzeri yayin sozlesmesi.
 # backend: "hub" | "store"
+# SSE/long-poll: channel_sse_response
+# WebSocket (Nox >= 1.22 serve_ws*): ws_echo / ws_broadcast_loop
 class Channel:
     def __init__(self: Channel, name: str, backend: str, hub: Hub, store: Store) -> None:
         self.name = name
@@ -320,3 +319,21 @@ def channel_sse_response(ch: Channel, since_id: int) -> HttpResponse:
     if ch.backend == "store":
         return store_sse_response_for(ch.store, ch.name, since_id)
     return sse_response_for(ch.hub, ch.name, since_id)
+
+# Sunucu WS: her gelen metin frame'ini aynen geri gonder (smoke / ping).
+def ws_echo(conn: WebSocketServerConn) -> None:
+    while conn.is_open():
+        msg: str = conn.recv()
+        if len(msg) == 0:
+            return
+        conn.send_text(msg)
+
+# Sunucu WS: her gelen metin frame'ini kanala yayinla ve onay JSON'u gonder.
+# Gelen govde dogrudan data_json olarak kullanilir; event sabit "message".
+def ws_broadcast_loop(ch: Channel, conn: WebSocketServerConn) -> None:
+    while conn.is_open():
+        msg: str = conn.recv()
+        if len(msg) == 0:
+            return
+        mid: int = channel_broadcast(ch, "message", msg)
+        conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")

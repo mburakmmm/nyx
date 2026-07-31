@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.9.1 · **License:** MIT · **Requires Nox ≥ 1.18.1**  
+**Version:** 0.10.0 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.9.1"
+      "ref": "v0.10.0"
     }
   ]
 }
@@ -156,21 +156,30 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.10.0 — Nox 1.22 unlock (TLS/WS server, hooks, dialect boot)
+- **Requires Nox ≥ 1.22.0** (CI pins **1.22.9**)
+- Real `on_shutdown` hook registry on `Application` (Nox 1.21.1 confirmed safe with nested Router)
+- Dialect-aware boot: `postgres://` / `DATABASE_URL` → `nyx.app.pg(application)` + `migrate_postgres`; sqlite ORM unchanged
+- Development error page wired in `dispatch` (`server_error_detail_for` + typed exceptions)
+- `nyx.routes.post_with_override` (nested fn-typed capture — Nox 1.21.1)
+- `nyx.server` (`serve_mode` / TLS file checks); template uses `nox.http.serve_tls` when `NYX_TLS_CERT`+`NYX_TLS_KEY` set
+- Cable: `ws_echo` / `ws_broadcast_loop` on `WebSocketServerConn` (Nox 1.22 `serve_ws*`)
+- `nyx.websocket` re-exports `WebSocketServerConn`; docs/DEPLOY/LIMITATIONS/REQUESTS updated
+
 ### 0.9.1 — Fix CLI bin entry (`main` reserved)
 - Rename `cli.nox` entry from reserved `main` to `cli_main` so `noxc install nyx` works.
 
 ### 0.9.0 — Rails-core production path (Nox ≥ 1.18.1)
 
-- **Requires Nox ≥ 1.18.1** (CI pins `noxc` v1.18.1)
+- **Requires Nox ≥ 1.18.1** (CI pinned `noxc` v1.18.1 at release)
 - `nyx.runtime` worker-local **module globals** (P1c fixed); `NYX_RT_*` removed
 - `view.render_each_map` / `render_each_map_unescaped` (C2 fixed)
-- **App:** `shutdown` / `on_shutdown`, `/health` `/healthz` `/ready`, dialect-aware boot (`application.db` | `application.pg` + `jobs_db`), development error page
-- **CLI:** `nox.json` `bin` + `cli.nox` (`noxc install`); scaffold auto-wire (`<<NYX_GENERATED_ROUTES>>`); typed model generator (`find`/`create`/`save`)
-- **DB:** `dialect_of_url`, `migrate_postgres` / `rollback_url`, `nyx.pg_model` (RETURNING), jobs DB path
-- **Model:** query builder, uniqueness/format/numericality, callbacks, `Record` cell index, association preload
+- **App:** `shutdown`, `/health` `/healthz` `/ready`, jobs DB path; `on_shutdown` stub until 0.10
+- **CLI:** `nox.json` `bin` + `cli.nox`; scaffold auto-wire; typed model generator
+- **DB:** `dialect_of_url`, `migrate_postgres` / `rollback_url`, `nyx.pg_model` (RETURNING)
+- **Model:** uniqueness validation, `Record` cell index, association preload lists
 - **Views:** `nyx.html.SafeHtml` + `form.*_safe` / `html.put`
 - **Jobs/mail/cable:** retry + dead-set; SMTP (SMTPS/TLS); SQLite cable store + `Channel` API
-- Deploy guide: `docs/DEPLOY.md` · Nox requests: `docs/NOX_REQUESTS.md`
 
 ### 0.8.0 — Nox 1.14–1.17 integration
 

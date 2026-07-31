@@ -8,8 +8,9 @@
 #     return nyx.app.dispatch(application, req)
 #
 # nox.http.serve(8080, handle)
+# # TLS / WS (Nox >= 1.22): serve_tls / serve_ws / serve_ws_tls — see nyx.server
 #
-# `nox.http.serve` still needs a top-level bare function name; the Application
+# `nox.http.serve*` needs a top-level bare function name; the Application
 # and Router live in module globals (per-worker / thread-local in multicore).
 
 import nox.http
@@ -22,6 +23,7 @@ import nox.json
 from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
 from nox.sqlite import Connection
+from nox.postgres import Connection as PgConnection
 import nyx.config
 import nyx.db
 import nyx.runtime
@@ -49,13 +51,17 @@ class Application:
         conn: Connection,
         router: Router,
         dialect: str,
-        jobs: Connection
+        jobs: Connection,
+        pg_list: list[PgConnection],
+        hooks: list[() -> None]
     ) -> None:
         self.config = cfg
         self.db = conn
         self.router = router
         self.dialect = dialect
         self.jobs_db = jobs
+        self._pg = pg_list
+        self._shutdown_hooks = hooks
         self._closed = False
 
 def db(application: Application) -> Connection:
@@ -67,6 +73,14 @@ def jobs_db(application: Application) -> Connection:
 def config(application: Application) -> Config:
     return application.config
 
+def has_pg(application: Application) -> bool:
+    return len(application._pg) > 0
+
+def pg(application: Application) -> PgConnection:
+    if len(application._pg) == 0:
+        raise AppError("Application.pg is empty (dialect is not postgres)")
+    return application._pg[0]
+
 def _is_placeholder_secret(secret: str) -> bool:
     if nox.strings.contains(secret, "change-me"):
         return True
@@ -76,23 +90,35 @@ def _is_placeholder_secret(secret: str) -> bool:
         return True
     return False
 
-# Validates config, opens DB, optional migrate, framework middleware, then setup.
-# Call once at process/worker start (module top-level), not per request.
+def on_shutdown(application: Application, run: () -> None) -> None:
+    hooks: list[() -> None] = application._shutdown_hooks
+    hooks.append(run)
+    application._shutdown_hooks = hooks
 
 def shutdown(application: Application) -> None:
     if application._closed:
         return
     application._closed = True
-    application.jobs_db.close()
-    application.db.close()
-
-# Custom teardown: wrap serve in try/finally and call shutdown.
-# Package-module HookRegistry on Application trips Nox codegen with nested routers.
-def on_shutdown(application: Application, run: () -> None) -> None:
-    raise AppError(
-        "on_shutdown hooks are not registered on Application in 0.9 " +
-        "(Nox package codegen limit); put cleanup in finally before nyx.app.shutdown"
-    )
+    i: int = len(application._shutdown_hooks) - 1
+    while i >= 0:
+        try:
+            application._shutdown_hooks[i]()
+        except:
+            a: int = 0
+        i = i - 1
+    if len(application._pg) > 0:
+        try:
+            application._pg[0].close()
+        except:
+            b: int = 0
+    try:
+        application.jobs_db.close()
+    except:
+        c: int = 0
+    try:
+        application.db.close()
+    except:
+        d: int = 0
 
 def mount_health(application: Application) -> None:
     def health(ctx: Context) -> HttpResponse:
@@ -100,7 +126,10 @@ def mount_health(application: Application) -> None:
 
     def ready(ctx: Context) -> HttpResponse:
         try:
-            application.db.query("SELECT 1")
+            if application.dialect == "postgres":
+                application._pg[0].query("SELECT 1")
+            else:
+                application.db.query("SELECT 1")
             return nyx.ctrl.json(200, "{\"status\":\"ready\"}")
         except DbError:
             return nyx.ctrl.json(503, "{\"status\":\"not_ready\"}")
@@ -121,20 +150,40 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     dialect: str = nyx.db.dialect_of_url(cfg.db_path)
     if dialect == "":
         dialect = "sqlite"
-    if dialect != "sqlite":
-        raise AppError("Application.db supports sqlite; use nyx.pg_model for postgres")
-    conn: Connection = nyx.db.open(cfg.db_path)
-    if cfg.auto_migrate:
-        if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
-            try:
-                nyx.db.migrate(conn, cfg.migrate_path)
-            except DbError:
-                raise AppError("migration failed: " + cfg.migrate_path)
-        else:
-            if cfg.is_production():
-                raise AppError("migration directory missing: " + cfg.migrate_path)
+    if dialect == "mysql":
+        raise AppError(
+            "Application boot does not wire mysql yet; use nyx.db.open_mysql " +
+            "and keep Application.db on sqlite (or use postgres dialect)"
+        )
+    pg_list: list[PgConnection] = []
+    conn: Connection = nyx.db.open(":memory:")
+    if dialect == "postgres":
+        pg_list.append(nyx.db.open_postgres(cfg.db_path))
+        if cfg.auto_migrate:
+            if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
+                try:
+                    nyx.db.migrate_postgres(pg_list[0], cfg.migrate_path)
+                except DbError:
+                    raise AppError("postgres migration failed: " + cfg.migrate_path)
+            else:
+                if cfg.is_production():
+                    raise AppError("migration directory missing: " + cfg.migrate_path)
+    elif dialect == "sqlite":
+        conn = nyx.db.open(cfg.db_path)
+        if cfg.auto_migrate:
+            if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
+                try:
+                    nyx.db.migrate(conn, cfg.migrate_path)
+                except DbError:
+                    raise AppError("migration failed: " + cfg.migrate_path)
+            else:
+                if cfg.is_production():
+                    raise AppError("migration directory missing: " + cfg.migrate_path)
+    else:
+        raise AppError("unsupported db dialect: " + dialect)
     jobs: Connection = nyx.db.open(cfg.jobs_db_path)
-    application: Application = Application(cfg, conn, Router(), dialect, jobs)
+    hooks: list[() -> None] = []
+    application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, hooks)
     _install_framework_middleware(application)
     mount_health(application)
     setup(application)
@@ -235,6 +284,9 @@ def _log_after() -> (Context, HttpResponse) -> HttpResponse:
         return resp
     return handler
 
+def _error_response(ctx: Context, cfg: Config, kind: str, message: str) -> HttpResponse:
+    return nyx.ctrl.server_error_detail_for(ctx, cfg, kind, message)
+
 def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
     rid: str = nox.uuid.uuid4()
@@ -248,14 +300,14 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     try:
         try:
             resp = application.router.dispatch(routed)
-        except ModelError:
-            resp = nyx.ctrl.server_error_for(err_ctx)
-        except AppError:
-            resp = nyx.ctrl.server_error_for(err_ctx)
-        except DbError:
-            resp = nyx.ctrl.server_error_for(err_ctx)
+        except ModelError as e:
+            resp = _error_response(err_ctx, cfg, "ModelError", e.message)
+        except AppError as e:
+            resp = _error_response(err_ctx, cfg, "AppError", e.message)
+        except DbError as e:
+            resp = _error_response(err_ctx, cfg, "DbError", e.message)
         except:
-            resp = nyx.ctrl.server_error_for(err_ctx)
+            resp = _error_response(err_ctx, cfg, "Error", "unhandled exception")
     finally:
         nyx.runtime.end()
     return resp

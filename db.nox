@@ -12,9 +12,12 @@
 # rows = stmt.query()
 # my = nyx.db.open_mysql("mysql://user:pass@localhost:3306/app")
 #
-# Application.db / nyx.model / jobs: SQLite Connection tipi (tek tip).
-# PG/MySQL için ayrı open_* kullanın; prepare/bind stdlib'de vardır.
-# Postgres last_insert_rowid yok - INSERT ... RETURNING kullanın.
+# Application.db: SQLite Connection (nyx.model / jobs).
+# Application.pg: Postgres Connection listesi uzerinden nyx.app.pg()
+#   (Nox DbConnection protokolu execute+close paylasir; query/prepare
+#   Row tipleri ayri oldugu icin tek Application.db tipi yok — Nox 1.21.3+).
+# PG/MySQL ham: open_postgres / open_mysql (prepare/bind Nox >= 1.13).
+# Postgres last_insert_rowid yok - INSERT ... RETURNING kullanin.
 
 import nox.sqlite
 import nox.postgres
@@ -52,7 +55,8 @@ def _scheme_of(url: str) -> str:
 # `path` düz dosya yolu, `:memory:`, veya SQLite URL:
 #   sqlite:///absolute/path   sqlite://relative/path   sqlite::memory:
 # Postgres/MySQL URL'leri bu fonksiyonda HATA verir - `open_postgres` /
-# `open_mysql` kullanın (Application.db tipi SQLite Connection).
+# `open_mysql` kullanin. `nyx.app.boot` postgres URL'lerini Application.pg
+# olarak acar (dialect-aware); bu fonksiyon yalnizca SQLite Connection doner.
 def open(path: str) -> Connection:
     return open_url(path)
 
@@ -62,16 +66,14 @@ def open_url(url: str) -> Connection:
     scheme: str = _scheme_of(url)
     if scheme == "postgres" or scheme == "postgresql":
         raise DbError(
-            "postgres/postgresql URLs require nyx.db.open_postgres(...). " +
-            "Application.db / nyx.model stay typed as SQLite Connection. " +
-            "Raw PG supports prepare/bind (Nox >= 1.13); use INSERT ... RETURNING for ids. " +
-            "Use NYX_DB_PATH or sqlite:///path/to.db for the app ORM."
+            "postgres/postgresql URLs require nyx.db.open_postgres(...) or " +
+            "nyx.app.boot with DATABASE_URL (sets Application.pg / dialect=postgres). " +
+            "nyx.db.open stays typed as SQLite Connection for nyx.model."
         )
     if scheme == "mysql":
         raise DbError(
             "mysql URLs require nyx.db.open_mysql(...). " +
-            "Application.db / nyx.model stay SQLite. " +
-            "Raw MySQL supports prepare/bind + last_insert_rowid (Nox >= 1.13)."
+            "Application boot does not wire mysql yet; keep Application.db on sqlite."
         )
     path: str = url
     if nox.strings.starts_with(url, "sqlite://"):

@@ -5,7 +5,8 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.9.1 · **Lisans:** MIT · **Nox ≥ 1.18.1**  
+**Sürüm:** 0.10.0 · **Lisans:** MIT · **Nox ≥ 1.22.0** (önerilen **1.22.9**)  
+İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketici `requires[].alias` farklı olabilir).
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +25,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.9.1"
+      "ref": "v0.10.0"
     }
   ]
 }
@@ -155,6 +156,12 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.10.0 — Nox 1.22 kilidi (TLS/WS sunucu, hooks, dialect boot)
+- **Nox ≥ 1.22.0** (CI **1.22.9**)
+- Gerçek `on_shutdown` hook listesi; dialect-aware postgres boot (`nyx.app.pg`)
+- Dev error page `dispatch`e bağlı; `post_with_override`; `nyx.server` + `serve_tls`
+- Cable `ws_echo` / `ws_broadcast_loop` (`WebSocketServerConn`)
 
 ### 0.9.1 — CLI bin girişi düzeltmesi (`main` ayrılmış)
 - `cli.nox` giriş fonksiyonu ayrılmış `main` adından `cli_main` olarak değiştirildi; `noxc install nyx` çalışır.
