@@ -1,4 +1,4 @@
-# Blog SaaS dogfood: auth + session_store
+# Blog SaaS dogfood: auth + session_store + SID rotation + logout
 import nox.test
 import nox.strings
 from nox.http import HttpRequest, HttpResponse
@@ -21,7 +21,7 @@ def setup(application: Application) -> None:
         email: str = nyx.params.get(p, "email", "")
         password: str = nyx.params.get(p, "password", "")
         uid: int = nyx.auth_engine.register(application.db, email, password)
-        nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+        nyx.auth_engine.login_session(uid)
         return nyx.ctrl.json(201, "{\"user_id\":" + str(uid) + "}")
 
     def login(ctx: Context) -> HttpResponse:
@@ -29,14 +29,19 @@ def setup(application: Application) -> None:
         email: str = nyx.params.get(p, "email", "")
         password: str = nyx.params.get(p, "password", "")
         uid: int = nyx.auth_engine.authenticate(application.db, email, password)
-        nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+        nyx.auth_engine.login_session(uid)
         return nyx.ctrl.json(200, "{\"user_id\":" + str(uid) + "}")
+
+    def logout(ctx: Context) -> HttpResponse:
+        nyx.auth_engine.logout_session()
+        return nyx.ctrl.json(200, "{\"ok\":true}")
 
     def me(ctx: Context) -> HttpResponse:
         return nyx.ctrl.json(200, nyx.runtime.session_json())
 
     application.router.post("/register", register)
     application.router.post("/login", login)
+    application.router.post("/logout", logout)
     application.router.get("/me", me)
 
 cfg: Config = nyx.config.defaults("test")
@@ -72,6 +77,35 @@ me_headers["Cookie"] = cookie_hdr
 me_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", me_headers))
 nox.test.assert_eq_int(me_resp.status, 200, "me")
 nox.test.assert_true(nox.strings.contains(me_resp.body, "user_id"), "me body")
+
+login_headers: dict[str, str] = {}
+login_headers["Content-Type"] = "application/x-www-form-urlencoded"
+login_headers["Cookie"] = cookie_hdr
+login_resp: HttpResponse = nyx.app.dispatch(
+    app,
+    HttpRequest("POST", "/login", "email=dog@example.com&password=password1", login_headers)
+)
+nox.test.assert_eq_int(login_resp.status, 200, "login")
+login_cookie: str | None = nyx.testing.header(login_resp, "Set-Cookie")
+nox.test.assert_true(login_cookie != None, "login rotates cookie")
+
+out_headers: dict[str, str] = {}
+if login_cookie != None:
+    lh: str = login_cookie
+    ls: int = nox.strings.index_of(login_cookie, ";")
+    if ls >= 0:
+        lh = ""
+        li: int = 0
+        while li < ls:
+            lh = lh + login_cookie[li]
+            li = li + 1
+    out_headers["Cookie"] = lh
+out_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", out_headers))
+nox.test.assert_eq_int(out_resp.status, 200, "logout")
+out_cookie: str | None = nyx.testing.header(out_resp, "Set-Cookie")
+nox.test.assert_true(out_cookie != None, "logout cookie")
+if out_cookie != None:
+    nox.test.assert_true(nox.strings.contains(out_cookie, "Max-Age=0"), "expire")
 
 nyx.app.shutdown(app)
 print("blog_saas_dogfood_test ok")

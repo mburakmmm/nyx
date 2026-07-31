@@ -22,10 +22,12 @@ import nox.fs
 import nox.path
 import nox.sqlite
 from nox.http import HttpResponse
-from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement, Row as SqliteRow
+from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement
 from nox.websocket import WebSocketServerConn
 from nox.json import JsonValue
 import nyx.session_store
+import nyx.session
+from nox.db import Row as SqliteRow
 
 class CableError:
     def __init__(self: CableError, message: str) -> None:
@@ -340,8 +342,14 @@ def ws_broadcast_loop(ch: Channel, conn: WebSocketServerConn) -> None:
         mid: int = channel_broadcast(ch, "message", msg)
         conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")
 
-# Authenticated WS: first frame must be {"sid":"..."} matching an active
-# server-side session. Then behaves like ws_broadcast_loop.
+# Authenticated WS: first frame must be {"ticket":"<signed>"} where ticket is
+# produced by issue_ws_ticket(secret, sid, max_age). Raw sid bearer is rejected.
+def issue_ws_ticket(secret: str, sid: str, max_age_sec: int) -> str:
+    if len(sid) == 0:
+        raise CableError("empty sid")
+    body: str = "{\"sid\":" + nox.json.encode_string(sid) + "}"
+    return nyx.session.create(secret, body, max_age_sec)
+
 def ws_auth_broadcast_loop(
     ch: Channel,
     conn: WebSocketServerConn,
@@ -353,38 +361,42 @@ def ws_auth_broadcast_loop(
     if len(first) == 0:
         conn.close()
         return
-    sid: str | None = None
+    ticket: str = ""
     try:
         v: JsonValue = nox.json.decode(first)
         i: int = 0
         n: int = nox.json.object_len(v)
         while i < n:
-            if nox.json.object_key(v, i) == "sid":
-                sid = nox.json.as_string(nox.json.object_value(v, i))
+            if nox.json.object_key(v, i) == "ticket":
+                ticket = nox.json.as_string(nox.json.object_value(v, i))
             i = i + 1
     except:
         conn.send_text("{\"error\":\"auth_required\"}")
         conn.close()
         return
-    if sid == None:
+    if len(ticket) == 0:
         conn.send_text("{\"error\":\"auth_required\"}")
+        conn.close()
+        return
+    sid: str | None = nyx.session_store.sid_from_cookie_value_rotated(
+        secret, secret_previous, ticket
+    )
+    if sid == None:
+        conn.send_text("{\"error\":\"unauthorized\"}")
         conn.close()
         return
     else:
         sid_s: str = sid
-        if len(sid_s) == 0:
-            conn.send_text("{\"error\":\"auth_required\"}")
-            conn.close()
-            return
         data: str | None = nyx.session_store.load_sid(session_db, sid_s)
         if data == None:
             conn.send_text("{\"error\":\"unauthorized\"}")
             conn.close()
             return
-        conn.send_text("{\"ok\":true,\"authed\":true}")
-        while conn.is_open():
-            msg: str = conn.recv()
-            if len(msg) == 0:
-                return
-            mid: int = channel_broadcast(ch, "message", msg)
-            conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")
+        else:
+            conn.send_text("{\"ok\":true,\"authed\":true}")
+            while conn.is_open():
+                msg: str = conn.recv()
+                if len(msg) == 0:
+                    return
+                mid: int = channel_broadcast(ch, "message", msg)
+                conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")

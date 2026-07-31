@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.15.0 · **Lisans:** MIT · **Nox ≥ 1.22.0** (önerilen **1.22.9**)  
+**Sürüm:** 0.15.1 · **Lisans:** MIT · **Nox ≥ 1.22.0** (önerilen **1.22.9**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.0"
+      "ref": "v0.15.1"
     }
   ]
 }
@@ -155,6 +155,12 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.15.1 — Hardening (1.0 değil)
+- SID rotation + server-side logout; Postgres session/auth adapter’ları
+- Auth: email normalize, hashed reset token, jenerik hatalar
+- Metrics log’dan ayrı; trusted-proxy rate limit; imzalı WS ticket
+- Platform limits Nox 1.22 ile hizalandı
 
 ### 0.15.0 — Batteries-included yol (B + Devise-core; 1.0 değil)
 - **DB session store:** imzalı `sid` cookie + `nyx_sessions`; revoke / logout-all; `NYX_SESSION_STORE`

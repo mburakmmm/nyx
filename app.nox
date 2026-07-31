@@ -29,6 +29,7 @@ import nyx.db
 import nyx.runtime
 import nyx.session
 import nyx.session_store
+import nyx.session_store_pg
 import nyx.cookie
 import nyx.csrf
 import nyx.response
@@ -111,21 +112,21 @@ def shutdown(application: Application) -> None:
         try:
             application._shutdown_hooks[i]()
         except:
-            a: int = 0
+            nox.log.error("nyx.app.shutdown: hook failed")
         i = i - 1
     if len(application._pg) > 0:
         try:
             application._pg[0].close()
         except:
-            b: int = 0
+            nox.log.error("nyx.app.shutdown: postgres close failed")
     try:
         application.jobs_db.close()
     except:
-        c: int = 0
+        nox.log.error("nyx.app.shutdown: jobs_db close failed")
     try:
         application.db.close()
     except:
-        d: int = 0
+        nox.log.error("nyx.app.shutdown: db close failed")
 
 def mount_health(application: Application) -> None:
     def health(ctx: Context) -> HttpResponse:
@@ -202,7 +203,10 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     hooks: list[() -> None] = []
     application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, hooks)
     if cfg.session_store == "db":
-        nyx.session_store.ensure_schema(application.db)
+        if dialect == "postgres":
+            nyx.session_store_pg.ensure_schema(pg_list[0])
+        else:
+            nyx.session_store.ensure_schema(application.db)
     nyx.job.ensure_schema(application.jobs_db)
     _install_framework_middleware(application)
     mount_health(application)
@@ -215,8 +219,12 @@ def _install_framework_middleware(application: Application) -> None:
     if cfg.rate_limit_enabled:
         router.use_before(_rate_limit_before(cfg))
     if cfg.session_store == "db":
-        router.use_before(_session_db_before(application))
-        router.use_after(_session_db_after(application))
+        if application.dialect == "postgres":
+            router.use_before(_session_pg_before(application))
+            router.use_after(_session_pg_after(application))
+        else:
+            router.use_before(_session_db_before(application))
+            router.use_after(_session_db_after(application))
     else:
         router.use_before(_session_before(cfg))
         router.use_after(_session_after(cfg))
@@ -226,6 +234,8 @@ def _install_framework_middleware(application: Application) -> None:
         else:
             router.use_before(nyx.csrf.protect(cfg.secret_key))
     router.use_after(nyx.security.headers_after(cfg))
+    if cfg.metrics_enabled:
+        router.use_after(_metrics_after())
     if cfg.log_requests:
         router.use_after(_log_after(cfg))
 
@@ -250,17 +260,43 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             d: int = 0
     return None
 
-def _client_key(ctx: Context) -> str:
+def _first_xff_ip(raw: str) -> str:
+    parts: list[str] = nox.strings.split(raw, ",")
+    if len(parts) == 0:
+        return ""
+    return nox.strings.trim(parts[0])
+
+def _client_key(cfg: Config, ctx: Context) -> str:
+    # Without Nox peer address, XFF is only used when NYX_TRUSTED_PROXIES is set
+    # (operator asserts the edge terminates TLS and strips client-supplied XFF).
+    if len(cfg.trusted_proxies) == 0:
+        return "direct"
     xf: str | None = _header_get(ctx.request.headers, "X-Forwarded-For")
-    if xf != None:
-        return xf
-    return "local"
+    if xf == None:
+        return "direct"
+    else:
+        ip: str = _first_xff_ip(xf)
+        if len(ip) == 0:
+            return "direct"
+        return ip
+
+def _is_auth_path(path: str) -> bool:
+    if path == "/login" or path == "/register" or path == "/logout":
+        return True
+    if path == "/password/reset" or path == "/password/forgot":
+        return True
+    if nox.strings.contains(path, "/auth/"):
+        return True
+    return False
 
 def _rate_limit_before(cfg: Config) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
         path: str = nyx.params.path_only(ctx.request.target)
-        key: str = path + ":" + _client_key(ctx)
-        if not nyx.rate_limit.allow(_rate_store, key, cfg.rate_limit_max, cfg.rate_limit_window_ms):
+        key: str = path + ":" + _client_key(cfg, ctx)
+        limit: int = cfg.rate_limit_max
+        if _is_auth_path(path):
+            limit = cfg.rate_limit_auth_max
+        if not nyx.rate_limit.allow(_rate_store, key, limit, cfg.rate_limit_window_ms):
             nyx.metrics.inc_rate_limited()
             return nyx.ctrl.json(429, "{\"error\":\"rate_limited\"}")
         return None
@@ -306,6 +342,18 @@ def _session_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
     def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
         if not nyx.runtime.is_session_dirty():
             return resp
+        if nyx.runtime.should_expire_session_cookie():
+            nyx.runtime.clear_expire_session_cookie()
+            expired: str = nyx.cookie.serialize(
+                cfg.session_cookie,
+                "deleted",
+                "/",
+                0,
+                True,
+                "Lax",
+                cfg.secure_cookies
+            )
+            return nyx.response.with_header(resp, "Set-Cookie", expired)
         token: str = nyx.session.create(cfg.secret_key, nyx.runtime.session_json(), cfg.session_max_age)
         set_cookie: str = nyx.cookie.serialize(
             cfg.session_cookie,
@@ -364,9 +412,31 @@ def _session_db_after(application: Application) -> (Context, HttpResponse) -> Ht
     def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
         if not nyx.runtime.is_session_dirty():
             return resp
+        if nyx.runtime.should_expire_session_cookie():
+            old: str = nyx.runtime.session_sid()
+            if len(old) > 0:
+                nyx.session_store.destroy_sid(application.db, old)
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_expire_session_cookie()
+            nyx.runtime.clear_session_rotate()
+            expired: str = nyx.cookie.serialize(
+                cfg.session_cookie,
+                "deleted",
+                "/",
+                0,
+                True,
+                "Lax",
+                cfg.secure_cookies
+            )
+            return nyx.response.with_header(resp, "Set-Cookie", expired)
         data: str = nyx.runtime.session_json()
         uid: int = nyx.session_store.user_id_from_session_json(data)
         sid: str = nyx.runtime.session_sid()
+        if nyx.runtime.is_session_rotate() and len(sid) > 0:
+            nyx.session_store.destroy_sid(application.db, sid)
+            sid = ""
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_session_rotate()
         if len(sid) == 0:
             sid = nyx.session_store.create_sid(application.db, data, cfg.session_max_age, uid)
             nyx.runtime.set_session_sid(sid)
@@ -385,12 +455,106 @@ def _session_db_after(application: Application) -> (Context, HttpResponse) -> Ht
         return nyx.response.with_header(resp, "Set-Cookie", set_cookie)
     return handler
 
-def _log_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
+def _session_pg_before(application: Application) -> (Context) -> HttpResponse | None:
+    cfg: Config = application.config
+    def handler(ctx: Context) -> HttpResponse | None:
+        nyx.runtime.set_session_sid("")
+        raw: str | None = _header_get(ctx.request.headers, "Cookie")
+        if raw == None:
+            nyx.runtime.load_session("{}")
+            _ensure_session_seed()
+            return None
+        else:
+            raw_s: str = raw
+            try:
+                cookies: dict[str, str] = nyx.cookie.parse(raw_s)
+                val: str = cookies[cfg.session_cookie]
+                sid: str | None = nyx.session_store.sid_from_cookie_value_rotated(
+                    cfg.secret_key, cfg.secret_key_previous, val
+                )
+                if sid == None:
+                    nyx.runtime.load_session("{}")
+                    _ensure_session_seed()
+                    return None
+                else:
+                    sid_s: str = sid
+                    data: str | None = nyx.session_store_pg.load_sid(pg(application), sid_s)
+                    if data == None:
+                        nyx.runtime.load_session("{}")
+                        _ensure_session_seed()
+                        return None
+                    else:
+                        nyx.runtime.set_session_sid(sid_s)
+                        nyx.runtime.load_session(data)
+            except KeyError:
+                nyx.runtime.load_session("{}")
+                _ensure_session_seed()
+            except CookieError:
+                nyx.runtime.load_session("{}")
+                _ensure_session_seed()
+            return None
+    return handler
+
+def _session_pg_after(application: Application) -> (Context, HttpResponse) -> HttpResponse:
+    cfg: Config = application.config
     def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
-        elapsed: int = nox.time.now_ms() - nyx.runtime.started_ms()
+        if not nyx.runtime.is_session_dirty():
+            return resp
+        pdb: PgConnection = pg(application)
+        if nyx.runtime.should_expire_session_cookie():
+            old: str = nyx.runtime.session_sid()
+            if len(old) > 0:
+                nyx.session_store_pg.destroy_sid(pdb, old)
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_expire_session_cookie()
+            nyx.runtime.clear_session_rotate()
+            expired: str = nyx.cookie.serialize(
+                cfg.session_cookie,
+                "deleted",
+                "/",
+                0,
+                True,
+                "Lax",
+                cfg.secure_cookies
+            )
+            return nyx.response.with_header(resp, "Set-Cookie", expired)
+        data: str = nyx.runtime.session_json()
+        uid: int = nyx.session_store.user_id_from_session_json(data)
+        sid: str = nyx.runtime.session_sid()
+        if nyx.runtime.is_session_rotate() and len(sid) > 0:
+            nyx.session_store_pg.destroy_sid(pdb, sid)
+            sid = ""
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_session_rotate()
+        if len(sid) == 0:
+            sid = nyx.session_store_pg.create_sid(pdb, data, cfg.session_max_age, uid)
+            nyx.runtime.set_session_sid(sid)
+        else:
+            nyx.session_store_pg.save_sid(pdb, sid, data, cfg.session_max_age, uid)
+        token: str = nyx.session_store.cookie_value_for_sid(cfg.secret_key, sid, cfg.session_max_age)
+        set_cookie: str = nyx.cookie.serialize(
+            cfg.session_cookie,
+            token,
+            "/",
+            cfg.session_max_age,
+            True,
+            "Lax",
+            cfg.secure_cookies
+        )
+        return nyx.response.with_header(resp, "Set-Cookie", set_cookie)
+    return handler
+
+def _metrics_after() -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
         nyx.metrics.inc_requests()
         if resp.status >= 500:
             nyx.metrics.inc_5xx()
+        return resp
+    return handler
+
+def _log_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        elapsed: int = nox.time.now_ms() - nyx.runtime.started_ms()
         if cfg.log_json:
             line: str = "{"
             line = line + "\"request_id\":" + nox.json.encode_string(nyx.runtime.request_id()) + ","
@@ -421,9 +585,11 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     empty_params: dict[str, str] = {}
     err_ctx: Context = Context(routed, empty_params)
     resp: HttpResponse = HttpResponse(500, "", {})
+    counted: bool = False
     try:
         try:
             resp = application.router.dispatch(routed)
+            counted = True
         except ModelError as e:
             resp = _error_response(err_ctx, cfg, "ModelError", e.message)
         except AppError as e:
@@ -432,6 +598,11 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
             resp = _error_response(err_ctx, cfg, "DbError", e.message)
         except:
             resp = _error_response(err_ctx, cfg, "Error", "unhandled exception")
+        # Router after-middleware may not run on exceptions caught here.
+        if not counted and cfg.metrics_enabled:
+            nyx.metrics.inc_requests()
+            if resp.status >= 500:
+                nyx.metrics.inc_5xx()
     finally:
         nyx.runtime.end()
     return resp

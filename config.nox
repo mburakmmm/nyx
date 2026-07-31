@@ -51,7 +51,9 @@ class Config:
         rate_limit_window_ms: int,
         metrics_enabled: bool,
         storage_max_bytes: int,
-        log_json: bool
+        log_json: bool,
+        trusted_proxies: str,
+        rate_limit_auth_max: int
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -92,6 +94,9 @@ class Config:
         self.metrics_enabled = metrics_enabled
         self.storage_max_bytes = storage_max_bytes
         self.log_json = log_json
+        # Comma-separated proxy IPs. Empty = never trust X-Forwarded-For.
+        self.trusted_proxies = trusted_proxies
+        self.rate_limit_auth_max = rate_limit_auth_max
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -192,7 +197,9 @@ def defaults(env: str) -> Config:
         60000,
         metrics_on,
         10485760,
-        log_json_on
+        log_json_on,
+        "",
+        20
     )
 
 def from_env() -> Config:
@@ -243,6 +250,8 @@ def from_env() -> Config:
     cfg.metrics_enabled = _env_bool("NYX_METRICS", cfg.metrics_enabled)
     cfg.storage_max_bytes = _env_int("NYX_STORAGE_MAX_BYTES", cfg.storage_max_bytes)
     cfg.log_json = _env_bool("NYX_LOG_JSON", cfg.log_json)
+    cfg.trusted_proxies = _env_or("NYX_TRUSTED_PROXIES", cfg.trusted_proxies)
+    cfg.rate_limit_auth_max = _env_int("NYX_RATE_LIMIT_AUTH_MAX", cfg.rate_limit_auth_max)
     return cfg
 
 def load() -> Config:

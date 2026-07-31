@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.15.0 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
+**Version:** 0.15.1 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.0"
+      "ref": "v0.15.1"
     }
   ]
 }
@@ -156,6 +156,17 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.15.1 — Hardening (not 1.0)
+- **SID rotation** on login (`cycle_session` / `login_session`); **server-side logout** destroys SID + `Max-Age=0`
+- **Postgres session/auth:** `nyx.session_store_pg` + `*_pg` auth APIs; db sessions use `Application.pg` when dialect=postgres (not `:memory:` SQLite)
+- **Auth harden:** email normalize, hashed reset tokens, generic errors (less enumeration), generator 422 + dialect routing
+- **Metrics** decoupled from request logging; exception-path 5xx counted; worker-local note in Prometheus text
+- **Rate limit:** ignore `X-Forwarded-For` unless `NYX_TRUSTED_PROXIES` set; auth paths use `NYX_RATE_LIMIT_AUTH_MAX`; memory eviction; conditional UPDATE
+- **WS auth:** signed `ticket` via `issue_ws_ticket` (raw sid bearer rejected)
+- **AppContext:** `set_session` / `cycle_session` / `logout` / `pg`
+- Shutdown hook / close failures logged
+- Docs: Platform limits aligned with Nox 1.22 TLS/WS
+
 ### 0.15.0 — Batteries-included path (B + Devise-core; not 1.0)
 - **Session store (db):** signed `sid` cookie + `nyx_sessions` table; revoke / logout-all; `NYX_SESSION_STORE=cookie|db`
 - **Auth engine:** register/login/reset/lockout + `nyx generate auth`
@@ -254,16 +265,19 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.18.1** (P1c/C2; prepare/bind; TLS/WS clients)
+- Requires **Nox ≥ 1.22.0** (recommended **1.22.9**): `serve_tls` / `serve_ws*` / prepare-bind
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
+- DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
-- Inbound TLS: reverse proxy; mail SMTP = SMTPS/465; cable = SSE/long-poll (+ optional SQLite store)
+- TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = SMTPS/465 (no STARTTLS yet)
+- Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed `ws_auth_*`)
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
+- **Request state** is worker-local module globals until Nox task-local lands — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
 
-**Fit:** reverse-proxy, SQLite or Postgres app DB, jobs on SQLite, low–medium traffic.  
-**Still Nox-bound:** server WebSocket Upgrade, task-local context, rich exception stacks — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
+**Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, low–medium traffic with sync handlers per worker.  
+**Still Nox-bound:** fiber/task-local request context, rich exception stacks — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
 
 ---
 

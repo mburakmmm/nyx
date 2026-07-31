@@ -1,0 +1,135 @@
+# nyx.auth_engine_pg - Devise-core on PostgreSQL (Application.pg).
+# Uses prepare/bind directly (avoids Connection alias mismatch with pg_model).
+
+import nox.time
+import nox.uuid
+import nox.strings
+from nox.postgres import Connection as PgConnection, Statement as PgStatement, PostgresError
+from nox.db import Row
+import nyx.password
+import nyx.auth_engine
+from nyx.auth_engine import AuthEngineError
+
+def ensure_schema(db: PgConnection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS users (" +
+        "id BIGSERIAL PRIMARY KEY, " +
+        "email TEXT NOT NULL UNIQUE, " +
+        "password_digest TEXT NOT NULL, " +
+        "failed_attempts INTEGER NOT NULL DEFAULT 0, " +
+        "locked_at_ms BIGINT NOT NULL DEFAULT 0, " +
+        "reset_token TEXT NOT NULL DEFAULT '', " +
+        "reset_sent_at_ms BIGINT NOT NULL DEFAULT 0" +
+        ")"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token)")
+
+def find_by_email(db: PgConnection, email: str) -> Row | None:
+    stmt: PgStatement = db.prepare(
+        "SELECT id, email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms " +
+        "FROM users WHERE email = $1"
+    )
+    stmt.bind_str(0, nyx.auth_engine.normalize_email(email))
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return None
+    return rows[0]
+
+def register(db: PgConnection, email: str, password: str) -> int:
+    em: str = nyx.auth_engine.normalize_email(email)
+    if len(em) == 0 or not nox.strings.contains(em, "@"):
+        raise AuthEngineError("invalid email")
+    if len(password) < 8:
+        raise AuthEngineError("password too short (min 8)")
+    digest: str = nyx.password.hash(password)
+    stmt: PgStatement = db.prepare(
+        "INSERT INTO users (email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms) " +
+        "VALUES ($1, $2, 0, 0, '', 0) RETURNING id"
+    )
+    stmt.bind_str(0, em)
+    stmt.bind_str(1, digest)
+    try:
+        rows: list[Row] = stmt.query()
+    except PostgresError:
+        raise AuthEngineError("could not register")
+    if len(rows) == 0:
+        raise AuthEngineError("could not register")
+    return rows[0].get_int(0)
+
+def _bump_failure(db: PgConnection, user_id: int, attempts: int, lock_now: bool) -> None:
+    locked: int = 0
+    if lock_now:
+        locked = nox.time.now_ms()
+    stmt: PgStatement = db.prepare(
+        "UPDATE users SET failed_attempts = $1, locked_at_ms = $2 WHERE id = $3"
+    )
+    stmt.bind_int(0, attempts)
+    stmt.bind_int(1, locked)
+    stmt.bind_int(2, user_id)
+    stmt.execute()
+
+def _clear_failure(db: PgConnection, user_id: int) -> None:
+    stmt: PgStatement = db.prepare(
+        "UPDATE users SET failed_attempts = 0, locked_at_ms = 0 WHERE id = $1"
+    )
+    stmt.bind_int(0, user_id)
+    stmt.execute()
+
+def authenticate(db: PgConnection, email: str, password: str) -> int:
+    rec: Row | None = find_by_email(db, email)
+    if rec == None:
+        raise AuthEngineError("invalid credentials")
+    else:
+        locked_at: int = rec.get_int(4)
+        if nyx.auth_engine.is_locked_at(locked_at):
+            raise AuthEngineError("invalid credentials")
+        digest: str = rec.get_str(2)
+        user_id: int = rec.get_int(0)
+        if not nyx.password.verify(digest, password):
+            attempts: int = rec.get_int(3) + 1
+            lock_now: bool = attempts >= nyx.auth_engine.max_failed_attempts()
+            _bump_failure(db, user_id, attempts, lock_now)
+            raise AuthEngineError("invalid credentials")
+        _clear_failure(db, user_id)
+        return user_id
+
+def request_password_reset(db: PgConnection, email: str) -> str:
+    rec: Row | None = find_by_email(db, email)
+    if rec == None:
+        return ""
+    else:
+        raw: str = nox.uuid.uuid4()
+        stmt: PgStatement = db.prepare(
+            "UPDATE users SET reset_token = $1, reset_sent_at_ms = $2 WHERE id = $3"
+        )
+        stmt.bind_str(0, nyx.auth_engine.hash_reset_token(raw))
+        stmt.bind_int(1, nox.time.now_ms())
+        stmt.bind_int(2, rec.get_int(0))
+        stmt.execute()
+        return raw
+
+def reset_password(db: PgConnection, token: str, new_password: str) -> int:
+    if len(token) == 0:
+        raise AuthEngineError("invalid reset token")
+    if len(new_password) < 8:
+        raise AuthEngineError("password too short (min 8)")
+    hashed: str = nyx.auth_engine.hash_reset_token(token)
+    stmt: PgStatement = db.prepare(
+        "SELECT id, reset_sent_at_ms FROM users WHERE reset_token = $1"
+    )
+    stmt.bind_str(0, hashed)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        raise AuthEngineError("invalid reset token")
+    user_id: int = rows[0].get_int(0)
+    sent: int = rows[0].get_int(1)
+    if sent <= 0 or nox.time.now_ms() - sent > 3600000:
+        raise AuthEngineError("reset token expired")
+    upd: PgStatement = db.prepare(
+        "UPDATE users SET password_digest = $1, reset_token = '', reset_sent_at_ms = 0, " +
+        "failed_attempts = 0, locked_at_ms = 0 WHERE id = $2"
+    )
+    upd.bind_str(0, nyx.password.hash(new_password))
+    upd.bind_int(1, user_id)
+    upd.execute()
+    return user_id

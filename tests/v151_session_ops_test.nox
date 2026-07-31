@@ -1,0 +1,156 @@
+# 0.15.1 session rotation, logout, metrics, rate limit, ws ticket
+import nox.test
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.auth_engine
+import nyx.runtime
+import nyx.session_store
+import nyx.metrics
+import nyx.params
+import nyx.testing
+import nyx.cable
+from nyx.app import Application
+from nyx.config import Config
+
+def cookie_pair(set_cookie: str) -> str:
+    cookie_hdr: str = set_cookie
+    semi: int = nox.strings.index_of(set_cookie, ";")
+    if semi >= 0:
+        cookie_hdr = ""
+        ci: int = 0
+        while ci < semi:
+            cookie_hdr = cookie_hdr + set_cookie[ci]
+            ci = ci + 1
+    return cookie_hdr
+
+def sid_from_set_cookie(secret: str, set_cookie: str) -> str:
+    hdr: str = cookie_pair(set_cookie)
+    eq: int = nox.strings.index_of(hdr, "=")
+    if eq < 0:
+        return ""
+    val: str = ""
+    vi: int = eq + 1
+    while vi < len(hdr):
+        val = val + hdr[vi]
+        vi = vi + 1
+    got: str | None = nyx.session_store.sid_from_cookie_value(secret, val)
+    if got == None:
+        return ""
+    else:
+        return got
+
+def setup(application: Application) -> None:
+    nyx.auth_engine.ensure_schema(application.db)
+
+    def login(ctx: Context) -> HttpResponse:
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        email: str = nyx.params.get(p, "email", "")
+        password: str = nyx.params.get(p, "password", "")
+        if len(email) == 0 or len(password) == 0:
+            return nyx.ctrl.json(422, "{\"error\":\"missing_fields\"}")
+        idu: int = nyx.auth_engine.authenticate(application.db, email, password)
+        nyx.auth_engine.login_session(idu)
+        return nyx.ctrl.json(200, "{\"ok\":true}")
+
+    def logout(ctx: Context) -> HttpResponse:
+        nyx.auth_engine.logout_session()
+        return nyx.ctrl.json(200, "{\"ok\":true}")
+
+    def me(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.json(200, nyx.runtime.session_json())
+
+    application.router.post("/login", login)
+    application.router.post("/logout", logout)
+    application.router.get("/me", me)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "db"
+cfg.metrics_enabled = True
+cfg.log_requests = False
+app: Application = nyx.app.boot(cfg, setup)
+nyx.auth_engine.register(app.db, "u@example.com", "password1")
+
+r0: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}))
+c0: str | None = nyx.testing.header(r0, "Set-Cookie")
+nox.test.assert_true(c0 != None, "anon cookie")
+pre_sid: str = ""
+if c0 != None:
+    pre_sid = sid_from_set_cookie(cfg.secret_key, c0)
+
+h1: dict[str, str] = {}
+h1["Content-Type"] = "application/x-www-form-urlencoded"
+if c0 != None:
+    h1["Cookie"] = cookie_pair(c0)
+login_resp: HttpResponse = nyx.app.dispatch(
+    app,
+    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1)
+)
+nox.test.assert_eq_int(login_resp.status, 200, "login")
+c1: str | None = nyx.testing.header(login_resp, "Set-Cookie")
+nox.test.assert_true(c1 != None, "login sets cookie")
+post_sid: str = ""
+if c1 != None:
+    post_sid = sid_from_set_cookie(cfg.secret_key, c1)
+nox.test.assert_true(len(pre_sid) > 0, "pre sid")
+nox.test.assert_true(len(post_sid) > 0, "post sid")
+nox.test.assert_true(pre_sid != post_sid, "SID rotated on login")
+
+h2: dict[str, str] = {}
+if c1 != None:
+    h2["Cookie"] = cookie_pair(c1)
+out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h2))
+nox.test.assert_eq_int(out.status, 200, "logout")
+cout: str | None = nyx.testing.header(out, "Set-Cookie")
+nox.test.assert_true(cout != None, "logout Set-Cookie")
+if cout != None:
+    nox.test.assert_true(nox.strings.contains(cout, "Max-Age=0"), "cookie expired")
+
+nyx.metrics.reset()
+me2: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}))
+nox.test.assert_eq_int(me2.status, 200, "me2")
+nox.test.assert_true(nyx.metrics.requests() >= 1, "metrics without request log")
+
+cfg2: Config = nyx.config.defaults("test")
+cfg2.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg2.csrf_enabled = False
+cfg2.session_store = "cookie"
+cfg2.rate_limit_enabled = True
+cfg2.rate_limit_max = 2
+cfg2.rate_limit_window_ms = 60000
+cfg2.trusted_proxies = ""
+cfg2.metrics_enabled = False
+cfg2.log_requests = False
+
+def setup2(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+app2: Application = nyx.app.boot(cfg2, setup2)
+hx: dict[str, str] = {}
+hx["X-Forwarded-For"] = "1.2.3.4"
+r_a: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx))
+r_b: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx))
+hx2: dict[str, str] = {}
+hx2["X-Forwarded-For"] = "9.9.9.9"
+r_c: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx2))
+nox.test.assert_eq_int(r_a.status, 200, "rl a")
+nox.test.assert_eq_int(r_b.status, 200, "rl b")
+nox.test.assert_eq_int(r_c.status, 429, "xff spoof ignored")
+
+sid_ws: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+ticket: str = nyx.cable.issue_ws_ticket(cfg.secret_key, sid_ws, 60)
+sid_back: str | None = nyx.session_store.sid_from_cookie_value(cfg.secret_key, ticket)
+nox.test.assert_true(sid_back != None, "ticket decodes")
+if sid_back != None:
+    nox.test.assert_eq_str(sid_back, sid_ws, "ticket sid")
+
+nyx.app.shutdown(app)
+nyx.app.shutdown(app2)
+print("v151_session_ops_test ok")

@@ -1,5 +1,8 @@
 # nyx.metrics - in-process counters + optional Prometheus text exposition.
 #
+# Counters are worker-local (one OS thread / serve worker). Prometheus text
+# includes nyx_worker_local info gauge = 1 to make that explicit.
+#
 # import nyx.metrics
 # nyx.metrics.inc_requests()
 # body: str = nyx.metrics.prometheus_text()
@@ -49,6 +52,9 @@ def rate_limited() -> int:
 
 def prometheus_text() -> str:
     out: str = ""
+    out = out + "# HELP nyx_worker_local Counters are per OS worker/thread, not process-aggregated\n"
+    out = out + "# TYPE nyx_worker_local gauge\n"
+    out = out + "nyx_worker_local 1\n"
     out = out + "# TYPE nyx_requests_total counter\n"
     out = out + "nyx_requests_total " + str(_requests) + "\n"
     out = out + "# TYPE nyx_responses_5xx_total counter\n"

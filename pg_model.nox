@@ -10,7 +10,8 @@
 # protokolu Nox'ta henuz yok (Row kovaryansi).
 
 import nox.strings
-from nox.postgres import Connection, Statement, Row, PostgresError
+from nox.postgres import Connection, Statement, PostgresError
+from nox.db import Row
 import nyx.model
 from nyx.model import ModelError, Attributes
 
@@ -47,6 +48,12 @@ class Record:
         i: int = self._col_index(name)
         if self.row.is_null(i):
             raise ModelError("sutun NULL: " + name)
+        return self.row.get_int(i)
+
+    def get_int_or(self: Record, name: str, fallback: int) -> int:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return fallback
         return self.row.get_int(i)
 
     def has(self: Record, name: str) -> bool:

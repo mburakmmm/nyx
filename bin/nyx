@@ -593,6 +593,7 @@ CREATE TABLE IF NOT EXISTS users (
   reset_token TEXT NOT NULL DEFAULT '',
   reset_sent_at_ms INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token);
 SQL
   cat > "$down" <<'SQL'
 DROP TABLE IF EXISTS users;
@@ -607,27 +608,56 @@ CREATE TABLE IF NOT EXISTS users (
   reset_token TEXT NOT NULL DEFAULT '',
   reset_sent_at_ms BIGINT NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token);
 SQL
   cat > config/auth_routes.nox.snippet <<'EOF'
 # Paste into setup(application):
 # import nyx.auth_engine
 # import nyx.params
-# nyx.auth_engine.ensure_schema(application.db)
+# from nyx.auth_engine import AuthEngineError
+#
+# if application.dialect == "postgres":
+#     import nyx.auth_engine_pg
+#     nyx.auth_engine_pg.ensure_schema(nyx.app.pg(application))
+# else:
+#     nyx.auth_engine.ensure_schema(application.db)
 #
 # def auth_register(ctx: Context) -> HttpResponse:
 #     p: dict[str, str] = nyx.params.from_request(ctx.request)
-#     uid: int = nyx.auth_engine.register(application.db, p["email"], p["password"])
-#     nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
-#     return nyx.ctrl.redirect("/")
+#     email: str = nyx.params.get(p, "email", "")
+#     password: str = nyx.params.get(p, "password", "")
+#     if len(email) == 0 or len(password) == 0:
+#         return nyx.ctrl.json(422, "{\"error\":\"missing_fields\"}")
+#     try:
+#         uid: int = 0
+#         if application.dialect == "postgres":
+#             uid = nyx.auth_engine_pg.register(nyx.app.pg(application), email, password)
+#         else:
+#             uid = nyx.auth_engine.register(application.db, email, password)
+#         nyx.auth_engine.login_session(uid)
+#         return nyx.ctrl.redirect("/")
+#     except AuthEngineError as e:
+#         return nyx.ctrl.json(422, "{\"error\":" + nox.json.encode_string(e.message) + "}")
 #
 # def auth_login(ctx: Context) -> HttpResponse:
 #     p: dict[str, str] = nyx.params.from_request(ctx.request)
-#     uid: int = nyx.auth_engine.authenticate(application.db, p["email"], p["password"])
-#     nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
-#     return nyx.ctrl.redirect("/")
+#     email: str = nyx.params.get(p, "email", "")
+#     password: str = nyx.params.get(p, "password", "")
+#     if len(email) == 0 or len(password) == 0:
+#         return nyx.ctrl.json(422, "{\"error\":\"missing_fields\"}")
+#     try:
+#         uid: int = 0
+#         if application.dialect == "postgres":
+#             uid = nyx.auth_engine_pg.authenticate(nyx.app.pg(application), email, password)
+#         else:
+#             uid = nyx.auth_engine.authenticate(application.db, email, password)
+#         nyx.auth_engine.login_session(uid)
+#         return nyx.ctrl.redirect("/")
+#     except AuthEngineError as e:
+#         return nyx.ctrl.json(401, "{\"error\":" + nox.json.encode_string(e.message) + "}")
 #
 # def auth_logout(ctx: Context) -> HttpResponse:
-#     nyx.runtime.set_session("{}")
+#     nyx.auth_engine.logout_session()
 #     return nyx.ctrl.redirect("/")
 #
 # application.router.post("/register", auth_register)

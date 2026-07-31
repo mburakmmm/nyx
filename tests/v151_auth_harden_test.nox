@@ -1,0 +1,61 @@
+# 0.15.1 auth hardening
+import nox.test
+from nox.sqlite import Connection
+import nyx.db
+import nyx.auth_engine
+from nyx.auth_engine import AuthEngineError
+
+adb: Connection = nyx.db.open(":memory:")
+nyx.auth_engine.ensure_schema(adb)
+uid: int = nyx.auth_engine.register(adb, "  Admin@Example.COM ", "password1")
+uid2: int = nyx.auth_engine.authenticate(adb, "admin@example.com", "password1")
+nox.test.assert_eq_int(uid2, uid, "email normalize")
+tok: str = nyx.auth_engine.request_password_reset(adb, "admin@example.com")
+nox.test.assert_true(len(tok) > 0, "raw reset token")
+nox.test.assert_true(len(nyx.auth_engine.hash_reset_token(tok)) == 64, "sha256 len")
+uid3: int = nyx.auth_engine.reset_password(adb, tok, "password2")
+nox.test.assert_eq_int(uid3, uid, "reset with raw")
+
+bad_msg: str = ""
+try:
+    nyx.auth_engine.authenticate(adb, "nosuch@example.com", "x")
+except AuthEngineError as e:
+    bad_msg = e.message
+nox.test.assert_eq_str(bad_msg, "invalid credentials", "no enum missing")
+
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "wrong-pass")
+except AuthEngineError:
+    n1: int = 1
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "wrong-pass")
+except AuthEngineError:
+    n2: int = 1
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "wrong-pass")
+except AuthEngineError:
+    n3: int = 1
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "wrong-pass")
+except AuthEngineError:
+    n4: int = 1
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "wrong-pass")
+except AuthEngineError:
+    n5: int = 1
+
+lock_msg: str = ""
+try:
+    nyx.auth_engine.authenticate(adb, "admin@example.com", "password2")
+except AuthEngineError as e2:
+    lock_msg = e2.message
+nox.test.assert_eq_str(lock_msg, "invalid credentials", "no enum lockout")
+
+dup: str = ""
+try:
+    nyx.auth_engine.register(adb, "admin@example.com", "password9")
+except AuthEngineError as e3:
+    dup = e3.message
+nox.test.assert_eq_str(dup, "could not register", "register generic")
+adb.close()
+print("v151_auth_harden_test ok")

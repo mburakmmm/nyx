@@ -8,7 +8,8 @@
 ### N1 — Task / fiber-local context
 - Request state worker-local modül-global; eşzamanlı istek karışma riski.
 - İstek: contextvars benzeri task-local.
-- Nyx: `nyx.runtime` — N1 gelince taşınır.
+- Bonus: `HttpRequest` peer/remote address (trusted proxy doğrulaması için).
+- Nyx: `nyx.runtime` + `AppContext` setters — N1 gelince taşınır.
 
 ### N5 — Exception diagnostics
 - Dev page type/message/request_id; stack/source span yok.

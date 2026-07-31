@@ -1,8 +1,10 @@
-# nyx.rate_limit - fixed-window rate limiter (memory + optional sqlite).
+# nyx.rate_limit - fixed-window rate limiter (memory + sqlite UPSERT).
 # MemoryStore uses list fields + methods (same pattern as nyx.cache.MemoryCache).
+# Capacity eviction drops oldest window entries when full.
 
 import nox.time
-from nox.sqlite import Connection, Statement, Row
+from nox.sqlite import Connection, Statement
+from nox.db import Row
 
 class RateLimitError:
     def __init__(self: RateLimitError, message: str) -> None:
@@ -12,14 +14,19 @@ class MemoryStore:
     keys: list[str]
     counts: list[int]
     windows: list[int]
+    capacity: int
 
-    def __init__(self: MemoryStore) -> None:
+    def __init__(self: MemoryStore, capacity: int) -> None:
         empty_s: list[str] = []
         empty_i: list[int] = []
         empty_w: list[int] = []
         self.keys = empty_s
         self.counts = empty_i
         self.windows = empty_w
+        if capacity < 16:
+            self.capacity = 16
+        else:
+            self.capacity = capacity
 
     def find(self: MemoryStore, key: str) -> int:
         i: int = 0
@@ -30,7 +37,33 @@ class MemoryStore:
             i = i + 1
         return -1
 
+    def _evict_one(self: MemoryStore) -> None:
+        # Drop oldest window_start entry.
+        if len(self.keys) == 0:
+            return
+        oldest: int = 0
+        i: int = 1
+        while i < len(self.windows):
+            if self.windows[i] < self.windows[oldest]:
+                oldest = i
+            i = i + 1
+        nk: list[str] = []
+        nc: list[int] = []
+        nw: list[int] = []
+        j: int = 0
+        while j < len(self.keys):
+            if j != oldest:
+                nk.append(self.keys[j])
+                nc.append(self.counts[j])
+                nw.append(self.windows[j])
+            j = j + 1
+        self.keys = nk
+        self.counts = nc
+        self.windows = nw
+
     def put_new(self: MemoryStore, key: str, now: int) -> None:
+        while len(self.keys) >= self.capacity:
+            self._evict_one()
         keys: list[str] = self.keys
         counts: list[int] = self.counts
         windows: list[int] = self.windows
@@ -56,7 +89,10 @@ class MemoryStore:
         return counts[idx]
 
 def open_memory() -> MemoryStore:
-    return MemoryStore()
+    return MemoryStore(10000)
+
+def open_memory_capacity(capacity: int) -> MemoryStore:
+    return MemoryStore(capacity)
 
 def allow(store: MemoryStore, key: str, limit: int, window_ms: int) -> bool:
     if limit <= 0:
@@ -86,20 +122,33 @@ def ensure_schema(db: Connection) -> None:
     )
 
 def allow_db(db: Connection, key: str, limit: int, window_ms: int) -> bool:
+    # Prefer conditional UPDATE + INSERT; UPSERT when racing inserts.
     if limit <= 0:
         return True
+    if window_ms <= 0:
+        raise RateLimitError("window_ms must be positive")
     now: int = nox.time.now_ms()
     stmt: Statement = db.prepare("SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?")
     stmt.bind_str(0, key)
     rows: list[Row] = stmt.query()
     if len(rows) == 0:
-        ins: Statement = db.prepare(
-            "INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES (?, 1, ?)"
-        )
-        ins.bind_str(0, key)
-        ins.bind_int(1, now)
-        ins.execute()
-        return True
+        try:
+            ins: Statement = db.prepare(
+                "INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES (?, 1, ?)"
+            )
+            ins.bind_str(0, key)
+            ins.bind_int(1, now)
+            ins.execute()
+            return True
+        except:
+            # Concurrent insert: fall through to update path via re-read.
+            stmt2: Statement = db.prepare(
+                "SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?"
+            )
+            stmt2.bind_str(0, key)
+            rows = stmt2.query()
+            if len(rows) == 0:
+                return True
     count: int = rows[0].get_int(0)
     start: int = rows[0].get_int(1)
     if now - start >= window_ms:
@@ -113,8 +162,9 @@ def allow_db(db: Connection, key: str, limit: int, window_ms: int) -> bool:
     if count >= limit:
         return False
     upd2: Statement = db.prepare(
-        "UPDATE nyx_rate_limits SET count = count + 1 WHERE key = ?"
+        "UPDATE nyx_rate_limits SET count = count + 1 WHERE key = ? AND count < ?"
     )
     upd2.bind_str(0, key)
-    upd2.execute()
-    return True
+    upd2.bind_int(1, limit)
+    changed: int = upd2.execute()
+    return changed > 0

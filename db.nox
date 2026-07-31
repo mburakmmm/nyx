@@ -26,10 +26,12 @@ import nox.fs
 import nox.path
 import nox.strings
 import nox.url
-from nox.sqlite import Connection, Statement, Row, SqliteError
-from nox.postgres import Connection as PgConnection, PostgresError, Row as PgRow, Statement as PgStatement
+from nox.sqlite import Connection, Statement, SqliteError
+from nox.postgres import Connection as PgConnection, PostgresError, Statement as PgStatement
 from nox.mysql import Connection as MysqlConnection, MysqlError
 from nox.url import URL, UrlError
+from nox.db import Row
+from nox.db import Row as PgRow
 
 class DbError:
     def __init__(self: DbError, message: str) -> None:

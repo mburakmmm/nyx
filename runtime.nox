@@ -1,4 +1,4 @@
-# nyx.runtime - istek-kapsamli (worker/thread-local) durum.
+# nyx.runtime - istek-kapsamli durum (worker/thread-local module globals).
 #
 # Nox >= 1.18.1: paket-modül globals + nested closure / Router codegen-safe
 # (P1c düzeltmesi). NYX_RT_* ortam değişkenleri ARTIK KULLANILMAZ.
@@ -6,8 +6,13 @@
 # Her OS thread'inin KENDI global blogu vardir ('serve_multicore' worker
 # basina). Varsayim: worker basina senkron, tek istek (nyx.app.dispatch).
 #
+# UYARI: Nox fiber/task-local gelmeden ayni worker'da concurrent I/O ile
+# request interleave edilirse session/user state karisabilir. Prefer
+# AppContext setters (cycle_session/logout) and avoid long yields mid-request.
+# See docs/NOX_REQUESTS.md (task-local).
+#
 # 'current()' BIR SNAPSHOT doner - alanlarini dogrudan degistirmek kalici
-# degildir; 'set_*' / 'load_*' / 'touch_*' kullanin.
+# degildir; 'set_*' / 'load_*' / 'touch_*' / 'cycle_session' / 'logout' kullanin.
 #
 # NOT: RequestBag kurucu parametre adlari getter fonksiyon adlariyla
 # cakismasin (eski codegen kisiti; guvenli tutuyoruz).
@@ -55,6 +60,8 @@ _rt_started_ms: int = 0
 _rt_request_target: str = ""
 _rt_hdr_keys: str = ""
 _rt_session_sid: str = ""
+_rt_session_rotate: bool = False
+_rt_expire_session_cookie: bool = False
 
 def is_active() -> bool:
     return _rt_active
@@ -73,6 +80,8 @@ def reset() -> None:
     _rt_request_target = ""
     _rt_hdr_keys = ""
     _rt_session_sid = ""
+    _rt_session_rotate = False
+    _rt_expire_session_cookie = False
 
 def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _rt_active = True
@@ -88,6 +97,8 @@ def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _rt_request_target = ""
     _rt_hdr_keys = ""
     _rt_session_sid = ""
+    _rt_session_rotate = False
+    _rt_expire_session_cookie = False
     return current()
 
 def end() -> None:
@@ -160,7 +171,35 @@ def touch_session() -> None:
     _rt_session_dirty = True
 
 def cycle_session() -> None:
-    touch_session()
+    # Login/privilege change: force new server-side SID on next write.
+    _rt_session_dirty = True
+    _rt_session_rotate = True
+
+def is_session_rotate() -> bool:
+    return _rt_session_rotate
+
+def clear_session_rotate() -> None:
+    _rt_session_rotate = False
+
+def expire_session_cookie() -> None:
+    # Logout: after-middleware should Set-Cookie Max-Age=0 and destroy SID.
+    _rt_expire_session_cookie = True
+    _rt_session_dirty = True
+
+def should_expire_session_cookie() -> bool:
+    return _rt_expire_session_cookie
+
+def clear_expire_session_cookie() -> None:
+    _rt_expire_session_cookie = False
+
+def logout() -> None:
+    # Clear client session payload and mark cookie+server SID for destruction.
+    _rt_session_json = "{}"
+    _rt_has_session = True
+    _rt_session_dirty = True
+    _rt_session_rotate = False
+    _rt_expire_session_cookie = True
+    clear_user()
 
 def set_user(user_id: str, payload_json: str) -> None:
     _rt_user_id = user_id

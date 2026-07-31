@@ -10,9 +10,10 @@
 
 import nox.sqlite
 import nox.time
-from nox.sqlite import Connection, Statement, Row
+from nox.sqlite import Connection, Statement
 from nox.collections import LRUCache
 import nyx.db
+from nox.db import Row
 
 class CacheError:
     def __init__(self: CacheError, message: str) -> None:

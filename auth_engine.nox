@@ -1,20 +1,17 @@
-# nyx.auth_engine - Devise-core (register/login/logout/reset/lockout).
+# nyx.auth_engine - Devise-core on SQLite (application.db).
+# PostgreSQL: nyx.auth_engine_pg + nyx.app.pg(application).
 #
-# Conventions: table 'users' with
-#   email TEXT UNIQUE, password_digest TEXT,
-#   failed_attempts INT, locked_at_ms INT, reset_token TEXT, reset_sent_at_ms INT
-#
-# import nyx.auth_engine
-# nyx.auth_engine.ensure_schema(db)
-# uid = nyx.auth_engine.register(db, "a@b.c", "secret123")
-# uid2 = nyx.auth_engine.authenticate(db, "a@b.c", "secret123")
+# Reset tokens: DB stores SHA-256 hex; raw token returned once to caller.
+# Emails are trim+lowercase normalized.
 
 import nox.time
 import nox.uuid
 import nox.strings
-from nox.sqlite import Connection, Statement, Row
+import nox.crypto
+from nox.sqlite import Connection, SqliteError
 import nyx.password
 import nyx.model
+import nyx.runtime
 from nyx.model import Attributes, ModelError, Record
 
 class AuthEngineError:
@@ -26,6 +23,12 @@ def max_failed_attempts() -> int:
 
 def lock_duration_ms() -> int:
     return 15 * 60 * 1000
+
+def normalize_email(email: str) -> str:
+    return nox.strings.lower(nox.strings.trim(email))
+
+def hash_reset_token(raw: str) -> str:
+    return nox.crypto.sha256(raw)
 
 def ensure_schema(db: Connection) -> None:
     db.execute(
@@ -39,35 +42,38 @@ def ensure_schema(db: Connection) -> None:
         "reset_sent_at_ms INTEGER NOT NULL DEFAULT 0" +
         ")"
     )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token)")
 
 def find_by_email(db: Connection, email: str) -> Record | None:
-    rows: list[Record] = nyx.model.where(db, "users", "email", email)
+    rows: list[Record] = nyx.model.where(db, "users", "email", normalize_email(email))
     if len(rows) == 0:
         return None
     return rows[0]
 
-def _is_locked(rec: Record) -> bool:
-    locked_at: int = rec.get_int_or("locked_at_ms", 0)
+def is_locked_at(locked_at: int) -> bool:
     if locked_at <= 0:
         return False
     return nox.time.now_ms() - locked_at < lock_duration_ms()
 
 def register(db: Connection, email: str, password: str) -> int:
-    if len(email) == 0 or not nox.strings.contains(email, "@"):
+    em: str = normalize_email(email)
+    if len(em) == 0 or not nox.strings.contains(em, "@"):
         raise AuthEngineError("invalid email")
     if len(password) < 8:
         raise AuthEngineError("password too short (min 8)")
-    existing: Record | None = find_by_email(db, email)
-    if existing != None:
-        raise AuthEngineError("email already taken")
     attrs: Attributes = nyx.model.attributes()
-    nyx.model.set_str(attrs, "email", email)
+    nyx.model.set_str(attrs, "email", em)
     nyx.model.set_str(attrs, "password_digest", nyx.password.hash(password))
     nyx.model.set_int(attrs, "failed_attempts", 0)
     nyx.model.set_int(attrs, "locked_at_ms", 0)
     nyx.model.set_str(attrs, "reset_token", "")
     nyx.model.set_int(attrs, "reset_sent_at_ms", 0)
-    return nyx.model.create_attrs(db, "users", attrs)
+    try:
+        return nyx.model.create_attrs(db, "users", attrs)
+    except ModelError:
+        raise AuthEngineError("could not register")
+    except SqliteError:
+        raise AuthEngineError("could not register")
 
 def _bump_failure(db: Connection, rec: Record) -> None:
     attempts: int = rec.get_int_or("failed_attempts", 0) + 1
@@ -88,8 +94,8 @@ def authenticate(db: Connection, email: str, password: str) -> int:
     if rec == None:
         raise AuthEngineError("invalid credentials")
     else:
-        if _is_locked(rec):
-            raise AuthEngineError("account locked")
+        if is_locked_at(rec.get_int_or("locked_at_ms", 0)):
+            raise AuthEngineError("invalid credentials")
         digest: str = rec.get("password_digest")
         if not nyx.password.verify(digest, password):
             _bump_failure(db, rec)
@@ -102,19 +108,20 @@ def request_password_reset(db: Connection, email: str) -> str:
     if rec == None:
         return ""
     else:
-        token: str = nox.uuid.uuid4()
+        raw: str = nox.uuid.uuid4()
         attrs: Attributes = nyx.model.attributes()
-        nyx.model.set_str(attrs, "reset_token", token)
+        nyx.model.set_str(attrs, "reset_token", hash_reset_token(raw))
         nyx.model.set_int(attrs, "reset_sent_at_ms", nox.time.now_ms())
         nyx.model.update_attrs(db, "users", rec.get_int("id"), attrs)
-        return token
+        return raw
 
 def reset_password(db: Connection, token: str, new_password: str) -> int:
     if len(token) == 0:
         raise AuthEngineError("invalid reset token")
     if len(new_password) < 8:
         raise AuthEngineError("password too short (min 8)")
-    rows: list[Record] = nyx.model.where(db, "users", "reset_token", token)
+    hashed: str = hash_reset_token(token)
+    rows: list[Record] = nyx.model.where(db, "users", "reset_token", hashed)
     if len(rows) == 0:
         raise AuthEngineError("invalid reset token")
     rec: Record = rows[0]
@@ -132,3 +139,11 @@ def reset_password(db: Connection, token: str, new_password: str) -> int:
 
 def session_data_for_user(user_id: int) -> str:
     return "{\"user_id\":" + str(user_id) + "}"
+
+def login_session(user_id: int) -> None:
+    nyx.runtime.set_session(session_data_for_user(user_id))
+    nyx.runtime.cycle_session()
+    nyx.runtime.set_user(str(user_id), session_data_for_user(user_id))
+
+def logout_session() -> None:
+    nyx.runtime.logout()

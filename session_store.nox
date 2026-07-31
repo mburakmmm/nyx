@@ -10,10 +10,11 @@ import nox.time
 import nox.uuid
 import nox.json
 import nox.strings
-from nox.sqlite import Connection, Statement, Row
+from nox.sqlite import Connection, Statement
 from nox.json import JsonValue
 import nyx.session
 from nyx.session import SessionError
+from nox.db import Row
 
 class SessionStoreError:
     def __init__(self: SessionStoreError, message: str) -> None:

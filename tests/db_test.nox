@@ -3,7 +3,8 @@ import nox.fs
 import nox.strings
 import nyx.db
 from nyx.db import DbError
-from nox.sqlite import Connection, Row
+from nox.sqlite import Connection
+from nox.db import Row
 
 dir_path: str = "/tmp/nyx_migrate_test"
 if nox.fs.exists(dir_path):
