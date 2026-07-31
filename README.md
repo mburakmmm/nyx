@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.15.2 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
+**Version:** 0.15.3 · **License:** MIT · **Requires Nox ≥ 1.23.0** (recommended **1.23.0**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.2"
+      "ref": "v0.15.3"
     }
   ]
 }
@@ -156,6 +156,10 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.15.3 — CI / Nox 1.23 fix (not 1.0)
+- Requires **Nox ≥ 1.23.0** (`nox.db.Row`); CI installs via `bash` + refreshes `nox.lock` to `GITHUB_SHA`
+- Unlocks green Actions for the 0.15.2 hardening work
+
 ### 0.15.2 — Hardening follow-up (not 1.0)
 - **CI:** Nox install via `bash` (fixes `pipefail` under dash/`sh`)
 - **WS:** channel-bound tickets + one-time nonce; `ws_auth_broadcast_loop_pg`
@@ -272,7 +276,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.22.0** (recommended **1.22.9**): `serve_tls` / `serve_ws*` / prepare-bind
+- Requires **Nox ≥ 1.23.0** (recommended **1.23.0**): `nox.db.Row`, `serve_tls` / `serve_ws*` / prepare-bind
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)

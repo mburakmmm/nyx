@@ -17,26 +17,38 @@ jobs:
       - name: Install Nox
         run: |
           # install.sh uses bash-only 'set -o pipefail'; must not pipe to dash/sh
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 bash
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.23.0 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
 
       - name: Point package at checkout
         run: |
           python3 - <<'PY'
           import json, os
-          path = "nox.json"
+          ws = os.environ["GITHUB_WORKSPACE"]
+          sha = os.environ["GITHUB_SHA"]
           data = {
             "name": "nyx",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
             "requires": [{
               "alias": "nyx",
-              "repo": os.environ["GITHUB_WORKSPACE"],
+              "repo": ws,
               "ref": "master",
             }],
           }
-          with open(path, "w", encoding="utf-8") as f:
+          with open("nox.json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+            f.write("\n")
+          lock = {
+            "packages": [{
+              "alias": "nyx",
+              "repo": ws,
+              "ref": "master",
+              "resolved": sha,
+            }]
+          }
+          with open("nox.lock", "w", encoding="utf-8") as f:
+            json.dump(lock, f, indent=2)
             f.write("\n")
           PY
 
@@ -76,23 +88,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential curl
       - name: Install Nox
         run: |
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 bash
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.23.0 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
       - name: Point package at checkout
         run: |
           python3 - <<'PY'
           import json, os
+          ws = os.environ["GITHUB_WORKSPACE"]
+          sha = os.environ["GITHUB_SHA"]
           data = {
             "name": "nyx",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
             "requires": [{
               "alias": "nyx",
-              "repo": os.environ["GITHUB_WORKSPACE"],
+              "repo": ws,
               "ref": "master",
             }],
           }
           open("nox.json","w").write(json.dumps(data, indent=2)+"\n")
+          lock = {
+            "packages": [{
+              "alias": "nyx",
+              "repo": ws,
+              "ref": "master",
+              "resolved": sha,
+            }]
+          }
+          open("nox.lock","w").write(json.dumps(lock, indent=2)+"\n")
           PY
       - name: PG session + auth smoke + e2e
         env:
