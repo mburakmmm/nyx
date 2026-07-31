@@ -23,7 +23,7 @@ from nox.sqlite import Connection, Statement, SqliteError
 from nox.json import JsonError
 from nox.db import Row
 
-class ModelError:
+class ModelError(Exception):
     def __init__(self: ModelError, message: str) -> None:
         self.message = message
 

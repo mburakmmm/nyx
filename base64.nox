@@ -7,7 +7,7 @@
 
 import nox.strings
 
-class Base64Error:
+class Base64Error(Exception):
     def __init__(self: Base64Error, message: str) -> None:
         self.message = message
 

@@ -1,0 +1,65 @@
+# 0.16 TaskLocal runtime, Exception catch-all, dict[int, Record] preload
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+from nox.sqlite import Connection
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.runtime
+import nyx.db
+import nyx.model
+import nyx.assoc
+import nyx.orm
+from nyx.app import Application, AppError
+from nyx.config import Config
+from nyx.model import Record
+
+# --- TaskLocal request isolation (sequential begin/end) ---
+nyx.runtime.begin("r1", 1, "en")
+nyx.runtime.set_session("{\"a\":1}")
+s1: str = nyx.runtime.session_json()
+nyx.runtime.end()
+nyx.runtime.begin("r2", 2, "en")
+s2: str = nyx.runtime.session_json()
+nox.test.assert_eq_str(s1, "{\"a\":1}", "r1 session")
+nox.test.assert_eq_str(s2, "{}", "r2 fresh")
+nox.test.assert_eq_str(nyx.runtime.request_id(), "r2", "r2 id")
+nyx.runtime.end()
+
+# --- Exception catch-all in dispatch ---
+def setup(application: Application) -> None:
+    def boom(ctx: Context) -> HttpResponse:
+        raise AppError("intentional")
+    application.router.get("/boom", boom)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "cookie"
+cfg.metrics_enabled = False
+cfg.log_requests = False
+app: Application = nyx.app.boot(cfg, setup)
+bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/boom", "", {}))
+nox.test.assert_eq_int(bad.status, 500, "boom 500")
+nox.test.assert_true(len(bad.body) > 0, "error body")
+nyx.app.shutdown(app)
+
+# --- dict[int, Record] preload map ---
+db: Connection = nyx.db.open(":memory:")
+db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT NOT NULL)")
+db.execute("INSERT INTO users (id, name) VALUES (1, 'ada')")
+db.execute("INSERT INTO users (id, name) VALUES (2, 'bob')")
+db.execute("INSERT INTO posts (id, user_id, title) VALUES (10, 1, 'p1')")
+db.execute("INSERT INTO posts (id, user_id, title) VALUES (11, 2, 'p2')")
+posts: list[Record] = nyx.model.all(db, "posts")
+pmap: dict[int, Record] = nyx.assoc.preload_belongs_to_map(db, posts, "user_id", "users")
+u1: Record = pmap[1]
+nox.test.assert_eq_str(u1.get("name"), "ada", "map ada")
+u2: Record = pmap[2]
+nox.test.assert_eq_str(u2.get("name"), "bob", "map bob")
+idx: dict[int, Record] = nyx.orm.index_records_by_id(posts)
+nox.test.assert_eq_str(idx[10].get("title"), "p1", "index title")
+db.close()
+print("v16_nox_unlock_test ok")

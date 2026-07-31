@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.15.5 · **Lisans:** MIT · **Nox ≥ 1.23.0** (önerilen **1.23.0**)  
+**Sürüm:** 0.16.0 · **Lisans:** MIT · **Nox ≥ 1.26.0** (önerilen **1.26.0**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.5"
+      "ref": "v0.16.0"
     }
   ]
 }
@@ -156,6 +156,9 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.16.0 — Nox 1.24–1.26 kilidi (1.0 değil)
+- **Nox ≥ 1.26.0**; `TaskLocal` runtime; `Exception` mirası; `dict[int, Record]` preload
+
 ### 0.15.5 — PG smoke typing (1.0 değil)
 - `ci/pg_smoke.nox` içinde `list[Row]` tipi
 
@@ -256,7 +259,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.23.0** gerekir (`nox.db.Row`, TLS/WS)
+- **Nox ≥ 1.26.0** gerekir (`nox.db.Row`, TLS/WS)
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - App ORM / migrate / jobs: **SQLite**; ham PG/MySQL: prepare/bind var
 - İstek durumu `nyx.runtime` modül-global (worker/thread başına)

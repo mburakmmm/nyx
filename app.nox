@@ -46,7 +46,7 @@ from nyx.db import DbError
 from nyx.model import ModelError
 from nyx.rate_limit import MemoryStore
 
-class AppError:
+class AppError(Exception):
     def __init__(self: AppError, message: str) -> None:
         self.message = message
 
@@ -608,8 +608,8 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
             resp = _error_response(err_ctx, cfg, "AppError", e.message)
         except DbError as e:
             resp = _error_response(err_ctx, cfg, "DbError", e.message)
-        except:
-            resp = _error_response(err_ctx, cfg, "Error", "unhandled exception")
+        except Exception as e:
+            resp = _error_response(err_ctx, cfg, "Exception", e.message)
         # Router after-middleware may not run on exceptions caught here.
         if not counted and cfg.metrics_enabled:
             nyx.metrics.inc_requests()

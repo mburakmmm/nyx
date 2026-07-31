@@ -13,7 +13,7 @@ import nyx.base64
 from nox.json import JsonError
 from nyx.base64 import Base64Error
 
-class SessionError:
+class SessionError(Exception):
     def __init__(self: SessionError, message: str) -> None:
         self.message = message
 

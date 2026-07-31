@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.15.5 · **License:** MIT · **Requires Nox ≥ 1.23.0** (recommended **1.23.0**)  
+**Version:** 0.16.0 · **License:** MIT · **Requires Nox ≥ 1.26.0** (recommended **1.26.0**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.5"
+      "ref": "v0.16.0"
     }
   ]
 }
@@ -156,6 +156,13 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.16.0 — Nox 1.24–1.26 unlock (not 1.0)
+- Requires **Nox ≥ 1.26.0**
+- **TaskLocal** request state (`nyx.runtime`) — fiber-safe session/user bag
+- All Nyx `*Error` types inherit **`Exception`**; dispatch `except Exception`
+- **`dict[int, Record]`** preload: `assoc.preload_belongs_to_map`, `orm.index_records_by_id`
+- Docs: N1/N5/`dict[int,T]` closed in NOX_REQUESTS / LIMITATIONS
+
 ### 0.15.5 — PG smoke typing (not 1.0)
 - Type `list[Row]` in `ci/pg_smoke.nox` (Nox else-branch var rules)
 
@@ -282,7 +289,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.23.0** (recommended **1.23.0**): `nox.db.Row`, `serve_tls` / `serve_ws*` / prepare-bind
+- Requires **Nox ≥ 1.26.0** (recommended **1.26.0**): `TaskLocal`, `Exception`, `dict[int, class]`, `nox.db.Row`, TLS/WS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
@@ -292,10 +299,10 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore: `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
-- **Request state** is worker-local module globals until Nox task-local lands — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
+- **Request state** uses `TaskLocal` (Nox ≥ 1.24) — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
 
 **Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, low–medium traffic with sync handlers per worker.  
-**Still Nox-bound:** fiber/task-local request context, rich exception stacks — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
+**Still Nox-bound:** peer IP / full stack spans — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
 
 ---
 

@@ -22,7 +22,7 @@
 import nox.fs
 from nyx.config import Config
 
-class ServerError:
+class ServerError(Exception):
     def __init__(self: ServerError, message: str) -> None:
         self.message = message
 

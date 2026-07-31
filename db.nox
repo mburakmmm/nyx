@@ -33,7 +33,7 @@ from nox.url import URL, UrlError
 from nox.db import Row
 from nox.db import Row as PgRow
 
-class DbError:
+class DbError(Exception):
     def __init__(self: DbError, message: str) -> None:
         self.message = message
 

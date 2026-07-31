@@ -7,7 +7,7 @@
 import nox.os
 from nox.os import OsError
 
-class ConfigError:
+class ConfigError(Exception):
     def __init__(self: ConfigError, message: str) -> None:
         self.message = message
 

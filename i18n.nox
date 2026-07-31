@@ -25,7 +25,7 @@ import nox.os
 from nox.os import OsError
 from nox.json import JsonError
 
-class I18nError:
+class I18nError(Exception):
     def __init__(self: I18nError, message: str) -> None:
         self.message = message
 

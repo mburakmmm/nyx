@@ -6,7 +6,7 @@ from nox.sqlite import Connection
 import nyx.model
 from nyx.model import Attributes, Record
 
-class OrmError:
+class OrmError(Exception):
     def __init__(self: OrmError, message: str) -> None:
         self.message = message
 
@@ -32,7 +32,17 @@ def validate_numericality(value: int, col: str, min_v: int, max_v: int) -> list[
         errors.append(col + " out of range")
     return errors
 
-def index_records_by_id(rows: list[Record]) -> dict[str, int]:
+def index_records_by_id(rows: list[Record]) -> dict[int, Record]:
+    # Nox >= 1.26: dict[int, Record] (once str-key indexti).
+    out: dict[int, Record] = {}
+    i: int = 0
+    while i < len(rows):
+        out[rows[i].get_int("id")] = rows[i]
+        i = i + 1
+    return out
+
+# Geriye donuk: str anahtar isteyen kod icin.
+def index_records_by_id_str(rows: list[Record]) -> dict[str, int]:
     out: dict[str, int] = {}
     i: int = 0
     while i < len(rows):

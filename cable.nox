@@ -32,7 +32,7 @@ import nyx.session_store_pg
 import nyx.session
 from nox.db import Row as SqliteRow
 
-class CableError:
+class CableError(Exception):
     def __init__(self: CableError, message: str) -> None:
         self.message = message
 

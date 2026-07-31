@@ -10,7 +10,7 @@ import nox.template
 import nox.strings
 from nyx.model import Record
 
-class ViewError:
+class ViewError(Exception):
     def __init__(self: ViewError, message: str) -> None:
         self.message = message
 

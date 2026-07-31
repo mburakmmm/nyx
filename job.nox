@@ -10,9 +10,9 @@
 # registry.register("SendWelcomeEmail", send_welcome_handler)
 # processed: int = nyx.job.work(db, registry, 10)
 #
-# NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur - bilinen
-# framework hatalari ayri ayri, kalanlar Nox >= 1.9 'except:' ile yakalanir
-# ve job 'fail()' ile isaretlenir. 'finally' stuck-running korumasini saglar.
+# Nox >= 1.25: JobError(Exception); dispatch 'except Exception' ile yakalanabilir.
+# work() icinde bilinen hatalar ayri, kalanlar 'except Exception' / 'except:' ile
+# fail() isaretlenir. 'finally' stuck-running korumasini saglar.
 
 import nox.sqlite
 import nox.json
@@ -28,7 +28,7 @@ import nyx.db
 from nyx.db import DbError
 from nox.db import Row
 
-class JobError:
+class JobError(Exception):
     def __init__(self: JobError, message: str) -> None:
         self.message = message
 

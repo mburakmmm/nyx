@@ -17,7 +17,7 @@ jobs:
       - name: Install Nox
         run: |
           # install.sh uses bash-only 'set -o pipefail'; must not pipe to dash/sh
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.23.0 bash
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.26.0 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
 
       - name: Point package at checkout
@@ -88,7 +88,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential curl
       - name: Install Nox
         run: |
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.23.0 bash
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.26.0 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
       - name: Point package at checkout
         run: |

@@ -1,29 +1,28 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.10+ batteries-included yolu 0.15'e kadar ilerler (sürüm 1.0 değil).
-# Aşağıdakiler Nox tarafında kalıcı çözüm bekler; Nyx API'leri buna hazırlanır.
+# Nyx 0.16+ Nox 1.24–1.26 kilidini kullanır (sürüm 1.0 değil).
 
-## Öncelikli (senin üzerinde çalıştığın)
+## Kapandı (Nox 1.23–1.26)
 
-### N1 — Task / fiber-local context
-- Request state worker-local modül-global; eşzamanlı istek karışma riski.
-- İstek: contextvars benzeri task-local.
-- Bonus: `HttpRequest` peer/remote address (trusted proxy doğrulaması için).
-- Nyx: `NYX_TRUST_X_FORWARDED_FOR` dürüst bayrak (peer yokken gerçek proxy IP doğrulanamaz); N1+peer gelince sıkılaştırılır.
+| İstek | Nox | Nyx |
+|---|---|---|
+| Ortak `nox.db.Row` + `DbConnection.query` | **1.23.0** | model/pg_model/session Row importları |
+| Task / fiber-local context (N1) | **1.24.0** `TaskLocal[T]` | `nyx.runtime` TaskLocal bag |
+| Exception tabanı + satır/tip raporu (N5 kısmi) | **1.25.0** | `*Error(Exception)`; dispatch `except Exception`; unhandled: `Sinif (satir N)` |
+| `dict[int, class]` / `dict[int, Record]` | **1.26.0** | `assoc.preload_belongs_to_map`, `orm.index_records_by_id` |
 
-### N5 — Exception diagnostics
-- Dev page type/message/request_id; stack/source span yok.
-- İstek: dosya:satır + kısa stack API.
-- Nyx: `server_error_detail_for` — N5 gelince zenginleşir.
+## Hâlâ açık / kısmi
 
-### N4 — Ortak query/Row protokolü
-- `DbConnection` = `execute`+`close`; `query`/`Row` sürücüye özel.
-- İstek: kovaryant `list[RowProtocol]` veya ortak Row.
-- Nyx: dialect dispatcher (`model` / `pg_model`); protokol gelince tek yüzey.
+### Peer / remote address
+- Trusted-proxy doğrulaması için `HttpRequest` peer IP hâlâ yok.
+- Nyx: `NYX_TRUST_X_FORWARDED_FOR` dürüst bayrak (peer yokken gerçek proxy IP doğrulanamaz).
 
-### dict[int, T]
-- Preload O(1) id→Record map.
-- Nyx: str-key map veya `dict[int, Record]` Nox destekliyorsa.
+### Exception source span
+- 1.25 yakalanmamış istisnada sınıf + satır verir; yakalanmış `Exception` üzerinde satır alanı yok.
+- Nyx: `server_error_detail_for(kind, message)` — satır API gelince zenginleşir.
+
+### Ortak dialect ORM
+- Row ortak; `prepare`/`Connection` hâlâ sürücüye özel → `model` / `pg_model` ayrı.
 
 ## Kapandı (Nox 1.21–1.22)
 
@@ -35,4 +34,4 @@
 | on_shutdown + nested Router | 1.18.1+ |
 
 ## İzleme
-`noxc upgrade` → full `tests/*.nox` → blog dogfood → PG CI smoke.
+`noxc upgrade` (≥1.26) → full `tests/*.nox` → blog dogfood → PG CI smoke.

@@ -11,7 +11,7 @@ import nox.time
 import nox.strings
 import nyx.base64
 
-class JwtError:
+class JwtError(Exception):
     def __init__(self: JwtError, message: str) -> None:
         self.message = message
 

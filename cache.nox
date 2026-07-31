@@ -15,7 +15,7 @@ from nox.collections import LRUCache
 import nyx.db
 from nox.db import Row
 
-class CacheError:
+class CacheError(Exception):
     def __init__(self: CacheError, message: str) -> None:
         self.message = message
 

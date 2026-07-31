@@ -1,15 +1,8 @@
-# nyx.runtime - istek-kapsamli durum (worker/thread-local module globals).
+# nyx.runtime - istek-kapsamli durum (Nox >= 1.24 TaskLocal[T]).
 #
-# Nox >= 1.18.1: paket-modül globals + nested closure / Router codegen-safe
-# (P1c düzeltmesi). NYX_RT_* ortam değişkenleri ARTIK KULLANILMAZ.
-#
-# Her OS thread'inin KENDI global blogu vardir ('serve_multicore' worker
-# basina). Varsayim: worker basina senkron, tek istek (nyx.app.dispatch).
-#
-# UYARI: Nox fiber/task-local gelmeden ayni worker'da concurrent I/O ile
-# request interleave edilirse session/user state karisabilir. Prefer
-# AppContext setters (cycle_session/logout) and avoid long yields mid-request.
-# See docs/NOX_REQUESTS.md (task-local).
+# TaskLocal: ayni worker'da eszamanli fiber'lar birbirinin session/user
+# state'ini GORMEZ. Modul-seviyesi TaskLocal ornegi paylasilir; deger
+# fiber-local haritada saklanir.
 #
 # 'current()' BIR SNAPSHOT doner - alanlarini dogrudan degistirmek kalici
 # degildir; 'set_*' / 'load_*' / 'touch_*' / 'cycle_session' / 'logout' kullanin.
@@ -43,77 +36,95 @@ class RequestBag:
         self.request_id = rid
         self.started_ms = sms
 
-class RuntimeError:
-    def __init__(self: RuntimeError, message: str) -> None:
-        self.message = message
+class RuntimeError(Exception):
+    pass
 
-_rt_active: bool = False
-_rt_session_json: str = "{}"
-_rt_session_dirty: bool = False
-_rt_has_session: bool = False
-_rt_user_id: str = ""
-_rt_user_payload: str = ""
-_rt_has_user: bool = False
-_rt_locale: str = ""
-_rt_request_id: str = ""
-_rt_started_ms: int = 0
-_rt_request_target: str = ""
-_rt_hdr_keys: str = ""
-_rt_session_sid: str = ""
-_rt_session_rotate: bool = False
-_rt_expire_session_cookie: bool = False
+# Mutable per-request bag; TaskLocal[T] T=sinif gerektirir (int/bool yok).
+class RuntimeState:
+    def __init__(self: RuntimeState) -> None:
+        self.active = False
+        self.session_json = "{}"
+        self.session_dirty = False
+        self.has_session = False
+        self.user_id = ""
+        self.user_payload = ""
+        self.has_user = False
+        self.locale = ""
+        self.request_id = ""
+        self.started_ms = 0
+        self.request_target = ""
+        self.hdr_keys = ""
+        self.session_sid = ""
+        self.session_rotate = False
+        self.expire_session_cookie = False
+
+_tl: TaskLocal[RuntimeState] = TaskLocal[RuntimeState]()
+
+def _state() -> RuntimeState:
+    got: RuntimeState | None = _tl.get()
+    if got == None:
+        created: RuntimeState = RuntimeState()
+        _tl.set(created)
+        return created
+    else:
+        return got
 
 def is_active() -> bool:
-    return _rt_active
+    return _state().active
 
 def reset() -> None:
-    _rt_active = False
-    _rt_session_json = "{}"
-    _rt_session_dirty = False
-    _rt_has_session = False
-    _rt_user_id = ""
-    _rt_user_payload = ""
-    _rt_has_user = False
-    _rt_locale = ""
-    _rt_request_id = ""
-    _rt_started_ms = 0
-    _rt_request_target = ""
-    _rt_hdr_keys = ""
-    _rt_session_sid = ""
-    _rt_session_rotate = False
-    _rt_expire_session_cookie = False
+    st: RuntimeState = _state()
+    st.active = False
+    st.session_json = "{}"
+    st.session_dirty = False
+    st.has_session = False
+    st.user_id = ""
+    st.user_payload = ""
+    st.has_user = False
+    st.locale = ""
+    st.request_id = ""
+    st.started_ms = 0
+    st.request_target = ""
+    st.hdr_keys = ""
+    st.session_sid = ""
+    st.session_rotate = False
+    st.expire_session_cookie = False
 
 def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
-    _rt_active = True
-    _rt_session_json = "{}"
-    _rt_session_dirty = False
-    _rt_has_session = False
-    _rt_user_id = ""
-    _rt_user_payload = ""
-    _rt_has_user = False
-    _rt_locale = loc + ""
-    _rt_request_id = req_id + ""
-    _rt_started_ms = start_ms
-    _rt_request_target = ""
-    _rt_hdr_keys = ""
-    _rt_session_sid = ""
-    _rt_session_rotate = False
-    _rt_expire_session_cookie = False
+    st: RuntimeState = RuntimeState()
+    st.active = True
+    st.session_json = "{}"
+    st.session_dirty = False
+    st.has_session = False
+    st.user_id = ""
+    st.user_payload = ""
+    st.has_user = False
+    st.locale = loc + ""
+    st.request_id = req_id + ""
+    st.started_ms = start_ms
+    st.request_target = ""
+    st.hdr_keys = ""
+    st.session_sid = ""
+    st.session_rotate = False
+    st.expire_session_cookie = False
+    _tl.set(st)
     return current()
 
 def end() -> None:
     reset()
+    _tl.clear()
 
 def set_request_target(target: str) -> None:
-    _rt_request_target = target + ""
+    _state().request_target = target + ""
 
 def request_target() -> str:
-    return _rt_request_target + ""
+    return _state().request_target + ""
 
 def track_header_key(key: str) -> None:
-    raw: str = _rt_hdr_keys
+    st: RuntimeState = _state()
+    raw: str = st.hdr_keys
     if len(raw) == 0:
-        _rt_hdr_keys = key
+        st.hdr_keys = key
         return
     parts: list[str] = nox.strings.split(raw, "\n")
     i: int = 0
@@ -121,125 +132,130 @@ def track_header_key(key: str) -> None:
         if parts[i] == key:
             return
         i = i + 1
-    _rt_hdr_keys = raw + "\n" + key
+    st.hdr_keys = raw + "\n" + key
 
 def tracked_header_keys() -> list[str]:
-    raw: str = _rt_hdr_keys
+    raw: str = _state().hdr_keys
     if len(raw) == 0:
         out: list[str] = []
         return out
     return nox.strings.split(raw, "\n")
 
 def clear_tracked_headers() -> None:
-    _rt_hdr_keys = ""
+    _state().hdr_keys = ""
 
 def current() -> RequestBag:
-    if not _rt_active:
-        _rt_active = True
+    st: RuntimeState = _state()
+    if not st.active:
+        st.active = True
     return RequestBag(
-        _rt_session_json + "",
-        _rt_session_dirty,
-        _rt_has_session,
-        _rt_user_id + "",
-        _rt_user_payload + "",
-        _rt_has_user,
-        _rt_locale + "",
-        _rt_request_id + "",
-        _rt_started_ms
+        st.session_json + "",
+        st.session_dirty,
+        st.has_session,
+        st.user_id + "",
+        st.user_payload + "",
+        st.has_user,
+        st.locale + "",
+        st.request_id + "",
+        st.started_ms
     )
 
 def load_session(data_json: str) -> None:
-    _rt_session_json = data_json + ""
-    _rt_has_session = True
+    st: RuntimeState = _state()
+    st.session_json = data_json + ""
+    st.has_session = True
 
 def set_session(data_json: str) -> None:
-    _rt_session_json = data_json + ""
-    _rt_has_session = True
-    _rt_session_dirty = True
+    st: RuntimeState = _state()
+    st.session_json = data_json + ""
+    st.has_session = True
+    st.session_dirty = True
 
 def session_json() -> str:
-    # Kopya don: HttpResponse body / session.create ayni ref'i paylasmasin.
-    return _rt_session_json + ""
+    return _state().session_json + ""
 
 def has_session() -> bool:
-    return _rt_has_session
+    return _state().has_session
 
 def is_session_dirty() -> bool:
-    return _rt_session_dirty
+    return _state().session_dirty
 
 def touch_session() -> None:
-    _rt_session_dirty = True
+    _state().session_dirty = True
 
 def cycle_session() -> None:
-    # Login/privilege change: force new server-side SID on next write.
-    _rt_session_dirty = True
-    _rt_session_rotate = True
+    st: RuntimeState = _state()
+    st.session_dirty = True
+    st.session_rotate = True
 
 def is_session_rotate() -> bool:
-    return _rt_session_rotate
+    return _state().session_rotate
 
 def clear_session_rotate() -> None:
-    _rt_session_rotate = False
+    _state().session_rotate = False
 
 def expire_session_cookie() -> None:
-    # Logout: after-middleware should Set-Cookie Max-Age=0 and destroy SID.
-    _rt_expire_session_cookie = True
-    _rt_session_dirty = True
+    st: RuntimeState = _state()
+    st.expire_session_cookie = True
+    st.session_dirty = True
 
 def should_expire_session_cookie() -> bool:
-    return _rt_expire_session_cookie
+    return _state().expire_session_cookie
 
 def clear_expire_session_cookie() -> None:
-    _rt_expire_session_cookie = False
+    _state().expire_session_cookie = False
 
 def logout() -> None:
-    # Clear client session payload and mark cookie+server SID for destruction.
-    _rt_session_json = "{}"
-    _rt_has_session = True
-    _rt_session_dirty = True
-    _rt_session_rotate = False
-    _rt_expire_session_cookie = True
+    st: RuntimeState = _state()
+    st.session_json = "{}"
+    st.has_session = True
+    st.session_dirty = True
+    st.session_rotate = False
+    st.expire_session_cookie = True
     clear_user()
 
 def set_user(user_id: str, payload_json: str) -> None:
-    _rt_user_id = user_id
-    _rt_user_payload = payload_json
-    _rt_has_user = True
+    st: RuntimeState = _state()
+    st.user_id = user_id
+    st.user_payload = payload_json
+    st.has_user = True
 
 def clear_user() -> None:
-    _rt_user_id = ""
-    _rt_user_payload = ""
-    _rt_has_user = False
+    st: RuntimeState = _state()
+    st.user_id = ""
+    st.user_payload = ""
+    st.has_user = False
 
 def current_user_id() -> str:
-    return _rt_user_id + ""
+    return _state().user_id + ""
 
 def current_user_payload() -> str:
-    return _rt_user_payload + ""
+    return _state().user_payload + ""
 
 def signed_in() -> bool:
-    return _rt_has_user
+    return _state().has_user
 
 def request_id() -> str:
-    return _rt_request_id + ""
+    return _state().request_id + ""
 
 def started_ms() -> int:
-    return _rt_started_ms
+    return _state().started_ms
 
 def locale() -> str:
-    return _rt_locale + ""
+    return _state().locale + ""
 
 def session_sid() -> str:
-    return _rt_session_sid + ""
+    return _state().session_sid + ""
 
 def set_session_sid(sid: str) -> None:
-    _rt_session_sid = sid + ""
+    _state().session_sid = sid + ""
 
 def flash_set(key: str, message: str) -> None:
-    updated: str = nyx.flash.set(session_json(), key, message)
-    _rt_session_json = updated
-    _rt_has_session = True
-    _rt_session_dirty = True
+    st: RuntimeState = _state()
+    updated: str = nyx.flash.set(st.session_json, key, message)
+    st.session_json = updated
+    st.has_session = True
+    st.session_dirty = True
 
 def flash_get(key: str) -> str | None:
     val: str | None = nyx.flash.get(session_json(), key)
@@ -248,6 +264,7 @@ def flash_get(key: str) -> str | None:
     return val
 
 def flash_clear(key: str) -> None:
-    updated: str = nyx.flash.clear(session_json(), key)
-    _rt_session_json = updated
-    _rt_session_dirty = True
+    st: RuntimeState = _state()
+    updated: str = nyx.flash.clear(st.session_json, key)
+    st.session_json = updated
+    st.session_dirty = True

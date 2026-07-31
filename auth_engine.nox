@@ -14,7 +14,7 @@ import nyx.model
 import nyx.runtime
 from nyx.model import Attributes, ModelError, Record
 
-class AuthEngineError:
+class AuthEngineError(Exception):
     def __init__(self: AuthEngineError, message: str) -> None:
         self.message = message
 

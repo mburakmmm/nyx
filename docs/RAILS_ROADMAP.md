@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.15.5** (1.0 değil) · Nox **≥ 1.23.0**  
+**Durum:** Nyx **0.16.0** (1.0 değil) · Nox **≥ 1.26.0**  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -43,6 +43,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.15.3** | Nox ≥ 1.23 + CI lock SHA fix |
 | **0.15.4** | PG CI smoke via ci/pg_smoke.nox |
 | **0.15.5** | PG smoke Row typing |
+| **0.16.0** | TaskLocal runtime, Exception, dict[int,Record] |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 
@@ -50,7 +51,7 @@ Hotwire, OAuth/OIDC/2FA, ActiveStorage variants, multi-tenant, MySQL first-class
 
 ## 5. Nox kapısı (paralel)
 
-N1 task-local · N5 exception stack · ortak query/Row · `dict[int, Record]`  
+N1/N5/`dict[int,Record]`/Row → Nox 1.23–1.26 (peer IP + span kısmi)  
 → runtime / error page / ORM birleşimi pin yükseltince aktive.
 
 ## 6. Dogfood kriteri (0.15)

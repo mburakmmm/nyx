@@ -6,7 +6,7 @@ import nox.time
 from nox.sqlite import Connection, Statement
 from nox.db import Row
 
-class RateLimitError:
+class RateLimitError(Exception):
     def __init__(self: RateLimitError, message: str) -> None:
         self.message = message
 

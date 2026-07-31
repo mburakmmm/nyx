@@ -160,6 +160,8 @@ def server_error_for(ctx: Context) -> HttpResponse:
 
 # development: ayrıntılı HTML/JSON; production: generic 500.
 # 'cfg' - nyx.config.Config (is_development).
+# Nox >= 1.25: yakalanmamis istisnalar runtime'da "Sinif (satir N)" raporlar;
+# dispatch 'except Exception' ile message'i buraya tasir (satir alani Exception'da yok).
 def server_error_detail_for(
     ctx: Context,
     cfg: Config,

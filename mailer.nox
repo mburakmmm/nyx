@@ -27,7 +27,7 @@ from nyx.config import Config
 import nyx.tls
 import nyx.base64
 
-class MailerError:
+class MailerError(Exception):
     def __init__(self: MailerError, message: str) -> None:
         self.message = message
 

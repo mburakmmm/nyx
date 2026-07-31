@@ -68,6 +68,17 @@ def preload_belongs_to_list(db: Connection, rows: list[Record], fk_col: str, par
         m = m + 1
     return out
 
+# Nox >= 1.26: dict[int, Record] — O(1) id→parent esleme.
+def preload_belongs_to_map(db: Connection, rows: list[Record], fk_col: str, parent_table: str) -> dict[int, Record]:
+    out: dict[int, Record] = {}
+    packed: list[Record] = preload_belongs_to_list(db, rows, fk_col, parent_table)
+    i: int = 0
+    while i < len(packed):
+        rec: Record = packed[i]
+        out[rec.get_int("id")] = rec
+        i = i + 1
+    return out
+
 # has_many toplu: verilen parent_id listesi icin tum child satirlari (tek sorgu).
 def preload_has_many_list(db: Connection, parent_ids: list[int], child_table: str, fk_col: str) -> list[Record]:
     out: list[Record] = []

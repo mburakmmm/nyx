@@ -17,7 +17,7 @@ import nox.strings
 import nox.http
 from nox.http import HttpResponse, HttpError
 
-class StorageError:
+class StorageError(Exception):
     def __init__(self: StorageError, message: str) -> None:
         self.message = message
 

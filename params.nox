@@ -13,7 +13,7 @@ from nox.http import HttpRequest
 from nox.url import UrlError
 import nyx.runtime
 
-class ParamsError:
+class ParamsError(Exception):
     def __init__(self: ParamsError, message: str) -> None:
         self.message = message
 
