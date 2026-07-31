@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.15.3** (1.0 değil) · Nox **≥ 1.22.0**  
+**Durum:** Nyx **0.15.4** (1.0 değil) · Nox **≥ 1.23.0**  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -41,6 +41,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.15.1** | SID rotation, PG session/auth, metrics/rate/WS/auth harden |
 | **0.15.2** | CI bash install, PG WS auth + E2E, TRUST_XFF, auth timing |
 | **0.15.3** | Nox ≥ 1.23 + CI lock SHA fix |
+| **0.15.4** | PG CI smoke via ci/pg_smoke.nox |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

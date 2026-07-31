@@ -1,0 +1,33 @@
+# CI Postgres smoke (session_store_pg + auth_engine_pg). Run only with DATABASE_URL.
+import nox.test
+import nox.os
+import nox.strings
+from nox.os import OsError
+import nyx.db
+import nyx.session_store_pg
+import nyx.auth_engine_pg
+from nox.postgres import Connection as PgConnection
+
+def _url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+url: str = _url()
+if len(url) == 0 or not nox.strings.contains(url, "postgres"):
+    print("pg_smoke_ci skipped")
+else:
+    db: PgConnection = nyx.db.open_postgres(url)
+    rows = db.query("SELECT 1 AS n")
+    nox.test.assert_eq_int(rows[0].get_int(0), 1, "select1")
+    nyx.session_store_pg.ensure_schema(db)
+    sid: str = nyx.session_store_pg.create_sid(db, "{\"user_id\":1}", 3600, 1)
+    loaded: str | None = nyx.session_store_pg.load_sid(db, sid)
+    nox.test.assert_true(loaded != None, "session load")
+    nyx.auth_engine_pg.ensure_schema(db)
+    uid: int = nyx.auth_engine_pg.register(db, "ci_smoke@example.com", "password1")
+    uid2: int = nyx.auth_engine_pg.authenticate(db, "ci_smoke@example.com", "password1")
+    nox.test.assert_eq_int(uid2, uid, "auth")
+    print("pg_smoke_ok")
+    db.close()

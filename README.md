@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.15.3 · **License:** MIT · **Requires Nox ≥ 1.23.0** (recommended **1.23.0**)  
+**Version:** 0.15.4 · **License:** MIT · **Requires Nox ≥ 1.23.0** (recommended **1.23.0**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.3"
+      "ref": "v0.15.4"
     }
   ]
 }
@@ -155,6 +155,9 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.15.4 — PG CI smoke path fix (not 1.0)
+- Run Postgres smoke from `ci/pg_smoke.nox` (not `/tmp`) so package imports resolve
 
 ### 0.15.3 — CI / Nox 1.23 fix (not 1.0)
 - Requires **Nox ≥ 1.23.0** (`nox.db.Row`); CI installs via `bash` + refreshes `nox.lock` to `GITHUB_SHA`

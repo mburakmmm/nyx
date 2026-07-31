@@ -122,25 +122,5 @@ jobs:
           DATABASE_URL: postgres://nyx:nyx@127.0.0.1:5432/nyx
         run: |
           noxc fetch
-          cat > /tmp/pg_smoke.nox <<'EOF'
-          import nox.test
-          import nyx.db
-          import nyx.session_store_pg
-          import nyx.auth_engine_pg
-          from nox.postgres import Connection as PgConnection
-          db: PgConnection = nyx.db.open_postgres("postgres://nyx:nyx@127.0.0.1:5432/nyx")
-          rows = db.query("SELECT 1 AS n")
-          nox.test.assert_eq_int(rows[0].get_int(0), 1, "select1")
-          nyx.session_store_pg.ensure_schema(db)
-          sid: str = nyx.session_store_pg.create_sid(db, "{\"user_id\":1}", 3600, 1)
-          loaded = nyx.session_store_pg.load_sid(db, sid)
-          nox.test.assert_true(loaded != None, "session load")
-          nyx.auth_engine_pg.ensure_schema(db)
-          uid: int = nyx.auth_engine_pg.register(db, "ci@example.com", "password1")
-          uid2: int = nyx.auth_engine_pg.authenticate(db, "ci@example.com", "password1")
-          nox.test.assert_eq_int(uid2, uid, "auth")
-          print("pg_smoke_ok")
-          db.close()
-          EOF
-          noxc run /tmp/pg_smoke.nox
+          noxc run ci/pg_smoke.nox
           noxc test tests/v152_pg_session_e2e_test.nox
