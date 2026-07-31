@@ -9,7 +9,7 @@
 - Request state worker-local modül-global; eşzamanlı istek karışma riski.
 - İstek: contextvars benzeri task-local.
 - Bonus: `HttpRequest` peer/remote address (trusted proxy doğrulaması için).
-- Nyx: `nyx.runtime` + `AppContext` setters — N1 gelince taşınır.
+- Nyx: `NYX_TRUST_X_FORWARDED_FOR` dürüst bayrak (peer yokken gerçek proxy IP doğrulanamaz); N1+peer gelince sıkılaştırılır.
 
 ### N5 — Exception diagnostics
 - Dev page type/message/request_id; stack/source span yok.

@@ -23,9 +23,12 @@ import nox.path
 import nox.sqlite
 from nox.http import HttpResponse
 from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement
+from nox.postgres import Connection as PgConnection, Statement as PgStatement, PostgresError
 from nox.websocket import WebSocketServerConn
 from nox.json import JsonValue
+import nox.uuid
 import nyx.session_store
+import nyx.session_store_pg
 import nyx.session
 from nox.db import Row as SqliteRow
 
@@ -342,25 +345,122 @@ def ws_broadcast_loop(ch: Channel, conn: WebSocketServerConn) -> None:
         mid: int = channel_broadcast(ch, "message", msg)
         conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")
 
-# Authenticated WS: first frame must be {"ticket":"<signed>"} where ticket is
-# produced by issue_ws_ticket(secret, sid, max_age). Raw sid bearer is rejected.
-def issue_ws_ticket(secret: str, sid: str, max_age_sec: int) -> str:
+# Authenticated WS: first frame must be {"ticket":"<signed>"}.
+# Ticket body: {"sid","channel","nonce"} — channel-bound + one-time nonce.
+# Raw sid bearer is rejected.
+
+class WsTicketClaims:
+    sid: str
+    channel: str
+    nonce: str
+
+    def __init__(self: WsTicketClaims, sid: str, channel: str, nonce: str) -> None:
+        self.sid = sid
+        self.channel = channel
+        self.nonce = nonce
+
+def issue_ws_ticket(secret: str, sid: str, channel: str, max_age_sec: int) -> str:
     if len(sid) == 0:
         raise CableError("empty sid")
-    body: str = "{\"sid\":" + nox.json.encode_string(sid) + "}"
+    if len(channel) == 0:
+        raise CableError("empty channel")
+    nonce: str = nox.uuid.uuid4()
+    body: str = (
+        "{\"sid\":" + nox.json.encode_string(sid) +
+        ",\"channel\":" + nox.json.encode_string(channel) +
+        ",\"nonce\":" + nox.json.encode_string(nonce) + "}"
+    )
     return nyx.session.create(secret, body, max_age_sec)
 
-def ws_auth_broadcast_loop(
-    ch: Channel,
-    conn: WebSocketServerConn,
-    session_db: SqliteConnection,
-    secret: str,
-    secret_previous: str
-) -> None:
-    first: str = conn.recv()
-    if len(first) == 0:
-        conn.close()
-        return
+def _claims_from_ticket_json(raw: str) -> WsTicketClaims | None:
+    try:
+        v: JsonValue = nox.json.decode(raw)
+        sid: str = ""
+        channel: str = ""
+        nonce: str = ""
+        i: int = 0
+        n: int = nox.json.object_len(v)
+        while i < n:
+            key: str = nox.json.object_key(v, i)
+            if key == "sid":
+                sid = nox.json.as_string(nox.json.object_value(v, i))
+            if key == "channel":
+                channel = nox.json.as_string(nox.json.object_value(v, i))
+            if key == "nonce":
+                nonce = nox.json.as_string(nox.json.object_value(v, i))
+            i = i + 1
+        if len(sid) == 0 or len(channel) == 0 or len(nonce) == 0:
+            return None
+        return WsTicketClaims(sid, channel, nonce)
+    except:
+        return None
+
+def claims_from_ws_ticket(secret: str, previous: str, ticket: str) -> WsTicketClaims | None:
+    raw: str | None = nyx.session.load(secret, ticket)
+    if raw == None and len(previous) > 0:
+        raw = nyx.session.load(previous, ticket)
+    if raw == None:
+        return None
+    else:
+        return _claims_from_ticket_json(raw)
+
+def ensure_ws_nonce_schema(db: SqliteConnection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS nyx_ws_nonces (" +
+        "nonce TEXT PRIMARY KEY NOT NULL, " +
+        "expires_at_ms INTEGER NOT NULL" +
+        ")"
+    )
+
+def consume_ws_nonce(db: SqliteConnection, nonce: str, max_age_sec: int) -> bool:
+    if len(nonce) == 0:
+        return False
+    if max_age_sec <= 0:
+        max_age_sec = 60
+    now: int = nox.time.now_ms()
+    db.execute("DELETE FROM nyx_ws_nonces WHERE expires_at_ms < " + str(now))
+    exp: int = now + (max_age_sec * 1000)
+    try:
+        stmt: SqliteStatement = db.prepare(
+            "INSERT INTO nyx_ws_nonces (nonce, expires_at_ms) VALUES (?, ?)"
+        )
+        stmt.bind_str(0, nonce)
+        stmt.bind_int(1, exp)
+        stmt.execute()
+        return True
+    except:
+        return False
+
+def ensure_ws_nonce_schema_pg(db: PgConnection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS nyx_ws_nonces (" +
+        "nonce TEXT PRIMARY KEY NOT NULL, " +
+        "expires_at_ms BIGINT NOT NULL" +
+        ")"
+    )
+
+def consume_ws_nonce_pg(db: PgConnection, nonce: str, max_age_sec: int) -> bool:
+    if len(nonce) == 0:
+        return False
+    if max_age_sec <= 0:
+        max_age_sec = 60
+    now: int = nox.time.now_ms()
+    purge: PgStatement = db.prepare("DELETE FROM nyx_ws_nonces WHERE expires_at_ms < $1")
+    purge.bind_int(0, now)
+    purge.execute()
+    exp: int = now + (max_age_sec * 1000)
+    try:
+        stmt: PgStatement = db.prepare(
+            "INSERT INTO nyx_ws_nonces (nonce, expires_at_ms) VALUES ($1, $2)"
+        )
+        stmt.bind_str(0, nonce)
+        stmt.bind_int(1, exp)
+        stmt.execute()
+        return True
+    except PostgresError:
+        return False
+
+def _extract_ticket_frame(first: str) -> str:
     ticket: str = ""
     try:
         v: JsonValue = nox.json.decode(first)
@@ -371,23 +471,86 @@ def ws_auth_broadcast_loop(
                 ticket = nox.json.as_string(nox.json.object_value(v, i))
             i = i + 1
     except:
-        conn.send_text("{\"error\":\"auth_required\"}")
+        return ""
+    return ticket
+
+def ws_auth_broadcast_loop(
+    ch: Channel,
+    conn: WebSocketServerConn,
+    session_db: SqliteConnection,
+    secret: str,
+    secret_previous: str
+) -> None:
+    ensure_ws_nonce_schema(session_db)
+    first: str = conn.recv()
+    if len(first) == 0:
         conn.close()
         return
+    ticket: str = _extract_ticket_frame(first)
     if len(ticket) == 0:
         conn.send_text("{\"error\":\"auth_required\"}")
         conn.close()
         return
-    sid: str | None = nyx.session_store.sid_from_cookie_value_rotated(
-        secret, secret_previous, ticket
-    )
-    if sid == None:
+    claims: WsTicketClaims | None = claims_from_ws_ticket(secret, secret_previous, ticket)
+    if claims == None:
         conn.send_text("{\"error\":\"unauthorized\"}")
         conn.close()
         return
     else:
-        sid_s: str = sid
-        data: str | None = nyx.session_store.load_sid(session_db, sid_s)
+        if claims.channel != ch.name:
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        if not consume_ws_nonce(session_db, claims.nonce, 120):
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        data: str | None = nyx.session_store.load_sid(session_db, claims.sid)
+        if data == None:
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        else:
+            conn.send_text("{\"ok\":true,\"authed\":true}")
+            while conn.is_open():
+                msg: str = conn.recv()
+                if len(msg) == 0:
+                    return
+                mid: int = channel_broadcast(ch, "message", msg)
+                conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")
+
+def ws_auth_broadcast_loop_pg(
+    ch: Channel,
+    conn: WebSocketServerConn,
+    session_db: PgConnection,
+    secret: str,
+    secret_previous: str
+) -> None:
+    ensure_ws_nonce_schema_pg(session_db)
+    first: str = conn.recv()
+    if len(first) == 0:
+        conn.close()
+        return
+    ticket: str = _extract_ticket_frame(first)
+    if len(ticket) == 0:
+        conn.send_text("{\"error\":\"auth_required\"}")
+        conn.close()
+        return
+    claims: WsTicketClaims | None = claims_from_ws_ticket(secret, secret_previous, ticket)
+    if claims == None:
+        conn.send_text("{\"error\":\"unauthorized\"}")
+        conn.close()
+        return
+    else:
+        if claims.channel != ch.name:
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        if not consume_ws_nonce_pg(session_db, claims.nonce, 120):
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        data: str | None = nyx.session_store_pg.load_sid(session_db, claims.sid)
         if data == None:
             conn.send_text("{\"error\":\"unauthorized\"}")
             conn.close()

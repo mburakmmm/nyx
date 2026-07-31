@@ -8,7 +8,7 @@ import nox.time
 import nox.uuid
 import nox.strings
 import nox.crypto
-from nox.sqlite import Connection, SqliteError
+from nox.sqlite import Connection, SqliteError, Statement
 import nyx.password
 import nyx.model
 import nyx.runtime
@@ -29,6 +29,23 @@ def normalize_email(email: str) -> str:
 
 def hash_reset_token(raw: str) -> str:
     return nox.crypto.sha256(raw)
+
+class _TimingDigest:
+    value: str
+
+    def __init__(self: _TimingDigest) -> None:
+        self.value = ""
+
+    def get(self: _TimingDigest) -> str:
+        if len(self.value) == 0:
+            self.value = nyx.password.hash("__nyx_auth_timing_dummy_v1__")
+        return self.value
+
+_timing: _TimingDigest = _TimingDigest()
+
+def timing_dummy_digest() -> str:
+    # Cached argon2 digest so missing-user / locked paths spend similar verify time.
+    return _timing.get()
 
 def ensure_schema(db: Connection) -> None:
     db.execute(
@@ -76,12 +93,18 @@ def register(db: Connection, email: str, password: str) -> int:
         raise AuthEngineError("could not register")
 
 def _bump_failure(db: Connection, rec: Record) -> None:
-    attempts: int = rec.get_int_or("failed_attempts", 0) + 1
-    attrs: Attributes = nyx.model.attributes()
-    nyx.model.set_int(attrs, "failed_attempts", attempts)
-    if attempts >= max_failed_attempts():
-        nyx.model.set_int(attrs, "locked_at_ms", nox.time.now_ms())
-    nyx.model.update_attrs(db, "users", rec.get_int("id"), attrs)
+    # Atomic increment avoids read-modify-write races on concurrent failures.
+    now: int = nox.time.now_ms()
+    max_a: int = max_failed_attempts()
+    stmt: Statement = db.prepare(
+        "UPDATE users SET failed_attempts = failed_attempts + 1, " +
+        "locked_at_ms = CASE WHEN failed_attempts + 1 >= ? THEN ? ELSE locked_at_ms END " +
+        "WHERE id = ?"
+    )
+    stmt.bind_int(0, max_a)
+    stmt.bind_int(1, now)
+    stmt.bind_int(2, rec.get_int("id"))
+    stmt.execute()
 
 def _clear_failure(db: Connection, rec: Record) -> None:
     attrs: Attributes = nyx.model.attributes()
@@ -92,9 +115,11 @@ def _clear_failure(db: Connection, rec: Record) -> None:
 def authenticate(db: Connection, email: str, password: str) -> int:
     rec: Record | None = find_by_email(db, email)
     if rec == None:
+        nyx.password.verify(timing_dummy_digest(), password)
         raise AuthEngineError("invalid credentials")
     else:
         if is_locked_at(rec.get_int_or("locked_at_ms", 0)):
+            nyx.password.verify(timing_dummy_digest(), password)
             raise AuthEngineError("invalid credentials")
         digest: str = rec.get("password_digest")
         if not nyx.password.verify(digest, password):

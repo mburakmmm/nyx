@@ -727,6 +727,8 @@ cmd_generate_channel() {
 # ch = nyx.cable.channel_memory(hub, "$sn")
 # nyx.cable.channel_broadcast(ch, "ping", "{}")
 # WS: nyx.cable.ws_auth_broadcast_loop(ch, conn, application.db, secret, "")
+# PG:  nyx.cable.ws_auth_broadcast_loop_pg(ch, conn, nyx.app.pg(application), secret, "")
+# Ticket: nyx.cable.issue_ws_ticket(secret, sid, ch.name, 60)
 EOF
   echo "created: app/channels/${sn}.nox"
 }

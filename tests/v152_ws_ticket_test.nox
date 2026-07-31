@@ -1,0 +1,33 @@
+# 0.15.2 WS ticket channel binding + one-time nonce (SQLite + PG helpers)
+import nox.test
+from nox.sqlite import Connection
+import nyx.db
+import nyx.cable
+import nyx.session_store
+from nyx.cable import WsTicketClaims
+
+secret: str = "nyx-test-secret-change-me-32bytes!"
+db: Connection = nyx.db.open(":memory:")
+nyx.session_store.ensure_schema(db)
+nyx.cable.ensure_ws_nonce_schema(db)
+sid: str = nyx.session_store.create_sid(db, "{\"user_id\":7}", 3600, 7)
+
+ticket: str = nyx.cable.issue_ws_ticket(secret, sid, "room:a", 60)
+claims: WsTicketClaims | None = nyx.cable.claims_from_ws_ticket(secret, "", ticket)
+nox.test.assert_true(claims != None, "claims")
+if claims != None:
+    nox.test.assert_eq_str(claims.sid, sid, "sid")
+    nox.test.assert_eq_str(claims.channel, "room:a", "channel")
+    nox.test.assert_true(len(claims.nonce) > 0, "nonce")
+    nox.test.assert_true(nyx.cable.consume_ws_nonce(db, claims.nonce, 120), "consume1")
+    nox.test.assert_true(not nyx.cable.consume_ws_nonce(db, claims.nonce, 120), "replay")
+
+other: str = nyx.cable.issue_ws_ticket(secret, sid, "room:b", 60)
+c2: WsTicketClaims | None = nyx.cable.claims_from_ws_ticket(secret, "", other)
+nox.test.assert_true(c2 != None, "c2")
+if c2 != None:
+    nox.test.assert_eq_str(c2.channel, "room:b", "channel b")
+    nox.test.assert_true(c2.channel != "room:a", "channel isolation")
+
+db.close()
+print("v152_ws_ticket_test ok")

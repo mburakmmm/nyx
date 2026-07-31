@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.15.1 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
+**Version:** 0.15.2 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.15.1"
+      "ref": "v0.15.2"
     }
   ]
 }
@@ -156,6 +156,13 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.15.2 — Hardening follow-up (not 1.0)
+- **CI:** Nox install via `bash` (fixes `pipefail` under dash/`sh`)
+- **WS:** channel-bound tickets + one-time nonce; `ws_auth_broadcast_loop_pg`
+- **PG E2E:** Application boot → register/login → SID rotate → logout (CI `DATABASE_URL`)
+- **Rate limit:** `NYX_TRUST_X_FORWARDED_FOR` (honest flag); `NYX_RATE_LIMIT_STORE=db` on `jobs_db`
+- **Auth:** timing-equalized verify (dummy digest); atomic `failed_attempts` bump
+
 ### 0.15.1 — Hardening (not 1.0)
 - **SID rotation** on login (`cycle_session` / `login_session`); **server-side logout** destroys SID + `Max-Age=0`
 - **Postgres session/auth:** `nyx.session_store_pg` + `*_pg` auth APIs; db sessions use `Application.pg` when dialect=postgres (not `:memory:` SQLite)
@@ -271,7 +278,8 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
 - TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = SMTPS/465 (no STARTTLS yet)
-- Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed `ws_auth_*`)
+- Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
+- Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore: `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
 - **Request state** is worker-local module globals until Nox task-local lands — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)

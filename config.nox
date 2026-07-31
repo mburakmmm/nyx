@@ -53,7 +53,9 @@ class Config:
         storage_max_bytes: int,
         log_json: bool,
         trusted_proxies: str,
-        rate_limit_auth_max: int
+        rate_limit_auth_max: int,
+        trust_x_forwarded_for: bool,
+        rate_limit_store: str
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -94,9 +96,14 @@ class Config:
         self.metrics_enabled = metrics_enabled
         self.storage_max_bytes = storage_max_bytes
         self.log_json = log_json
-        # Comma-separated proxy IPs. Empty = never trust X-Forwarded-For.
+        # Legacy name: non-empty still enables XFF trust (see trust_x_forwarded_for).
         self.trusted_proxies = trusted_proxies
         self.rate_limit_auth_max = rate_limit_auth_max
+        # Honest flag: when true, first X-Forwarded-For hop is used as client key.
+        # Nox has no peer address yet, so this cannot verify the connecting proxy IP.
+        self.trust_x_forwarded_for = trust_x_forwarded_for
+        # "memory" (default) | "db" (shared via jobs_db SQLite — multicore-safe on shared path)
+        self.rate_limit_store = rate_limit_store
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -199,7 +206,9 @@ def defaults(env: str) -> Config:
         10485760,
         log_json_on,
         "",
-        20
+        20,
+        False,
+        "memory"
     )
 
 def from_env() -> Config:
@@ -252,6 +261,15 @@ def from_env() -> Config:
     cfg.log_json = _env_bool("NYX_LOG_JSON", cfg.log_json)
     cfg.trusted_proxies = _env_or("NYX_TRUSTED_PROXIES", cfg.trusted_proxies)
     cfg.rate_limit_auth_max = _env_int("NYX_RATE_LIMIT_AUTH_MAX", cfg.rate_limit_auth_max)
+    # Prefer honest flag; legacy NYX_TRUSTED_PROXIES non-empty still enables trust.
+    trust_xff: bool = _env_bool("NYX_TRUST_X_FORWARDED_FOR", False)
+    if len(cfg.trusted_proxies) > 0:
+        trust_xff = True
+    cfg.trust_x_forwarded_for = trust_xff
+    store: str = _env_or("NYX_RATE_LIMIT_STORE", cfg.rate_limit_store)
+    if store != "memory" and store != "db":
+        raise ConfigError("NYX_RATE_LIMIT_STORE must be memory|db")
+    cfg.rate_limit_store = store
     return cfg
 
 def load() -> Config:

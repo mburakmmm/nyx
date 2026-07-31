@@ -13,6 +13,7 @@ import nyx.metrics
 import nyx.params
 import nyx.testing
 import nyx.cable
+from nyx.cable import WsTicketClaims
 from nyx.app import Application
 from nyx.config import Config
 
@@ -124,6 +125,7 @@ cfg2.rate_limit_enabled = True
 cfg2.rate_limit_max = 2
 cfg2.rate_limit_window_ms = 60000
 cfg2.trusted_proxies = ""
+cfg2.trust_x_forwarded_for = False
 cfg2.metrics_enabled = False
 cfg2.log_requests = False
 
@@ -145,11 +147,12 @@ nox.test.assert_eq_int(r_b.status, 200, "rl b")
 nox.test.assert_eq_int(r_c.status, 429, "xff spoof ignored")
 
 sid_ws: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-ticket: str = nyx.cable.issue_ws_ticket(cfg.secret_key, sid_ws, 60)
-sid_back: str | None = nyx.session_store.sid_from_cookie_value(cfg.secret_key, ticket)
-nox.test.assert_true(sid_back != None, "ticket decodes")
-if sid_back != None:
-    nox.test.assert_eq_str(sid_back, sid_ws, "ticket sid")
+ticket: str = nyx.cable.issue_ws_ticket(cfg.secret_key, sid_ws, "room:test", 60)
+claims: WsTicketClaims | None = nyx.cable.claims_from_ws_ticket(cfg.secret_key, "", ticket)
+nox.test.assert_true(claims != None, "ticket claims")
+if claims != None:
+    nox.test.assert_eq_str(claims.sid, sid_ws, "ticket sid")
+    nox.test.assert_eq_str(claims.channel, "room:test", "ticket channel")
 
 nyx.app.shutdown(app)
 nyx.app.shutdown(app2)

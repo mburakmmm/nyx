@@ -56,15 +56,17 @@ def register(db: PgConnection, email: str, password: str) -> int:
         raise AuthEngineError("could not register")
     return rows[0].get_int(0)
 
-def _bump_failure(db: PgConnection, user_id: int, attempts: int, lock_now: bool) -> None:
-    locked: int = 0
-    if lock_now:
-        locked = nox.time.now_ms()
+def _bump_failure(db: PgConnection, user_id: int) -> None:
+    # Atomic increment; CASE uses pre-update failed_attempts.
+    now: int = nox.time.now_ms()
+    max_a: int = nyx.auth_engine.max_failed_attempts()
     stmt: PgStatement = db.prepare(
-        "UPDATE users SET failed_attempts = $1, locked_at_ms = $2 WHERE id = $3"
+        "UPDATE users SET failed_attempts = failed_attempts + 1, " +
+        "locked_at_ms = CASE WHEN failed_attempts + 1 >= $1 THEN $2 ELSE locked_at_ms END " +
+        "WHERE id = $3"
     )
-    stmt.bind_int(0, attempts)
-    stmt.bind_int(1, locked)
+    stmt.bind_int(0, max_a)
+    stmt.bind_int(1, now)
     stmt.bind_int(2, user_id)
     stmt.execute()
 
@@ -78,17 +80,17 @@ def _clear_failure(db: PgConnection, user_id: int) -> None:
 def authenticate(db: PgConnection, email: str, password: str) -> int:
     rec: Row | None = find_by_email(db, email)
     if rec == None:
+        nyx.password.verify(nyx.auth_engine.timing_dummy_digest(), password)
         raise AuthEngineError("invalid credentials")
     else:
         locked_at: int = rec.get_int(4)
         if nyx.auth_engine.is_locked_at(locked_at):
+            nyx.password.verify(nyx.auth_engine.timing_dummy_digest(), password)
             raise AuthEngineError("invalid credentials")
         digest: str = rec.get_str(2)
         user_id: int = rec.get_int(0)
         if not nyx.password.verify(digest, password):
-            attempts: int = rec.get_int(3) + 1
-            lock_now: bool = attempts >= nyx.auth_engine.max_failed_attempts()
-            _bump_failure(db, user_id, attempts, lock_now)
+            _bump_failure(db, user_id)
             raise AuthEngineError("invalid credentials")
         _clear_failure(db, user_id)
         return user_id

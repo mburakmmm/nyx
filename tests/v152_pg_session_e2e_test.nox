@@ -1,0 +1,174 @@
+# 0.15.2 end-to-end Postgres session via Application middleware.
+# Skips when DATABASE_URL is unset or not postgres (local suite without PG).
+
+import nox.test
+import nox.os
+import nox.strings
+import nox.uuid
+from nox.os import OsError
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.auth_engine
+import nyx.auth_engine_pg
+import nyx.runtime
+import nyx.session_store
+import nyx.session_store_pg
+import nyx.cable
+import nyx.params
+import nyx.testing
+from nyx.app import Application
+from nyx.config import Config
+from nox.postgres import Connection as PgConnection
+
+def _database_url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+def cookie_pair(set_cookie: str) -> str:
+    cookie_hdr: str = set_cookie
+    semi: int = nox.strings.index_of(set_cookie, ";")
+    if semi >= 0:
+        cookie_hdr = ""
+        ci: int = 0
+        while ci < semi:
+            cookie_hdr = cookie_hdr + set_cookie[ci]
+            ci = ci + 1
+    return cookie_hdr
+
+def sid_from_set_cookie(secret: str, set_cookie: str) -> str:
+    hdr: str = cookie_pair(set_cookie)
+    eq: int = nox.strings.index_of(hdr, "=")
+    if eq < 0:
+        return ""
+    val: str = ""
+    vi: int = eq + 1
+    while vi < len(hdr):
+        val = val + hdr[vi]
+        vi = vi + 1
+    got: str | None = nyx.session_store.sid_from_cookie_value(secret, val)
+    if got == None:
+        return ""
+    else:
+        return got
+
+def setup(application: Application) -> None:
+    pg: PgConnection = nyx.app.pg(application)
+    nyx.auth_engine_pg.ensure_schema(pg)
+    nyx.cable.ensure_ws_nonce_schema_pg(pg)
+
+    def register(ctx: Context) -> HttpResponse:
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        email: str = nyx.params.get(p, "email", "")
+        password: str = nyx.params.get(p, "password", "")
+        if len(email) == 0 or len(password) == 0:
+            return nyx.ctrl.json(422, "{\"error\":\"missing_fields\"}")
+        uid: int = nyx.auth_engine_pg.register(pg, email, password)
+        nyx.auth_engine.login_session(uid)
+        return nyx.ctrl.json(200, "{\"ok\":true,\"id\":" + str(uid) + "}")
+
+    def login(ctx: Context) -> HttpResponse:
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        email: str = nyx.params.get(p, "email", "")
+        password: str = nyx.params.get(p, "password", "")
+        if len(email) == 0 or len(password) == 0:
+            return nyx.ctrl.json(422, "{\"error\":\"missing_fields\"}")
+        uid: int = nyx.auth_engine_pg.authenticate(pg, email, password)
+        nyx.auth_engine.login_session(uid)
+        return nyx.ctrl.json(200, "{\"ok\":true}")
+
+    def logout(ctx: Context) -> HttpResponse:
+        nyx.auth_engine.logout_session()
+        return nyx.ctrl.json(200, "{\"ok\":true}")
+
+    def me(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.json(200, nyx.runtime.session_json())
+
+    application.router.post("/register", register)
+    application.router.post("/login", login)
+    application.router.post("/logout", logout)
+    application.router.get("/me", me)
+
+db_url: str = _database_url()
+if len(db_url) == 0 or not nox.strings.contains(db_url, "postgres"):
+    print("v152_pg_session_e2e_test skipped (no DATABASE_URL postgres)")
+else:
+    cfg: Config = nyx.config.defaults("test")
+    cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+    cfg.csrf_enabled = False
+    cfg.session_store = "db"
+    cfg.db_path = db_url
+    cfg.auto_migrate = False
+    cfg.metrics_enabled = False
+    cfg.log_requests = False
+    cfg.rate_limit_enabled = False
+
+    app: Application = nyx.app.boot(cfg, setup)
+    nox.test.assert_eq_str(app.dialect, "postgres", "dialect")
+    pgdb: PgConnection = nyx.app.pg(app)
+
+    h0: dict[str, str] = {}
+    h0["Content-Type"] = "application/x-www-form-urlencoded"
+    email: str = "e2e_" + nox.uuid.uuid4() + "@example.com"
+    body_reg: str = "email=" + email + "&password=password1"
+    r_reg: HttpResponse = nyx.app.dispatch(
+        app, HttpRequest("POST", "/register", body_reg, h0)
+    )
+    nox.test.assert_eq_int(r_reg.status, 200, "register")
+    c_reg: str | None = nyx.testing.header(r_reg, "Set-Cookie")
+    nox.test.assert_true(c_reg != None, "register cookie")
+    sid1: str = ""
+    if c_reg != None:
+        sid1 = sid_from_set_cookie(cfg.secret_key, c_reg)
+    nox.test.assert_true(len(sid1) > 0, "sid1")
+
+    h1: dict[str, str] = {}
+    if c_reg != None:
+        h1["Cookie"] = cookie_pair(c_reg)
+    me1: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h1))
+    nox.test.assert_eq_int(me1.status, 200, "me1")
+    nox.test.assert_true(nox.strings.contains(me1.body, "user_id"), "session has user")
+
+    h2: dict[str, str] = {}
+    h2["Content-Type"] = "application/x-www-form-urlencoded"
+    if c_reg != None:
+        h2["Cookie"] = cookie_pair(c_reg)
+    r_login: HttpResponse = nyx.app.dispatch(
+        app, HttpRequest("POST", "/login", "email=" + email + "&password=password1", h2)
+    )
+    nox.test.assert_eq_int(r_login.status, 200, "login")
+    c2: str | None = nyx.testing.header(r_login, "Set-Cookie")
+    nox.test.assert_true(c2 != None, "login cookie")
+    sid2: str = ""
+    if c2 != None:
+        sid2 = sid_from_set_cookie(cfg.secret_key, c2)
+    nox.test.assert_true(len(sid2) > 0, "sid2")
+    nox.test.assert_true(sid1 != sid2, "SID rotated")
+    old_loaded: str | None = nyx.session_store_pg.load_sid(pgdb, sid1)
+    nox.test.assert_true(old_loaded == None, "old sid destroyed")
+
+    h3: dict[str, str] = {}
+    if c2 != None:
+        h3["Cookie"] = cookie_pair(c2)
+    r_out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h3))
+    nox.test.assert_eq_int(r_out.status, 200, "logout")
+    cout: str | None = nyx.testing.header(r_out, "Set-Cookie")
+    nox.test.assert_true(cout != None, "expire cookie")
+    if cout != None:
+        nox.test.assert_true(nox.strings.contains(cout, "Max-Age=0"), "Max-Age=0")
+    gone: str | None = nyx.session_store_pg.load_sid(pgdb, sid2)
+    nox.test.assert_true(gone == None, "sid2 destroyed")
+
+    h4: dict[str, str] = {}
+    if c2 != None:
+        h4["Cookie"] = cookie_pair(c2)
+    me_bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h4))
+    nox.test.assert_eq_int(me_bad.status, 200, "me after logout")
+    nox.test.assert_true(not nox.strings.contains(me_bad.body, "\"user_id\""), "no user")
+
+    nyx.app.shutdown(app)
+    print("v152_pg_session_e2e_test ok")

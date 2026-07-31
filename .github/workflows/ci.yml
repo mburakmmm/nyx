@@ -16,7 +16,8 @@ jobs:
 
       - name: Install Nox
         run: |
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 sh
+          # install.sh uses bash-only 'set -o pipefail'; must not pipe to dash/sh
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
 
       - name: Point package at checkout
@@ -75,7 +76,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential curl
       - name: Install Nox
         run: |
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 sh
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 bash
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
       - name: Point package at checkout
         run: |
@@ -93,7 +94,7 @@ jobs:
           }
           open("nox.json","w").write(json.dumps(data, indent=2)+"\n")
           PY
-      - name: PG session + auth smoke
+      - name: PG session + auth smoke + e2e
         env:
           DATABASE_URL: postgres://nyx:nyx@127.0.0.1:5432/nyx
         run: |
@@ -119,3 +120,4 @@ jobs:
           db.close()
           EOF
           noxc run /tmp/pg_smoke.nox
+          noxc test tests/v152_pg_session_e2e_test.nox

@@ -1,0 +1,85 @@
+# 0.15.2 rate-limit trust XFF flag + db store wiring
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+from nyx.app import Application
+from nyx.config import Config
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "cookie"
+cfg.rate_limit_enabled = True
+cfg.rate_limit_max = 2
+cfg.rate_limit_window_ms = 60000
+cfg.trust_x_forwarded_for = False
+cfg.trusted_proxies = ""
+cfg.rate_limit_store = "memory"
+cfg.metrics_enabled = False
+cfg.log_requests = False
+app: Application = nyx.app.boot(cfg, setup)
+hx: dict[str, str] = {}
+hx["X-Forwarded-For"] = "1.2.3.4"
+r_a: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx))
+r_b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx))
+hx2: dict[str, str] = {}
+hx2["X-Forwarded-For"] = "9.9.9.9"
+r_c: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx2))
+nox.test.assert_eq_int(r_a.status, 200, "rl a")
+nox.test.assert_eq_int(r_b.status, 200, "rl b")
+nox.test.assert_eq_int(r_c.status, 429, "xff ignored without trust")
+
+cfg_t: Config = nyx.config.defaults("test")
+cfg_t.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg_t.csrf_enabled = False
+cfg_t.session_store = "cookie"
+cfg_t.rate_limit_enabled = True
+cfg_t.rate_limit_max = 1
+cfg_t.rate_limit_window_ms = 60000
+cfg_t.trust_x_forwarded_for = True
+cfg_t.rate_limit_store = "memory"
+cfg_t.metrics_enabled = False
+cfg_t.log_requests = False
+app_t: Application = nyx.app.boot(cfg_t, setup)
+ha: dict[str, str] = {}
+ha["X-Forwarded-For"] = "10.0.0.1"
+hb: dict[str, str] = {}
+hb["X-Forwarded-For"] = "10.0.0.2"
+ra: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha))
+rb: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", hb))
+ra2: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha))
+nox.test.assert_eq_int(ra.status, 200, "trust a")
+nox.test.assert_eq_int(rb.status, 200, "trust b other ip")
+nox.test.assert_eq_int(ra2.status, 429, "trust a limited")
+
+cfg_db: Config = nyx.config.defaults("test")
+cfg_db.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg_db.csrf_enabled = False
+cfg_db.session_store = "cookie"
+cfg_db.rate_limit_enabled = True
+cfg_db.rate_limit_max = 2
+cfg_db.rate_limit_window_ms = 60000
+cfg_db.trust_x_forwarded_for = False
+cfg_db.rate_limit_store = "db"
+cfg_db.metrics_enabled = False
+cfg_db.log_requests = False
+app_db: Application = nyx.app.boot(cfg_db, setup)
+d1: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
+d2: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
+d3: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
+nox.test.assert_eq_int(d1.status, 200, "db rl1")
+nox.test.assert_eq_int(d2.status, 200, "db rl2")
+nox.test.assert_eq_int(d3.status, 429, "db rl3")
+
+nyx.app.shutdown(app)
+nyx.app.shutdown(app_t)
+nyx.app.shutdown(app_db)
+print("v152_rate_limit_test ok")

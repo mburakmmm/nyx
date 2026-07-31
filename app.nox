@@ -208,6 +208,8 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
         else:
             nyx.session_store.ensure_schema(application.db)
     nyx.job.ensure_schema(application.jobs_db)
+    if cfg.rate_limit_enabled and cfg.rate_limit_store == "db":
+        nyx.rate_limit.ensure_schema(application.jobs_db)
     _install_framework_middleware(application)
     mount_health(application)
     setup(application)
@@ -217,7 +219,7 @@ def _install_framework_middleware(application: Application) -> None:
     cfg: Config = application.config
     router: Router = application.router
     if cfg.rate_limit_enabled:
-        router.use_before(_rate_limit_before(cfg))
+        router.use_before(_rate_limit_before(application))
     if cfg.session_store == "db":
         if application.dialect == "postgres":
             router.use_before(_session_pg_before(application))
@@ -267,9 +269,11 @@ def _first_xff_ip(raw: str) -> str:
     return nox.strings.trim(parts[0])
 
 def _client_key(cfg: Config, ctx: Context) -> str:
-    # Without Nox peer address, XFF is only used when NYX_TRUSTED_PROXIES is set
-    # (operator asserts the edge terminates TLS and strips client-supplied XFF).
-    if len(cfg.trusted_proxies) == 0:
+    # Nox has no peer/remote address yet. When trust_x_forwarded_for is false,
+    # all clients share the "direct" bucket. When true, operator asserts the
+    # edge strips/rewrites X-Forwarded-For (NYX_TRUST_X_FORWARDED_FOR=1, or
+    # legacy non-empty NYX_TRUSTED_PROXIES).
+    if not cfg.trust_x_forwarded_for:
         return "direct"
     xf: str | None = _header_get(ctx.request.headers, "X-Forwarded-For")
     if xf == None:
@@ -289,14 +293,22 @@ def _is_auth_path(path: str) -> bool:
         return True
     return False
 
-def _rate_limit_before(cfg: Config) -> (Context) -> HttpResponse | None:
+def _rate_limit_before(application: Application) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
+        cfg: Config = application.config
         path: str = nyx.params.path_only(ctx.request.target)
         key: str = path + ":" + _client_key(cfg, ctx)
         limit: int = cfg.rate_limit_max
         if _is_auth_path(path):
             limit = cfg.rate_limit_auth_max
-        if not nyx.rate_limit.allow(_rate_store, key, limit, cfg.rate_limit_window_ms):
+        allowed: bool = False
+        if cfg.rate_limit_store == "db":
+            allowed = nyx.rate_limit.allow_db(
+                application.jobs_db, key, limit, cfg.rate_limit_window_ms
+            )
+        else:
+            allowed = nyx.rate_limit.allow(_rate_store, key, limit, cfg.rate_limit_window_ms)
+        if not allowed:
             nyx.metrics.inc_rate_limited()
             return nyx.ctrl.json(429, "{\"error\":\"rate_limited\"}")
         return None
