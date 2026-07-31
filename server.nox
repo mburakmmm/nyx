@@ -1,13 +1,13 @@
-# nyx.server — Nox >= 1.22 serve matrisi yardimcilari.
+# nyx.server - Nox >= 1.22 serve matrisi yardimcilari.
 #
-# `nox.http.serve*` handler/ws_handle parametreleri DERLEME ZAMANI bare
+# 'nox.http.serve*' handler/ws_handle parametreleri DERLEME ZAMANI bare
 # fonksiyon adi olmalidir; bu modul serve'i sarmalamaz, yalnizca mod/secim
 # ve TLS dosya dogrulamasi saglar.
 #
 # Ornek (duz HTTP):
 #   nox.http.serve(cfg.port, handle)
 #
-# Ornek (HTTPS — OpenSSL libssl gerekir; macOS'ta Homebrew openssl):
+# Ornek (HTTPS - OpenSSL libssl gerekir; macOS'ta Homebrew openssl):
 #   nyx.server.require_tls_files(cfg)
 #   nox.http.serve_tls(cfg.port, handle, cfg.tls_cert_path, cfg.tls_key_path)
 #

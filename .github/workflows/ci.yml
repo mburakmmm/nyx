@@ -43,8 +43,6 @@ jobs:
         run: |
           noxc --version
           noxc fetch
-          # Run every test file: bare `noxc test` can under-report when a
-          # dependency segfaults mid-suite (Nox 1.10 package codegen edge cases).
           fail=0
           for t in tests/*.nox; do
             echo "==> $t"
@@ -54,3 +52,58 @@ jobs:
             fi
           done
           exit "$fail"
+
+  pg-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: nyx
+          POSTGRES_USER: nyx
+          POSTGRES_DB: nyx
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nyx -d nyx"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl
+      - name: Install Nox
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.22.9 sh
+          echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
+      - name: Point package at checkout
+        run: |
+          python3 - <<'PY'
+          import json, os
+          data = {
+            "name": "nyx",
+            "entry": "examples/blog/main.nox",
+            "bin": {"name": "nyx", "path": "cli.nox"},
+            "requires": [{
+              "alias": "nyx",
+              "repo": os.environ["GITHUB_WORKSPACE"],
+              "ref": "master",
+            }],
+          }
+          open("nox.json","w").write(json.dumps(data, indent=2)+"\n")
+          PY
+      - name: PG open + SELECT 1
+        env:
+          DATABASE_URL: postgres://nyx:nyx@127.0.0.1:5432/nyx
+        run: |
+          noxc fetch
+          cat > /tmp/pg_smoke.nox <<'EOF'
+          import nyx.db
+          from nox.postgres import Connection
+          db: Connection = nyx.db.open_postgres("postgres://nyx:nyx@127.0.0.1:5432/nyx")
+          rows = db.query("SELECT 1 AS n")
+          print("pg_ok=" + str(rows[0].get_int(0)))
+          db.close()
+          EOF
+          noxc run /tmp/pg_smoke.nox

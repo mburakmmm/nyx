@@ -5,7 +5,7 @@
 # f: dict[str, str] = nyx.params.form(req.body)
 # all: dict[str, str] = nyx.params.from_request(req)
 #
-# Nox >= 1.11: percent/query decode `nox.url` uzerinden (form `+` = bosluk).
+# Nox >= 1.11: percent/query decode 'nox.url' uzerinden (form '+' = bosluk).
 
 import nox.strings
 import nox.url
@@ -25,7 +25,7 @@ def _substr(s: str, start: int, end: int) -> str:
         i = i + 1
     return out
 
-# application/x-www-form-urlencoded: `+` bosluk; sonra nox.url.percent_decode.
+# application/x-www-form-urlencoded: '+' bosluk; sonra nox.url.percent_decode.
 def decode(s: str) -> str:
     normalized: str = nox.strings.replace(s, "+", "%20")
     try:
@@ -64,7 +64,7 @@ def flat_to_dict(flat: list[str]) -> dict[str, str]:
 def parse_qs(raw: str) -> dict[str, str]:
     return _form_query_decode(raw)
 
-# Request target'lari semasiz (`/path?q=1`) - nox.url.parse kullanilmaz.
+# Request target'lari semasiz ('/path?q=1') - nox.url.parse kullanilmaz.
 def query_string(target: str) -> str:
     q: int = nox.strings.index_of(target, "?")
     if q < 0:

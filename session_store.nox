@@ -1,0 +1,152 @@
+# nyx.session_store - server-side session (cookie holds signed sid only).
+#
+# Default for batteries-included path (NYX_SESSION_STORE=db).
+# Legacy blob cookie: NYX_SESSION_STORE=cookie -> nyx.session.
+#
+# Schema on a SQLite Connection (app db, or placeholder db when dialect=postgres):
+#   sessions(id TEXT PK, data TEXT, user_id INTEGER, expires_at_ms INTEGER, ...)
+
+import nox.time
+import nox.uuid
+import nox.json
+import nox.strings
+from nox.sqlite import Connection, Statement, Row
+from nox.json import JsonValue
+import nyx.session
+from nyx.session import SessionError
+
+class SessionStoreError:
+    def __init__(self: SessionStoreError, message: str) -> None:
+        self.message = message
+
+def ensure_schema(db: Connection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS nyx_sessions (" +
+        "id TEXT PRIMARY KEY NOT NULL, " +
+        "data TEXT NOT NULL, " +
+        "user_id INTEGER NOT NULL DEFAULT 0, " +
+        "expires_at_ms INTEGER NOT NULL, " +
+        "created_at_ms INTEGER NOT NULL, " +
+        "updated_at_ms INTEGER NOT NULL" +
+        ")"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_nyx_sessions_user ON nyx_sessions (user_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_nyx_sessions_exp ON nyx_sessions (expires_at_ms)")
+
+def _now_ms() -> int:
+    return nox.time.now_ms()
+
+def create_sid(db: Connection, data_json: str, max_age_sec: int, user_id: int) -> str:
+    if max_age_sec <= 0:
+        raise SessionStoreError("max_age_sec must be positive")
+    nox.json.decode(data_json)
+    sid: str = nox.uuid.uuid4()
+    now: int = _now_ms()
+    exp: int = now + (max_age_sec * 1000)
+    stmt: Statement = db.prepare(
+        "INSERT INTO nyx_sessions (id, data, user_id, expires_at_ms, created_at_ms, updated_at_ms) " +
+        "VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    stmt.bind_str(0, sid)
+    stmt.bind_str(1, data_json)
+    stmt.bind_int(2, user_id)
+    stmt.bind_int(3, exp)
+    stmt.bind_int(4, now)
+    stmt.bind_int(5, now)
+    stmt.execute()
+    return sid
+
+def load_sid(db: Connection, sid: str) -> str | None:
+    if len(sid) == 0:
+        return None
+    stmt: Statement = db.prepare(
+        "SELECT data, expires_at_ms FROM nyx_sessions WHERE id = ?"
+    )
+    stmt.bind_str(0, sid)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return None
+    exp: int = rows[0].get_int(1)
+    if exp < _now_ms():
+        destroy_sid(db, sid)
+        return None
+    return rows[0].get_str(0)
+
+def save_sid(db: Connection, sid: str, data_json: str, max_age_sec: int, user_id: int) -> None:
+    nox.json.decode(data_json)
+    now: int = _now_ms()
+    exp: int = now + (max_age_sec * 1000)
+    stmt: Statement = db.prepare(
+        "UPDATE nyx_sessions SET data = ?, user_id = ?, expires_at_ms = ?, updated_at_ms = ? WHERE id = ?"
+    )
+    stmt.bind_str(0, data_json)
+    stmt.bind_int(1, user_id)
+    stmt.bind_int(2, exp)
+    stmt.bind_int(3, now)
+    stmt.bind_str(4, sid)
+    stmt.execute()
+
+def destroy_sid(db: Connection, sid: str) -> None:
+    if len(sid) == 0:
+        return
+    stmt: Statement = db.prepare("DELETE FROM nyx_sessions WHERE id = ?")
+    stmt.bind_str(0, sid)
+    stmt.execute()
+
+def destroy_all_for_user(db: Connection, user_id: int) -> int:
+    stmt: Statement = db.prepare("DELETE FROM nyx_sessions WHERE user_id = ?")
+    stmt.bind_int(0, user_id)
+    return stmt.execute()
+
+def purge_expired(db: Connection) -> int:
+    stmt: Statement = db.prepare("DELETE FROM nyx_sessions WHERE expires_at_ms < ?")
+    stmt.bind_int(0, _now_ms())
+    return stmt.execute()
+
+# Cookie envelope: signed JSON {"sid":"..."}.
+def cookie_value_for_sid(secret: str, sid: str, max_age_sec: int) -> str:
+    body: str = "{\"sid\":" + nox.json.encode_string(sid) + "}"
+    return nyx.session.create(secret, body, max_age_sec)
+
+def sid_from_cookie_value(secret: str, cookie_value: str) -> str | None:
+    raw: str | None = nyx.session.load(secret, cookie_value)
+    if raw == None:
+        return None
+    else:
+        raw_s: str = raw
+        try:
+            v: JsonValue = nox.json.decode(raw_s)
+            i: int = 0
+            n: int = nox.json.object_len(v)
+            while i < n:
+                if nox.json.object_key(v, i) == "sid":
+                    return nox.json.as_string(nox.json.object_value(v, i))
+                i = i + 1
+        except:
+            return None
+        return None
+
+def sid_from_cookie_value_rotated(secret: str, previous: str, cookie_value: str) -> str | None:
+    sid: str | None = sid_from_cookie_value(secret, cookie_value)
+    if sid != None:
+        return sid
+    if len(previous) > 0:
+        return sid_from_cookie_value(previous, cookie_value)
+    return None
+
+def user_id_from_session_json(data_json: str) -> int:
+    try:
+        v: JsonValue = nox.json.decode(data_json)
+        i: int = 0
+        n: int = nox.json.object_len(v)
+        while i < n:
+            if nox.json.object_key(v, i) == "user_id":
+                val: JsonValue = nox.json.object_value(v, i)
+                if nox.json.is_number(val):
+                    return int(nox.json.as_number(val))
+                if nox.json.is_string(val):
+                    return int(nox.json.as_string(val))
+            i = i + 1
+    except:
+        return 0
+    return 0

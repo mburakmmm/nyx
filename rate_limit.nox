@@ -1,0 +1,120 @@
+# nyx.rate_limit - fixed-window rate limiter (memory + optional sqlite).
+# MemoryStore uses list fields + methods (same pattern as nyx.cache.MemoryCache).
+
+import nox.time
+from nox.sqlite import Connection, Statement, Row
+
+class RateLimitError:
+    def __init__(self: RateLimitError, message: str) -> None:
+        self.message = message
+
+class MemoryStore:
+    keys: list[str]
+    counts: list[int]
+    windows: list[int]
+
+    def __init__(self: MemoryStore) -> None:
+        empty_s: list[str] = []
+        empty_i: list[int] = []
+        empty_w: list[int] = []
+        self.keys = empty_s
+        self.counts = empty_i
+        self.windows = empty_w
+
+    def find(self: MemoryStore, key: str) -> int:
+        i: int = 0
+        keys: list[str] = self.keys
+        while i < len(keys):
+            if keys[i] == key:
+                return i
+            i = i + 1
+        return -1
+
+    def put_new(self: MemoryStore, key: str, now: int) -> None:
+        keys: list[str] = self.keys
+        counts: list[int] = self.counts
+        windows: list[int] = self.windows
+        keys.append(key)
+        counts.append(1)
+        windows.append(now)
+        self.keys = keys
+        self.counts = counts
+        self.windows = windows
+
+    def reset(self: MemoryStore, idx: int, now: int) -> None:
+        counts: list[int] = self.counts
+        windows: list[int] = self.windows
+        counts[idx] = 1
+        windows[idx] = now
+        self.counts = counts
+        self.windows = windows
+
+    def bump(self: MemoryStore, idx: int) -> int:
+        counts: list[int] = self.counts
+        counts[idx] = counts[idx] + 1
+        self.counts = counts
+        return counts[idx]
+
+def open_memory() -> MemoryStore:
+    return MemoryStore()
+
+def allow(store: MemoryStore, key: str, limit: int, window_ms: int) -> bool:
+    if limit <= 0:
+        return True
+    if window_ms <= 0:
+        raise RateLimitError("window_ms must be positive")
+    now: int = nox.time.now_ms()
+    idx: int = store.find(key)
+    if idx < 0:
+        store.put_new(key, now)
+        return True
+    if now - store.windows[idx] >= window_ms:
+        store.reset(idx, now)
+        return True
+    if store.counts[idx] >= limit:
+        return False
+    store.bump(idx)
+    return True
+
+def ensure_schema(db: Connection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS nyx_rate_limits (" +
+        "key TEXT PRIMARY KEY NOT NULL, " +
+        "count INTEGER NOT NULL, " +
+        "window_start_ms INTEGER NOT NULL" +
+        ")"
+    )
+
+def allow_db(db: Connection, key: str, limit: int, window_ms: int) -> bool:
+    if limit <= 0:
+        return True
+    now: int = nox.time.now_ms()
+    stmt: Statement = db.prepare("SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?")
+    stmt.bind_str(0, key)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        ins: Statement = db.prepare(
+            "INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES (?, 1, ?)"
+        )
+        ins.bind_str(0, key)
+        ins.bind_int(1, now)
+        ins.execute()
+        return True
+    count: int = rows[0].get_int(0)
+    start: int = rows[0].get_int(1)
+    if now - start >= window_ms:
+        upd: Statement = db.prepare(
+            "UPDATE nyx_rate_limits SET count = 1, window_start_ms = ? WHERE key = ?"
+        )
+        upd.bind_int(0, now)
+        upd.bind_str(1, key)
+        upd.execute()
+        return True
+    if count >= limit:
+        return False
+    upd2: Statement = db.prepare(
+        "UPDATE nyx_rate_limits SET count = count + 1 WHERE key = ?"
+    )
+    upd2.bind_str(0, key)
+    upd2.execute()
+    return True

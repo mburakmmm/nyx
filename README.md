@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.10.0 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
+**Version:** 0.15.0 · **License:** MIT · **Requires Nox ≥ 1.22.0** (recommended **1.22.9**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.10.0"
+      "ref": "v0.15.0"
     }
   ]
 }
@@ -155,6 +155,17 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.15.0 — Batteries-included path (B + Devise-core; not 1.0)
+- **Session store (db):** signed `sid` cookie + `nyx_sessions` table; revoke / logout-all; `NYX_SESSION_STORE=cookie|db`
+- **Auth engine:** register/login/reset/lockout + `nyx generate auth`
+- **Rate limit**, structured JSON logs, deeper `/ready` (app+jobs), `/metrics`
+- **ORM helpers:** `nyx.orm` soft-delete/format/numericality + preload index; dual `.pg.sql` migrations
+- **Jobs:** production `work_forever` worker template; `nyx jobs dead`
+- **Storage:** size/MIME limits + HTTP store helper; mail templates
+- **Cable:** `ws_auth_broadcast_loop`; generators for mailer/job/channel
+- **Ops:** secret rotation (`NYX_SECRET_KEY_PREVIOUS`); PG CI smoke job
+- Version stays **0.x** (no 1.0 tag)
 
 ### 0.10.0 — Nox 1.22 unlock (TLS/WS server, hooks, dialect boot)
 - **Requires Nox ≥ 1.22.0** (CI pins **1.22.9**)

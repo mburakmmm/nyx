@@ -11,8 +11,8 @@ class CorsError:
         self.message = message
 
 class CorsConfig:
-    # Fetch/CORS spesifikasyonu `Access-Control-Allow-Origin: *` ile
-    # `Access-Control-Allow-Credentials: true`nin BIRLIKTE kullanimini
+    # Fetch/CORS spesifikasyonu 'Access-Control-Allow-Origin: *' ile
+    # 'Access-Control-Allow-Credentials: true'nin BIRLIKTE kullanimini
     # ZATEN tarayici tarafinda REDDEDER (kimlik-bilgili istekler "*" origin'i
     # KABUL ETMEZ) - ama bu SESSIZ bir tarayici-tarafi basarisizliktir
     # (gelistirici curl/Postman ile test EDERKEN "calisiyor" SANIR, gercek

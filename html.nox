@@ -5,8 +5,8 @@
 # esc: str = nyx.html.escape(user_input)
 # nyx.html.put(context, "form", nyx.form.text_safe("t", v))
 #
-# Template context hâlâ dict[str,str]. Trusted helper çıktısı için `put`;
-# kullanıcı metni için düz string + `render` (escape). `render_unescaped`
+# Template context hâlâ dict[str,str]. Trusted helper çıktısı için 'put';
+# kullanıcı metni için düz string + 'render' (escape). 'render_unescaped'
 # yalnızca SafeHtml.put ile doldurulmuş bağlamlar veya bilinçli raw için.
 
 import nox.template

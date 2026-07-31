@@ -14,12 +14,17 @@ Usage:
   nyx generate model <Name> [field:type ...] model + migration (+ down)
   nyx generate controller <Name>             controller + views
   nyx generate scaffold <Name> [field:type]  model + controller + views + route snippet
-  nyx generate migration <name>              empty up/down migration
+  nyx generate migration <name>              empty up/down migration (+ .pg.sql twin)
+  nyx generate auth                          Devise-core users + routes snippet
+  nyx generate mailer <Name>                 mailer template stub
+  nyx generate job <Name>                    job handler stub
+  nyx generate channel <Name>                cable channel stub
   nyx db migrate                             apply pending migrations
   nyx db rollback                            roll back the last migration
   nyx db schema                              dump db/schema.sql
   nyx db seed                                run db/seeds.nox
-  nyx jobs work                              run jobs/worker.nox once
+  nyx jobs work                              run jobs/worker.nox
+  nyx jobs dead                              list dead jobs
   nyx console                                run db/console.nox (no REPL)
   nyx server                                 run noxc run main.nox
   nyx version                                print version
@@ -347,10 +352,13 @@ cmd_generate_migration() {
   mkdir -p db/migrate
   local mig="db/migrate/${ts}_${sn}.sql"
   local down="db/migrate/${ts}_${sn}.down.sql"
-  echo "-- up" > "$mig"
+  local pg="db/migrate/${ts}_${sn}.pg.sql"
+  echo "-- up (sqlite)" > "$mig"
   echo "-- down" > "$down"
+  echo "-- up (postgres) — applied via migrate_postgres when dialect=postgres" > "$pg"
   echo "created: $mig"
   echo "created: $down"
+  echo "created: $pg"
 }
 
 cmd_generate_scaffold() {
@@ -568,19 +576,166 @@ LIVE
   fi
 }
 
+cmd_generate_auth() {
+  mkdir -p db/migrate app/views/auth config
+  local ts
+  ts="$(date -u +%Y%m%d%H%M%S)"
+  local up="db/migrate/${ts}_create_users.sql"
+  local down="db/migrate/${ts}_create_users.down.sql"
+  local pg="db/migrate/${ts}_create_users.pg.sql"
+  cat > "$up" <<'SQL'
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  password_digest TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_at_ms INTEGER NOT NULL DEFAULT 0,
+  reset_token TEXT NOT NULL DEFAULT '',
+  reset_sent_at_ms INTEGER NOT NULL DEFAULT 0
+);
+SQL
+  cat > "$down" <<'SQL'
+DROP TABLE IF EXISTS users;
+SQL
+  cat > "$pg" <<'SQL'
+CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_digest TEXT NOT NULL,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_at_ms BIGINT NOT NULL DEFAULT 0,
+  reset_token TEXT NOT NULL DEFAULT '',
+  reset_sent_at_ms BIGINT NOT NULL DEFAULT 0
+);
+SQL
+  cat > config/auth_routes.nox.snippet <<'EOF'
+# Paste into setup(application):
+# import nyx.auth_engine
+# import nyx.params
+# nyx.auth_engine.ensure_schema(application.db)
+#
+# def auth_register(ctx: Context) -> HttpResponse:
+#     p: dict[str, str] = nyx.params.from_request(ctx.request)
+#     uid: int = nyx.auth_engine.register(application.db, p["email"], p["password"])
+#     nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+#     return nyx.ctrl.redirect("/")
+#
+# def auth_login(ctx: Context) -> HttpResponse:
+#     p: dict[str, str] = nyx.params.from_request(ctx.request)
+#     uid: int = nyx.auth_engine.authenticate(application.db, p["email"], p["password"])
+#     nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+#     return nyx.ctrl.redirect("/")
+#
+# def auth_logout(ctx: Context) -> HttpResponse:
+#     nyx.runtime.set_session("{}")
+#     return nyx.ctrl.redirect("/")
+#
+# application.router.post("/register", auth_register)
+# application.router.post("/login", auth_login)
+# application.router.post("/logout", auth_logout)
+EOF
+  echo "created: $up"
+  echo "created: $down"
+  echo "created: $pg"
+  echo "created: config/auth_routes.nox.snippet"
+}
+
+cmd_generate_mailer() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "usage: nyx generate mailer <Name>" >&2
+    exit 1
+  fi
+  local sn
+  sn="$(snake "$name")"
+  mkdir -p app/mailers app/views/mailers
+  cat > "app/mailers/${sn}.nox" <<EOF
+# Mailer: $name
+# import nyx.mailer
+# mail = nyx.mailer.mail_from_template(to, from_addr, subject, "app/views/mailers/${sn}.txt", ctx)
+# nyx.mailer.deliver(cfg, mail)
+EOF
+  cat > "app/views/mailers/${sn}.txt" <<EOF
+Hello {{name}},
+
+This is the ${name} mailer body.
+EOF
+  echo "created: app/mailers/${sn}.nox"
+  echo "created: app/views/mailers/${sn}.txt"
+}
+
+cmd_generate_job() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "usage: nyx generate job <Name>" >&2
+    exit 1
+  fi
+  local sn
+  sn="$(snake "$name")"
+  mkdir -p app/jobs
+  cat > "app/jobs/${sn}.nox" <<EOF
+# Job handler: $name
+# Register in jobs/worker.nox:
+# def ${sn}_perform(payload_json: str) -> None:
+#     return None
+# registry.register("$name", ${sn}_perform)
+EOF
+  echo "created: app/jobs/${sn}.nox"
+}
+
+cmd_generate_channel() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "usage: nyx generate channel <Name>" >&2
+    exit 1
+  fi
+  local sn
+  sn="$(snake "$name")"
+  mkdir -p app/channels
+  cat > "app/channels/${sn}.nox" <<EOF
+# Cable channel: $name
+# ch = nyx.cable.channel_memory(hub, "$sn")
+# nyx.cable.channel_broadcast(ch, "ping", "{}")
+# WS: nyx.cable.ws_auth_broadcast_loop(ch, conn, application.db, secret, "")
+EOF
+  echo "created: app/channels/${sn}.nox"
+}
+
 cmd_jobs() {
   local what="${1:-}"
   case "$what" in
     work)
       if [[ ! -f jobs/worker.nox ]]; then
         echo "missing jobs/worker.nox" >&2
-        echo "Create jobs/worker.nox that registers handlers and calls nyx.job.work / work_forever." >&2
         exit 1
       fi
       noxc run jobs/worker.nox
       ;;
+    dead)
+      local tmp
+      tmp="$(mktemp /tmp/nyx_jobs_XXXX.nox)"
+      cat > "$tmp" <<'EOF'
+import nyx.config
+import nyx.db
+import nyx.job
+from nyx.config import Config
+from nox.sqlite import Connection
+cfg: Config = nyx.config.load()
+db: Connection = nyx.db.open(cfg.jobs_db_path)
+nyx.job.ensure_schema(db)
+print("dead_count=" + str(nyx.job.count_dead(db)))
+rows: list[str] = nyx.job.list_dead(db, 50)
+i: int = 0
+while i < len(rows):
+    print(rows[i])
+    i = i + 1
+db.close()
+EOF
+      noxc run "$tmp"
+      rm -f "$tmp"
+      ;;
     *)
-      echo "usage: nyx jobs work" >&2
+      echo "usage: nyx jobs work|dead" >&2
       exit 1
       ;;
   esac
@@ -695,6 +850,10 @@ main() {
         controller) cmd_generate_controller "$@" ;;
         migration) cmd_generate_migration "$@" ;;
         scaffold) cmd_generate_scaffold "$@" ;;
+        auth) cmd_generate_auth "$@" ;;
+        mailer) cmd_generate_mailer "$@" ;;
+        job) cmd_generate_job "$@" ;;
+        channel) cmd_generate_channel "$@" ;;
         *) echo "unknown generate target: $what" >&2; usage; exit 1 ;;
       esac
       ;;

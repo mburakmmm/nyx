@@ -1,0 +1,62 @@
+# nyx.metrics - in-process counters + optional Prometheus text exposition.
+#
+# import nyx.metrics
+# nyx.metrics.inc_requests()
+# body: str = nyx.metrics.prometheus_text()
+
+_requests: int = 0
+_responses_5xx: int = 0
+_job_dead: int = 0
+_mail_fail: int = 0
+_rate_limited: int = 0
+
+def reset() -> None:
+    _requests = 0
+    _responses_5xx = 0
+    _job_dead = 0
+    _mail_fail = 0
+    _rate_limited = 0
+
+def inc_requests() -> None:
+    _requests = _requests + 1
+
+def inc_5xx() -> None:
+    _responses_5xx = _responses_5xx + 1
+
+def inc_job_dead() -> None:
+    _job_dead = _job_dead + 1
+
+def inc_mail_fail() -> None:
+    _mail_fail = _mail_fail + 1
+
+def inc_rate_limited() -> None:
+    _rate_limited = _rate_limited + 1
+
+def requests() -> int:
+    return _requests
+
+def responses_5xx() -> int:
+    return _responses_5xx
+
+def job_dead() -> int:
+    return _job_dead
+
+def mail_fail() -> int:
+    return _mail_fail
+
+def rate_limited() -> int:
+    return _rate_limited
+
+def prometheus_text() -> str:
+    out: str = ""
+    out = out + "# TYPE nyx_requests_total counter\n"
+    out = out + "nyx_requests_total " + str(_requests) + "\n"
+    out = out + "# TYPE nyx_responses_5xx_total counter\n"
+    out = out + "nyx_responses_5xx_total " + str(_responses_5xx) + "\n"
+    out = out + "# TYPE nyx_job_dead_total counter\n"
+    out = out + "nyx_job_dead_total " + str(_job_dead) + "\n"
+    out = out + "# TYPE nyx_mail_fail_total counter\n"
+    out = out + "nyx_mail_fail_total " + str(_mail_fail) + "\n"
+    out = out + "# TYPE nyx_rate_limited_total counter\n"
+    out = out + "nyx_rate_limited_total " + str(_rate_limited) + "\n"
+    return out

@@ -13,8 +13,8 @@
 #
 # NOT: Nox'ta modul-duzeyi degiskenler fonksiyon govdelerinden GORULEMEZ
 # (bkz. nyx.runtime'in belge notu) - bu yuzden yuklenen her locale'in HAM
-# JSON metni proses ortam degiskenlerinde (`nox.os.set_var`) saklanir;
-# `t()` her cagrida ilgili degeri yeniden coder (kucuk locale dosyalari
+# JSON metni proses ortam degiskenlerinde ('nox.os.set_var') saklanir;
+# 't()' her cagrida ilgili degeri yeniden coder (kucuk locale dosyalari
 # icin performans sorunu degildir).
 
 import nox.fs
@@ -38,7 +38,7 @@ def _bundle_raw(locale: str) -> str:
     except OsError:
         return ""
 
-# `dir_path/{locale}.json` dosyasini okuyup duz (iic ice OLMAYAN, tum
+# 'dir_path/{locale}.json' dosyasini okuyup duz (iic ice OLMAYAN, tum
 # degerleri metin) bir nesne oldugunu dogrular ve HAM JSON metnini
 # saklar. Ayni locale tekrar yuklenirse ONCEKI icerik degistirilir
 # (hot-reload dostu).
@@ -93,7 +93,7 @@ def _lookup(locale: str, key: str) -> str | None:
         i = i + 1
     return None
 
-# Aktif locale'de `key` bulunamazsa varsayilan locale'e duser; o da yoksa
+# Aktif locale'de 'key' bulunamazsa varsayilan locale'e duser; o da yoksa
 # Rails'in "translation missing: ..." kalibiyla GORULEBILIR (sayfayi
 # CIKARMAYAN) bir yer-tutucu metin doner.
 def t(key: str) -> str:
@@ -104,7 +104,7 @@ def t(key: str) -> str:
         return val
     return "translation missing: " + current_locale() + "." + key
 
-# `{{ degisken }}` yer-tutuculariyla bir ceviriyi `context` ile
+# '{{ degisken }}' yer-tutuculariyla bir ceviriyi 'context' ile
 # doldurur (nox.template.render - HTML-kacisli).
 def t_with(key: str, context: dict[str, str]) -> str:
     return nox.template.render(t(key), context)

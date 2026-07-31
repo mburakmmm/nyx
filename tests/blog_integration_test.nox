@@ -1,5 +1,5 @@
 # Blog-like integration: boot + CSRF + create_attrs roundtrip.
-# Not: Nox'ta modul-global'ler fonksiyon icinden gorulmez — bu yuzden
+# Not: Nox'ta modul-global'ler fonksiyon icinden gorulmez - bu yuzden
 # dispatch cagrilari script ust duzeyinde yapilir.
 import nox.test
 import nox.strings
@@ -104,7 +104,7 @@ nox.test.assert_eq_int(bad_resp.status, 403, "missing csrf -> 403")
 ok_headers: dict[str, str] = {}
 ok_headers["Content-Type"] = "application/x-www-form-urlencoded"
 if cookie != None:
-    # Set-Cookie: name=value; Path=/; ... → Cookie: name=value
+    # Set-Cookie: name=value; Path=/; ... -> Cookie: name=value
     cookie_hdr: str = cookie
     semi: int = nox.strings.index_of(cookie, ";")
     if semi >= 0:
@@ -125,7 +125,7 @@ if loc != None:
 get2: HttpResponse = nyx.app.dispatch(application, get_req)
 nox.test.assert_true(nox.strings.contains(get2.body, "count=1"), "post created")
 
-# /api/ping kayitli rota — CSRF middleware eslesen rotalarda calisir.
+# /api/ping kayitli rota - CSRF middleware eslesen rotalarda calisir.
 # Jeton yoksa 403 (handler'a ulasilmamali).
 api_headers: dict[str, str] = {}
 api_headers["Content-Type"] = "application/json"

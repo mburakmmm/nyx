@@ -15,7 +15,7 @@
 # Application.db: SQLite Connection (nyx.model / jobs).
 # Application.pg: Postgres Connection listesi uzerinden nyx.app.pg()
 #   (Nox DbConnection protokolu execute+close paylasir; query/prepare
-#   Row tipleri ayri oldugu icin tek Application.db tipi yok — Nox 1.21.3+).
+#   Row tipleri ayri oldugu icin tek Application.db tipi yok - Nox 1.21.3+).
 # PG/MySQL ham: open_postgres / open_mysql (prepare/bind Nox >= 1.13).
 # Postgres last_insert_rowid yok - INSERT ... RETURNING kullanin.
 
@@ -52,10 +52,10 @@ def _scheme_of(url: str) -> str:
             return ""
     return ""
 
-# `path` düz dosya yolu, `:memory:`, veya SQLite URL:
+# 'path' düz dosya yolu, ':memory:', veya SQLite URL:
 #   sqlite:///absolute/path   sqlite://relative/path   sqlite::memory:
-# Postgres/MySQL URL'leri bu fonksiyonda HATA verir - `open_postgres` /
-# `open_mysql` kullanin. `nyx.app.boot` postgres URL'lerini Application.pg
+# Postgres/MySQL URL'leri bu fonksiyonda HATA verir - 'open_postgres' /
+# 'open_mysql' kullanin. 'nyx.app.boot' postgres URL'lerini Application.pg
 # olarak acar (dialect-aware); bu fonksiyon yalnizca SQLite Connection doner.
 def open(path: str) -> Connection:
     return open_url(path)
@@ -117,8 +117,8 @@ def dialect_of_url(url: str) -> str:
     return ""
 
 # INSERT ... RETURNING id - Postgres'te last_insert_rowid yerine.
-# `sql` örn: "INSERT INTO posts (title) VALUES ($1) RETURNING id"
-# Prefers prepare/bind via `postgres_insert_returning_id_bound`.
+# 'sql' örn: "INSERT INTO posts (title) VALUES ($1) RETURNING id"
+# Prefers prepare/bind via 'postgres_insert_returning_id_bound'.
 def postgres_insert_returning_id(conn: PgConnection, sql: str) -> int:
     try:
         rows: list[PgRow] = conn.query(sql)

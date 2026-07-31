@@ -33,7 +33,7 @@ def _validate_token(kind: str, s: str) -> None:
 def _trim(s: str) -> str:
     return nox.strings.trim(s)
 
-# `Cookie:` başlık değerini `dict[str, str]` olarak ayrıştırır.
+# 'Cookie:' başlık değerini 'dict[str, str]' olarak ayrıştırır.
 def parse(header: str) -> dict[str, str]:
     result: dict[str, str] = {}
     parts: list[str] = nox.strings.split(header, ";")
@@ -59,7 +59,7 @@ def _substr(s: str, start: int, end: int) -> str:
         i = i + 1
     return out
 
-# `Set-Cookie` satırı üretir. `same_site`: "" | "Strict" | "Lax" | "None".
+# 'Set-Cookie' satırı üretir. 'same_site': "" | "Strict" | "Lax" | "None".
 def serialize(name: str, value: str, path: str, max_age: int, http_only: bool, same_site: str, secure: bool) -> str:
     _validate_token("cookie adi", name)
     _validate_token("cookie degeri", value)
@@ -77,8 +77,8 @@ def serialize(name: str, value: str, path: str, max_age: int, http_only: bool, s
     if len(same_site) > 0:
         if same_site != "Strict" and same_site != "Lax" and same_site != "None":
             raise CookieError("gecersiz SameSite: " + same_site)
-        # Tarayicilarin GUNCEL cerez spesifikasyonu (RFC 6265bis): `SameSite=None`
-        # yalnizca `Secure` cerezlerde KABUL EDILIR - aksi halde Chrome/Firefox
+        # Tarayicilarin GUNCEL cerez spesifikasyonu (RFC 6265bis): 'SameSite=None'
+        # yalnizca 'Secure' cerezlerde KABUL EDILIR - aksi halde Chrome/Firefox
         # gibi taraycilar cerezi SESSIZCE reddeder (ureten kodun DUZGUN
         # calistigini SANIP GERCEKTE kirik bir cross-site akisiyla kalmasi
         # yerine burada ACIKCA CookieError firlatilir).

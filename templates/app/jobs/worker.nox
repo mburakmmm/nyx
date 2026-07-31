@@ -1,23 +1,23 @@
-# jobs/worker.nox — register handlers, then drain the queue.
+# jobs/worker.nox - production worker loop.
 # Run: ./bin/nyx jobs work   OR   noxc run jobs/worker.nox
-#
-# import nyx.job
-# import nyx.config
-# from nyx.config import Config
-# from nox.sqlite import Connection
-# from nyx.job import JobRegistry
-#
-# def send_welcome(payload_json: str) -> None:
-#     # parse payload_json, send mail, etc.
-#     return None
-#
-# cfg: Config = nyx.config.load()
-# db: Connection = nyx.db.open(cfg.jobs_db_path)
-# nyx.job.ensure_schema(db)
-# registry: JobRegistry = JobRegistry()
-# registry.register("SendWelcomeEmail", send_welcome)
-# n: int = nyx.job.work(db, registry, 25)
-# print("processed=" + str(n))
-# db.close()
 
-print("Replace this stub with a real worker — see comments above.")
+from nox.sqlite import Connection
+import nyx.config
+import nyx.db
+import nyx.job
+from nyx.config import Config
+from nyx.job import JobRegistry
+
+cfg: Config = nyx.config.load()
+db: Connection = nyx.db.open(cfg.jobs_db_path)
+nyx.job.ensure_schema(db)
+registry: JobRegistry = JobRegistry()
+
+# Register handlers here:
+# def send_welcome(payload_json: str) -> None:
+#     return None
+# registry.register("SendWelcomeEmail", send_welcome)
+
+print("nyx jobs worker path=" + cfg.jobs_db_path)
+nyx.job.work_forever(db, registry, 1000, 0)
+db.close()

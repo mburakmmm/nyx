@@ -1,9 +1,9 @@
 # nyx.base64 - saf Nox base64 / base64url (RFC 4648).
 #
-# Kodlama: girdinin UTF-8 baytları (`nox.strings.byte_at` + C-string uzunluğu).
+# Kodlama: girdinin UTF-8 baytları ('nox.strings.byte_at' + C-string uzunluğu).
 # Çözme: çıktı baytları YALNIZCA ASCII (0..127) - JWT JSON gövdeleri için yeterli.
 #
-# Tüketici alias'ı önerilir `nyx` (Nox >= 1.12.1 zorunlu değil): import nyx.base64
+# Tüketici alias'ı önerilir 'nyx' (Nox >= 1.12.1 zorunlu değil): import nyx.base64
 
 import nox.strings
 
@@ -18,7 +18,7 @@ def _alphabet_url() -> str:
     return "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 def _printable() -> str:
-    return " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+    return " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_'abcdefghijklmnopqrstuvwxyz{|}~"
 
 def _byte_len(s: str) -> int:
     i: int = 0
@@ -111,7 +111,7 @@ def _hex_nibble(b: int) -> int:
         return b - 55
     raise Base64Error("gecersiz hex karakteri")
 
-# `nox.crypto.hmac_sha256` hex çıktısını base64url'e çevirir.
+# 'nox.crypto.hmac_sha256' hex çıktısını base64url'e çevirir.
 def encode_hex_url(hex_data: str) -> str:
     alphabet: str = _alphabet_url()
     n: int = _byte_len(hex_data)

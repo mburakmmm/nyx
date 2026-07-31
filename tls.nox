@@ -1,7 +1,7 @@
-# nyx.tls — Nox TLS istemci sarmalayicisi (Nox >= 1.14).
+# nyx.tls - Nox TLS istemci sarmalayicisi (Nox >= 1.14).
 #
 # Istemci: ozel protokoller / SMTPS / dogrudan TLS cikis baglantilari.
-# Sunucu HTTPS: Nox >= 1.22 `nox.http.serve_tls` / `serve_ws_tls`
+# Sunucu HTTPS: Nox >= 1.22 'nox.http.serve_tls' / 'serve_ws_tls'
 # (bkz. nyx.server + NYX_TLS_CERT / NYX_TLS_KEY).
 
 import nox.tls

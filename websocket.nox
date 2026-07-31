@@ -1,9 +1,9 @@
-# nyx.websocket — Nox WebSocket sarmalayicisi (istemci + sunucu tip yuzu).
+# nyx.websocket - Nox WebSocket sarmalayicisi (istemci + sunucu tip yuzu).
 #
 # Istemci (Nox >= 1.14):
 #   ws = nyx.websocket.connect("wss://example.com/socket")
 #
-# Sunucu Upgrade (Nox >= 1.22) — dogrudan nox tipini kullanin:
+# Sunucu Upgrade (Nox >= 1.22) - dogrudan nox tipini kullanin:
 #   from nox.websocket import WebSocketServerConn
 #   def ws_handle(conn: WebSocketServerConn) -> None:
 #       nyx.cable.ws_echo(conn)

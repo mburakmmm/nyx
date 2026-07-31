@@ -1,4 +1,4 @@
-# nyx.model — SQLite satır yardımcıları (basit, Rails-tarzı his).
+# nyx.model - SQLite satır yardımcıları (basit, Rails-tarzı his).
 #
 # import nyx.model
 # from nox.sqlite import Connection
@@ -92,7 +92,7 @@ class Record:
             i = i + 1
         return False
 
-# Uyumluluk sarmalayicilari — tercih edilen API: record.get_opt / get_int_opt.
+# Uyumluluk sarmalayicilari - tercih edilen API: record.get_opt / get_int_opt.
 def get_opt(record: Record, name: str) -> str | None:
     return record.get_opt(name)
 
@@ -176,7 +176,7 @@ class Attrs:
         self.vals = vals
         self.nulls = nulls
 
-# Typed attribute builder — JSON string birlestirme yerine tercih edilen API.
+# Typed attribute builder - JSON string birlestirme yerine tercih edilen API.
 # kinds[i]: "str" | "int" | "bool" | "null"
 class Attributes:
     keys: list[str]
@@ -378,9 +378,9 @@ def create_attrs_valid(db: Connection, table: str, attrs: Attributes, required_f
         raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
     return create_attrs(db, table, attrs)
 
-# `keys[i]`in degerini tasir: `nulls[i]` True ise deger JSON `null`dur
-# (baglanirken `vals[i]` ("") YOK SAYILIP `Statement.bind_null` kullanilir),
-# aksi halde `vals[i]` (her zaman metin — sayilar da metin olarak) baglanir.
+# 'keys[i]'in degerini tasir: 'nulls[i]' True ise deger JSON 'null'dur
+# (baglanirken 'vals[i]' ("") YOK SAYILIP 'Statement.bind_null' kullanilir),
+# aksi halde 'vals[i]' (her zaman metin - sayilar da metin olarak) baglanir.
 def _json_keys_vals(attrs_json: str) -> Attrs:
     v: JsonValue = nox.json.decode(attrs_json)
     if not nox.json.is_object(v):
@@ -466,9 +466,9 @@ def update(db: Connection, table: str, id: int, attrs_json: str) -> None:
     stmt.bind_int(len(attrs.keys), id)
     stmt.execute()
 
-# `fn`i tek bir SQLite islemi (transaction) icinde calistirir: basariliysa
+# 'fn'i tek bir SQLite islemi (transaction) icinde calistirir: basariliysa
 # COMMIT, hata olursa ROLLBACK. Nox >= 1.9: bilinen turler yeniden firlatilir;
-# digerleri `ModelError("transaction failed")` olarak sarilir.
+# digerleri 'ModelError("transaction failed")' olarak sarilir.
 def transaction(db: Connection, fn: (Connection) -> None) -> None:
     db.execute("BEGIN")
     try:
@@ -505,10 +505,10 @@ def _count_char(s: str, target: str) -> int:
         i = i + 1
     return count
 
-# `where_clause` icinde YALNIZCA harf/rakam/alt cizgi/bosluk/nokta/virgul/
-# parantez/`?`/karsilastirma operatorleri (`= < > !`) kabul edilir — tirnak
+# 'where_clause' icinde YALNIZCA harf/rakam/alt cizgi/bosluk/nokta/virgul/
+# parantez/'?'/karsilastirma operatorleri ('= < > !') kabul edilir - tirnak
 # isareti, noktali virgul, yorum satiri gibi SQL enjeksiyonuna acik
-# karakterler REDDEDILIR. Degerler HER ZAMAN `?` ile baglanir (asla dogrudan
+# karakterler REDDEDILIR. Degerler HER ZAMAN '?' ile baglanir (asla dogrudan
 # string birlestirme ile SQL'e gomulmez).
 def _check_where_clause(clause: str) -> None:
     if len(clause) == 0:
@@ -542,9 +542,9 @@ def _check_where_clause(clause: str) -> None:
             raise ModelError("where_clause icinde izin verilmeyen karakter: " + clause)
         i = i + 1
 
-# `where_clause` icindeki HER `?` yerine `binds`teki degeri sirayla baglar
-# (SQL enjeksiyonuna karsi guvenli — degerler asla metne gomulmez). Ornek:
-# `where_sql(db, "posts", "user_id = ? AND published = ?", ["1", "1"])`.
+# 'where_clause' icindeki HER '?' yerine 'binds'teki degeri sirayla baglar
+# (SQL enjeksiyonuna karsi guvenli - degerler asla metne gomulmez). Ornek:
+# 'where_sql(db, "posts", "user_id = ? AND published = ?", ["1", "1"])'.
 def where_sql(db: Connection, table: str, where_clause: str, binds: list[str]) -> list[Record]:
     _check_ident(table)
     _check_where_clause(where_clause)
@@ -559,7 +559,7 @@ def where_sql(db: Connection, table: str, where_clause: str, binds: list[str]) -
         i = i + 1
     return _rows_to_records(stmt.query())
 
-# `order_col`a gore siralanmis, en fazla `limit` satir doner.
+# 'order_col'a gore siralanmis, en fazla 'limit' satir doner.
 def order_limit(db: Connection, table: str, order_col: str, desc: bool, limit: int) -> list[Record]:
     _check_ident(table)
     _check_ident(order_col)
@@ -584,7 +584,7 @@ def _find_field(v: JsonValue, name: str) -> JsonValue | None:
         i = i + 1
     return None
 
-# `fields`teki her alanin `attrs_json`da MEVCUT, null OLMAYAN ve (metinse)
+# 'fields'teki her alanin 'attrs_json'da MEVCUT, null OLMAYAN ve (metinse)
 # BOS OLMAYAN bir degeri olup olmadigini dogrular. Hata mesajlari listesini
 # doner (bossa gecerli).
 def validate_required(attrs_json: str, fields: list[str]) -> list[str]:
@@ -608,8 +608,8 @@ def validate_required(attrs_json: str, fields: list[str]) -> list[str]:
         i = i + 1
     return errors
 
-# `create`in dogrulamali hali (Rails'in `create!`ine benzer): `required_fields`
-# eksik/boşsa ModelError firlatir, aksi halde normal `create`e devreder.
+# 'create'in dogrulamali hali (Rails'in 'create!'ine benzer): 'required_fields'
+# eksik/boşsa ModelError firlatir, aksi halde normal 'create'e devreder.
 def create_valid(db: Connection, table: str, attrs_json: str, required_fields: list[str]) -> int:
     errors: list[str] = validate_required(attrs_json, required_fields)
     if len(errors) > 0:

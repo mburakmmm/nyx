@@ -11,8 +11,8 @@
 # processed: int = nyx.job.work(db, registry, 10)
 #
 # NOT: Nox'ta kalitim/genel "Exception" taban sinifi yoktur - bilinen
-# framework hatalari ayri ayri, kalanlar Nox >= 1.9 `except:` ile yakalanir
-# ve job `fail()` ile isaretlenir. `finally` stuck-running korumasini saglar.
+# framework hatalari ayri ayri, kalanlar Nox >= 1.9 'except:' ile yakalanir
+# ve job 'fail()' ile isaretlenir. 'finally' stuck-running korumasini saglar.
 
 import nox.sqlite
 import nox.json
@@ -102,7 +102,7 @@ def _field(v: JsonValue, name: str) -> JsonValue:
 
 # Sirada bekleyen (status='queued', run_at_ms gecmis) EN ESKI isi atomik
 # olarak "running" durumuna cekip JSON olarak doner; is yoksa None.
-# `BEGIN IMMEDIATE` ayni SQLite dosyasini paylasan birden fazla worker
+# 'BEGIN IMMEDIATE' ayni SQLite dosyasini paylasan birden fazla worker
 # surecinin AYNI isi iki kez almasini engeller (yazma kilidini hemen alir).
 def reserve(db: Connection) -> str | None:
     db.execute("BEGIN IMMEDIATE")
@@ -143,7 +143,7 @@ def complete(db: Connection, id: int) -> None:
     stmt.bind_int(2, id)
     stmt.execute()
 
-# Basarisiz isi isaretler - `max_attempts()`in altindaysa ussel geri
+# Basarisiz isi isaretler - 'max_attempts()'in altindaysa ussel geri
 # cekilme (backoff) ile yeniden kuyruklar, aksi halde kalici olarak
 # "failed" yapar.
 def fail(db: Connection, id: int, error: str) -> None:
@@ -286,7 +286,7 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
             fail(db, id, "handler aborted without completion")
     return True
 
-# Re-queue jobs stuck in `running` longer than `stale_ms` (worker crash recovery).
+# Re-queue jobs stuck in 'running' longer than 'stale_ms' (worker crash recovery).
 def reclaim_stale(db: Connection, stale_ms: int) -> int:
     if stale_ms <= 0:
         raise JobError("stale_ms must be positive")
@@ -305,7 +305,7 @@ def reclaim_stale(db: Connection, stale_ms: int) -> int:
     return db.changes()
 
 # Sirada bekleyen TEK bir isi alip ilgili handler'i cagirir. Is yoksa
-# False doner. Handler basariliysa `complete`, bilinen hatalarda `fail`.
+# False doner. Handler basariliysa 'complete', bilinen hatalarda 'fail'.
 def process_one(db: Connection, registry: JobRegistry) -> bool:
     job_json: str | None = reserve(db)
     if job_json != None:

@@ -9,8 +9,8 @@ import nyx.response
 import nyx.runtime
 from nyx.config import Config
 
-# Varsayilan (sabit) production CSP'si - `cfg.csp` BOSSA ve `cfg.
-# is_production()` True'ysa kullanilir (bkz. `nyx.config.Config.csp`
+# Varsayilan (sabit) production CSP'si - 'cfg.csp' BOSSA ve 'cfg.
+# is_production()' True'ysa kullanilir (bkz. 'nyx.config.Config.csp'
 # belge notu).
 def _default_production_csp() -> str:
     return "default-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
@@ -18,8 +18,8 @@ def _default_production_csp() -> str:
 # Temel guvenlik basliklari HER ORTAMDA (development/test/production)
 # KOSULSUZ eklenir - bunlar tarayici-tarafi savunmalardir ve production'a
 # OZGU DEGILDIR (ör. bir gelistirici local'de XSS/clickjacking'e karsi
-# ayni korumayi test edebilmelidir). `X-Request-Id`, cagiran/log korelasyonu
-# icin `nyx.runtime.request_id()`i (bkz. `nyx.app.dispatch`) yanita ekler.
+# ayni korumayi test edebilmelidir). 'X-Request-Id', cagiran/log korelasyonu
+# icin 'nyx.runtime.request_id()'i (bkz. 'nyx.app.dispatch') yanita ekler.
 def headers_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
     def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
         r: HttpResponse = resp

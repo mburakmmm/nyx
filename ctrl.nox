@@ -19,12 +19,12 @@ from nyx.config import Config
 def redirect(location: str) -> HttpResponse:
     return nyx.response.redirect(location, 302)
 
-# Acik yonlendirme (open redirect) korumasi: yalnizca `/` ile baslayan,
-# `//` (sema-goreli/protocol-relative - tarayici bunu farkli bir HOST'a
-# yonlendirir) ile BASLAMAYAN ve `://` (mutlak URL, farkli bir origin'e
-# isaret edebilir) ICERMEYEN goreli yollara izin verilir. `redirect_back`/
-# `redirect_back_to` kullanici-kontrollu `Referer` basligina KOR KOR
-# guvenmez - guvenli degilse `fallback`e doner.
+# Acik yonlendirme (open redirect) korumasi: yalnizca '/' ile baslayan,
+# '//' (sema-goreli/protocol-relative - tarayici bunu farkli bir HOST'a
+# yonlendirir) ile BASLAMAYAN ve '://' (mutlak URL, farkli bir origin'e
+# isaret edebilir) ICERMEYEN goreli yollara izin verilir. 'redirect_back'/
+# 'redirect_back_to' kullanici-kontrollu 'Referer' basligina KOR KOR
+# guvenmez - guvenli degilse 'fallback'e doner.
 def _is_safe_relative_redirect(target: str) -> bool:
     if len(target) == 0:
         return False
@@ -53,9 +53,9 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             c: int = 0
     return None
 
-# Istegin `Referer` basligina (varsa) yonlendirir, yoksa `fallback`e.
-# `Referer` GUVENILMEYEN bir istemci girdisidir - acik yonlendirmeyi
-# ONLEMEK icin yalnizca `_is_safe_relative_redirect` KABUL ETTIGI goreli
+# Istegin 'Referer' basligina (varsa) yonlendirir, yoksa 'fallback'e.
+# 'Referer' GUVENILMEYEN bir istemci girdisidir - acik yonlendirmeyi
+# ONLEMEK icin yalnizca '_is_safe_relative_redirect' KABUL ETTIGI goreli
 # yollara izin verilir (bkz. yukarisi).
 def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
     referer: str | None = _header_get(ctx.request.headers, "Referer")
@@ -64,7 +64,7 @@ def redirect_back(ctx: Context, fallback: str) -> HttpResponse:
             return redirect(referer)
     return redirect(fallback)
 
-# `Context` olmadan, dogrudan bir `Referer` metniyle cagirmak isteyenler
+# 'Context' olmadan, dogrudan bir 'Referer' metniyle cagirmak isteyenler
 # icin (ör. baska bir middleware'den gelen deger). Ayni acik yonlendirme
 # korumasina tabidir.
 def redirect_back_to(referer: str, fallback: str) -> HttpResponse:
@@ -91,7 +91,7 @@ def render_unescaped(status: int, path: str, context: dict[str, str]) -> HttpRes
     body: str = nyx.view.render_unescaped(path, context)
     return html(status, body)
 
-# Layout icinde `{{ yield }}` konumuna `view`in render edilmis govdesini
+# Layout icinde '{{ yield }}' konumuna 'view'in render edilmis govdesini
 # yerlestirip tek bir HTML yaniti doner (bkz. nyx.view.render_with_layout).
 def render_layout(status: int, layout: str, view: str, context: dict[str, str]) -> HttpResponse:
     body: str = nyx.view.render_with_layout(layout, view, context)
@@ -133,8 +133,8 @@ def unprocessable_html(errors: list[str]) -> HttpResponse:
     body: str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Unprocessable</title></head><body><h1>Unprocessable Entity</h1>" + errors_html(errors) + "</body></html>"
     return html(422, body)
 
-# `nyx.model.validate_required` gibi fonksiyonlardan gelen hata mesaji
-# listesini `{"errors":[...]}` JSON govdeli 422 yaniti olarak doner
+# 'nyx.model.validate_required' gibi fonksiyonlardan gelen hata mesaji
+# listesini '{"errors":[...]}' JSON govdeli 422 yaniti olarak doner
 # (JSON API controller'lari icin).
 def unprocessable_json(errors: list[str]) -> HttpResponse:
     body: str = "{\"errors\":["
@@ -159,7 +159,7 @@ def server_error_for(ctx: Context) -> HttpResponse:
     return server_error()
 
 # development: ayrıntılı HTML/JSON; production: generic 500.
-# `cfg` - nyx.config.Config (is_development).
+# 'cfg' - nyx.config.Config (is_development).
 def server_error_detail_for(
     ctx: Context,
     cfg: Config,

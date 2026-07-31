@@ -18,7 +18,7 @@ tampered: str = parts[0] + ".AAAA"
 nox.test.assert_true(nyx.session.load(secret, tampered) == None, "tampered")
 
 expired: str = nyx.session.create(secret, "{\"user\":\"bob\"}", 1)
-# max_age 1 saniye — hemen yüklenmeli; expire testi için 0 geçersiz,
+# max_age 1 saniye - hemen yüklenmeli; expire testi için 0 geçersiz,
 # bu yüzden bozuk envelope ile expire benzeri davranışı doğrularız.
 nox.test.assert_true(nyx.session.load(secret, "") == None, "empty")
 

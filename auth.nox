@@ -1,4 +1,4 @@
-# nyx.auth - Router `use_before` kimlik doğrulama ara katmanları.
+# nyx.auth - Router 'use_before' kimlik doğrulama ara katmanları.
 #
 # import nyx.auth
 
@@ -47,12 +47,12 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
             b: int = 0
     return None
 
-# `msg` her zaman bu modulun SABIT dizeleri OLSA da ("missing_authorization"
-# gibi, kullanici girdisi ICERMEZ), `nox.json.encode_string` KULLANMAK
+# 'msg' her zaman bu modulun SABIT dizeleri OLSA da ("missing_authorization"
+# gibi, kullanici girdisi ICERMEZ), 'nox.json.encode_string' KULLANMAK
 # gelecekte BASKA bir cagiran DEGISKEN/kullanici-kontrollu bir mesaj
 # GECIRIRSE (ör. hata ayrintisi) bozuk/enjekte edilebilir JSON URETILMESINI
-# BASTAN ONLER - elle `"\"" + msg + "\""` birlestirmesi TIRNAK/backslash
-# icerebilecek bir `msg` icin GECERSIZ JSON uretirdi.
+# BASTAN ONLER - elle '"\"" + msg + "\""' birlestirmesi TIRNAK/backslash
+# icerebilecek bir 'msg' icin GECERSIZ JSON uretirdi.
 def _unauthorized(msg: str) -> HttpResponse:
     return nyx.response.json(401, "{\"error\":" + nox.json.encode_string(msg) + "}")
 
@@ -87,7 +87,7 @@ def path_is_exempt_any(target: str, exempt_paths: list[str]) -> bool:
         i = i + 1
     return False
 
-# `json_str` (bir JSON nesnesi) icinde `field` adinda bir metin alani ararsa
+# 'json_str' (bir JSON nesnesi) icinde 'field' adinda bir metin alani ararsa
 # onu, yoksa (veya metin degilse/JSON gecersizse) bos string doner.
 def _json_field_str(json_str: str, field: str) -> str:
     try:
@@ -128,7 +128,7 @@ def require_bearer(secret: str) -> (Context) -> HttpResponse | None:
                 return _unauthorized("invalid_token")
     return handler
 
-# `exempt_paths` listesindeki yollar (query haric exact match) disinda
+# 'exempt_paths' listesindeki yollar (query haric exact match) disinda
 # Bearer JWT zorunlu. Ornek: ["/login", "/health"].
 def require_bearer_unless_paths(secret: str, exempt_paths: list[str]) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
@@ -139,17 +139,17 @@ def require_bearer_unless_paths(secret: str, exempt_paths: list[str]) -> (Contex
     return handler
 
 # Tek yol muafiyeti - exact path match (query string yok sayilir).
-# Prefix match YOKTUR (`/login` `/login/extra`yi muaf tutmaz).
+# Prefix match YOKTUR ('/login' '/login/extra'yi muaf tutmaz).
 def require_bearer_unless(secret: str, exempt_path: str) -> (Context) -> HttpResponse | None:
     paths: list[str] = []
     paths.append(exempt_path)
     return require_bearer_unless_paths(secret, paths)
 
-# NOT: Oturum (cookie) verisinde `user_id` alani ZORUNLUDUR - imzasi
-# GECERLI ama `user_id`si eksik/bos bir oturum "kimlik dogrulanmis DEGIL"
+# NOT: Oturum (cookie) verisinde 'user_id' alani ZORUNLUDUR - imzasi
+# GECERLI ama 'user_id'si eksik/bos bir oturum "kimlik dogrulanmis DEGIL"
 # olarak SAYILIR (401 doner). Bu, HMAC imzasi gecerli olsa bile icerigi
-# YANLIS/eksik olusturulmus (ör. login akisinda `user_id` unutulmus) bir
-# oturumun `nyx.runtime.signed_in()`in True donmesine yol ACMASINI ONLER.
+# YANLIS/eksik olusturulmus (ör. login akisinda 'user_id' unutulmus) bir
+# oturumun 'nyx.runtime.signed_in()'in True donmesine yol ACMASINI ONLER.
 def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
@@ -173,8 +173,8 @@ def require_session(secret: str, cookie_name: str) -> (Context) -> HttpResponse 
                 return _unauthorized("bad_cookie")
     return handler
 
-# Router zincirine `require_bearer`/`require_session`DEN SONRA eklenir:
-# onlar `nyx.runtime.set_user`i CAGIRDIYSA burada `signed_in()` True olur.
+# Router zincirine 'require_bearer'/'require_session'DEN SONRA eklenir:
+# onlar 'nyx.runtime.set_user'i CAGIRDIYSA burada 'signed_in()' True olur.
 # Dogrudan kullanildiginda (onceki bir kimlik dogrulama katmani OLMADAN)
 # her zaman 401 doner (hicbir kullanici ATANMAMIS olur).
 def require_user() -> (Context) -> HttpResponse | None:

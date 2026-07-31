@@ -2,11 +2,11 @@
 #
 # - SSE + long-poll: her ortamda calisir
 # - Cross-worker: open_store (SQLite)
-# - WebSocket sunucu (Nox >= 1.22): `nox.http.serve_ws*` + ws_echo /
+# - WebSocket sunucu (Nox >= 1.22): 'nox.http.serve_ws*' + ws_echo /
 #   ws_broadcast_loop (WebSocketServerConn)
 #
 # OMUR: Hub, boot-once Application ile ayni worker sureci boyunca yasayabilir.
-# `serve_multicore` worker'lari ARASI hub paylasilmaz; store veya dis kuyruk kullanin.
+# 'serve_multicore' worker'lari ARASI hub paylasilmaz; store veya dis kuyruk kullanin.
 #
 # import nyx.cable
 #
@@ -24,6 +24,8 @@ import nox.sqlite
 from nox.http import HttpResponse
 from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement, Row as SqliteRow
 from nox.websocket import WebSocketServerConn
+from nox.json import JsonValue
+import nyx.session_store
 
 class CableError:
     def __init__(self: CableError, message: str) -> None:
@@ -81,9 +83,9 @@ def _get_or_create(hub: Hub, name: str) -> int:
     hub.channels = channels
     return len(channels) - 1
 
-# `channel`i (yoksa OLUSTURARAK) kaydeder ve o ANKI son mesaj kimligini
-# metin olarak doner - cagiran taraf bunu ilk `stream_poll`/`sse_response_for`
-# cagrisinda `since_id` olarak kullanip yalnizca ABONELIKTEN SONRAKI
+# 'channel'i (yoksa OLUSTURARAK) kaydeder ve o ANKI son mesaj kimligini
+# metin olarak doner - cagiran taraf bunu ilk 'stream_poll'/'sse_response_for'
+# cagrisinda 'since_id' olarak kullanip yalnizca ABONELIKTEN SONRAKI
 # olaylari alir.
 def subscribe(hub: Hub, channel: str) -> str:
     idx: int = _get_or_create(hub, channel)
@@ -101,7 +103,7 @@ def _cap(msgs: list[Message], capacity: int) -> list[Message]:
         i = i + 1
     return out
 
-# `channel`e yeni bir olay yayinlar, atanan mesaj kimligini (id) doner.
+# 'channel'e yeni bir olay yayinlar, atanan mesaj kimligini (id) doner.
 def broadcast(hub: Hub, channel: str, event: str, data_json: str) -> int:
     idx: int = _get_or_create(hub, channel)
     buf: ChannelBuf = hub.channels[idx]
@@ -146,10 +148,10 @@ def _sse_format(events: list[Message]) -> str:
         i = i + 1
     return out
 
-# Verilen olay listesini `text/event-stream` govdeli bir HTTP yanitina
+# Verilen olay listesini 'text/event-stream' govdeli bir HTTP yanitina
 # cevirir. Uzun-omurlu, kalici bir baglanti DEGILDIR - istemci tarayicisi
 # EventSource API'siyle bu ucu periyodik olarak yeniden acabilir (tarayici
-# `Last-Event-ID` basligini otomatik gonderir).
+# 'Last-Event-ID' basligini otomatik gonderir).
 def sse_response(events: list[Message]) -> HttpResponse:
     headers: dict[str, str] = {}
     headers["Content-Type"] = "text/event-stream; charset=utf-8"
@@ -169,9 +171,9 @@ def _message_json(m: Message) -> str:
         ",\"ts_ms\":" + str(m.ts_ms) + "}"
     )
 
-# Long-poll fallback: `since_id`den SONRAKI olaylari duz bir JSON govdesi
-# olarak doner - istemci bu govdedeki en yuksek `id`yi bir SONRAKI
-# `stream_poll` cagrisinda `since_id` olarak kullanir.
+# Long-poll fallback: 'since_id'den SONRAKI olaylari duz bir JSON govdesi
+# olarak doner - istemci bu govdedeki en yuksek 'id'yi bir SONRAKI
+# 'stream_poll' cagrisinda 'since_id' olarak kullanir.
 def stream_poll(hub: Hub, channel: str, since_id: int) -> str:
     events: list[Message] = _messages_since(hub, channel, since_id)
     out: str = "{\"channel\":" + nox.json.encode_string(channel) + ",\"events\":["
@@ -337,3 +339,52 @@ def ws_broadcast_loop(ch: Channel, conn: WebSocketServerConn) -> None:
             return
         mid: int = channel_broadcast(ch, "message", msg)
         conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")
+
+# Authenticated WS: first frame must be {"sid":"..."} matching an active
+# server-side session. Then behaves like ws_broadcast_loop.
+def ws_auth_broadcast_loop(
+    ch: Channel,
+    conn: WebSocketServerConn,
+    session_db: SqliteConnection,
+    secret: str,
+    secret_previous: str
+) -> None:
+    first: str = conn.recv()
+    if len(first) == 0:
+        conn.close()
+        return
+    sid: str | None = None
+    try:
+        v: JsonValue = nox.json.decode(first)
+        i: int = 0
+        n: int = nox.json.object_len(v)
+        while i < n:
+            if nox.json.object_key(v, i) == "sid":
+                sid = nox.json.as_string(nox.json.object_value(v, i))
+            i = i + 1
+    except:
+        conn.send_text("{\"error\":\"auth_required\"}")
+        conn.close()
+        return
+    if sid == None:
+        conn.send_text("{\"error\":\"auth_required\"}")
+        conn.close()
+        return
+    else:
+        sid_s: str = sid
+        if len(sid_s) == 0:
+            conn.send_text("{\"error\":\"auth_required\"}")
+            conn.close()
+            return
+        data: str | None = nyx.session_store.load_sid(session_db, sid_s)
+        if data == None:
+            conn.send_text("{\"error\":\"unauthorized\"}")
+            conn.close()
+            return
+        conn.send_text("{\"ok\":true,\"authed\":true}")
+        while conn.is_open():
+            msg: str = conn.recv()
+            if len(msg) == 0:
+                return
+            mid: int = channel_broadcast(ch, "message", msg)
+            conn.send_text("{\"ok\":true,\"id\":" + str(mid) + "}")

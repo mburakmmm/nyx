@@ -6,7 +6,7 @@
 #   row = nyx.pg_model.find(nyx.app.pg(application), "posts", id)
 #
 # SQLite ORM icin nyx.model + application.db kullanin.
-# Tipler ayri kalir (PgConnection vs sqlite.Connection) — ortak query
+# Tipler ayri kalir (PgConnection vs sqlite.Connection) - ortak query
 # protokolu Nox'ta henuz yok (Row kovaryansi).
 
 import nox.strings

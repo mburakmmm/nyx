@@ -3,11 +3,11 @@
 # Nox >= 1.18.1: paket-modül globals + nested closure / Router codegen-safe
 # (P1c düzeltmesi). NYX_RT_* ortam değişkenleri ARTIK KULLANILMAZ.
 #
-# Her OS thread'inin KENDI global blogu vardir (`serve_multicore` worker
+# Her OS thread'inin KENDI global blogu vardir ('serve_multicore' worker
 # basina). Varsayim: worker basina senkron, tek istek (nyx.app.dispatch).
 #
-# `current()` BIR SNAPSHOT doner - alanlarini dogrudan degistirmek kalici
-# degildir; `set_*` / `load_*` / `touch_*` kullanin.
+# 'current()' BIR SNAPSHOT doner - alanlarini dogrudan degistirmek kalici
+# degildir; 'set_*' / 'load_*' / 'touch_*' kullanin.
 #
 # NOT: RequestBag kurucu parametre adlari getter fonksiyon adlariyla
 # cakismasin (eski codegen kisiti; guvenli tutuyoruz).
@@ -54,6 +54,7 @@ _rt_request_id: str = ""
 _rt_started_ms: int = 0
 _rt_request_target: str = ""
 _rt_hdr_keys: str = ""
+_rt_session_sid: str = ""
 
 def is_active() -> bool:
     return _rt_active
@@ -71,6 +72,7 @@ def reset() -> None:
     _rt_started_ms = 0
     _rt_request_target = ""
     _rt_hdr_keys = ""
+    _rt_session_sid = ""
 
 def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _rt_active = True
@@ -85,6 +87,7 @@ def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     _rt_started_ms = start_ms
     _rt_request_target = ""
     _rt_hdr_keys = ""
+    _rt_session_sid = ""
     return current()
 
 def end() -> None:
@@ -186,6 +189,12 @@ def started_ms() -> int:
 
 def locale() -> str:
     return _rt_locale + ""
+
+def session_sid() -> str:
+    return _rt_session_sid + ""
+
+def set_session_sid(sid: str) -> None:
+    _rt_session_sid = sid + ""
 
 def flash_set(key: str, message: str) -> None:
     updated: str = nyx.flash.set(session_json(), key, message)

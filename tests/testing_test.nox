@@ -41,10 +41,10 @@ nox.test.assert_eq_str(csrf_headers["X-CSRF-Token"], "tok-abc", "with_csrf_token
 
 # NOT: burada BILEREK ARA DEGISKENLER kullanilir (`nyx.testing.f(nyx.
 # testing.g(...))` gibi ic ice/nested modul-disi fonksiyon cagrilarindan
-# KACINILIR) — GERCEKTEN denenip DOGRULANDI: bir cross-module fonksiyonun
+# KACINILIR) - GERCEKTEN denenip DOGRULANDI: bir cross-module fonksiyonun
 # donus degeri (`dict[str, str]`) DOGRUDAN, AYNI ifade icinde BASKA bir
 # cross-module fonksiyona argüman olarak GECIRILDIGINDE codegen'de GERCEK
-# bir derleyici COKMESINE (SIGSEGV, `noxc build` asamasinda) yol acar —
+# bir derleyici COKMESINE (SIGSEGV, `noxc build` asamasinda) yol acar -
 # ara degiskenlere ATAMAK bu sorunu tamamen ONLER (bkz. proje notlari).
 chain_step1: dict[str, str] = nyx.testing.with_bearer(base_headers, "tok123")
 chain_step2: dict[str, str] = nyx.testing.with_cookie(chain_step1, "session=abc")

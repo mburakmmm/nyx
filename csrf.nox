@@ -28,7 +28,7 @@ def _sign(secret: str, payload: str) -> str:
 # Prevention Cheat Sheet "synchronizer token" deseni) - bu sayede saldirganin
 # KENDI oturumunda ürettigi (ama gecerli imzali) bir jeton, KURBANIN
 # oturumuna karsi ASLA gecerli olmaz (jeton yalnizca UretildIGI oturumla
-# eslesir). Oturum yoksa/bossa ("{}") istek-basina benzersiz `request_id`
+# eslesir). Oturum yoksa/bossa ("{}") istek-basina benzersiz 'request_id'
 # ile "anon:" onekli bir baglanti kullanilir - YINE DE ayni istek icinde
 # uretilen jeton yine ayni istekte dogrulanabilir (login-oncesi formlar).
 def _session_binding() -> str:
@@ -112,8 +112,8 @@ def _starts_with_any(path: str, prefixes: list[str]) -> bool:
         i = i + 1
     return False
 
-# State-changing isteklerde `_csrf` form alanı veya `X-CSRF-Token` zorunlu -
-# `exempt_prefixes`teki oneklerle BASLAYAN yollar (ör. JSON/API istemcileri
+# State-changing isteklerde '_csrf' form alanı veya 'X-CSRF-Token' zorunlu -
+# 'exempt_prefixes'teki oneklerle BASLAYAN yollar (ör. JSON/API istemcileri
 # genellikle CSRF cerezine DAYANMADIGINDAN, kendi Bearer/API-key kimlik
 # dogrulamalarini kullanir) atlanir.
 def protect_except(secret: str, exempt_prefixes: list[str]) -> (Context) -> HttpResponse | None:
@@ -132,13 +132,13 @@ def protect_except(secret: str, exempt_prefixes: list[str]) -> (Context) -> Http
     return handler
 
 # Guvenli varsayilan: hicbir onek muaf DEGIL. Cookie-session kullanan
-# `/api/` rotalari da CSRF ister. Bearer-only JSON API icin acikca
-# `protect_api_exempt` veya `Config.csrf_api_exempt` / `NYX_CSRF_API_EXEMPT=1`.
+# '/api/' rotalari da CSRF ister. Bearer-only JSON API icin acikca
+# 'protect_api_exempt' veya 'Config.csrf_api_exempt' / 'NYX_CSRF_API_EXEMPT=1'.
 def protect(secret: str) -> (Context) -> HttpResponse | None:
     none_exempt: list[str] = []
     return protect_except(secret, none_exempt)
 
-# Eski davranis: `/api/` altini CSRF'den muaf tut (yalnizca Bearer/API-key
+# Eski davranis: '/api/' altini CSRF'den muaf tut (yalnizca Bearer/API-key
 # kimlik dogrulamasina guvenen API'ler icin opt-in).
 def protect_api_exempt(secret: str) -> (Context) -> HttpResponse | None:
     exempt: list[str] = ["/api/"]
@@ -147,6 +147,6 @@ def protect_api_exempt(secret: str) -> (Context) -> HttpResponse | None:
 def field(secret: str) -> str:
     return nyx.form.hidden("_csrf", token(secret))
 
-# CSRF token uretip `form_with_token` doner (bkz. nyx.form).
+# CSRF token uretip 'form_with_token' doner (bkz. nyx.form).
 def form_with(action: str, method: str, secret: str) -> str:
     return nyx.form.form_with_token(action, method, token(secret))

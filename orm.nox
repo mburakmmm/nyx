@@ -1,0 +1,41 @@
+# nyx.orm - ORM helpers (validations, soft delete, preload index).
+# Dialect PG calls stay on nyx.pg_model directly until shared Row protocol lands.
+
+import nox.strings
+from nox.sqlite import Connection
+import nyx.model
+from nyx.model import Attributes, Record
+
+class OrmError:
+    def __init__(self: OrmError, message: str) -> None:
+        self.message = message
+
+def create_attrs_sqlite(db: Connection, table: str, attrs: Attributes) -> int:
+    return nyx.model.create_attrs(db, table, attrs)
+
+def soft_delete_sqlite(db: Connection, table: str, id: int, deleted_at_ms: int) -> None:
+    attrs: Attributes = nyx.model.attributes()
+    nyx.model.set_int(attrs, "deleted_at", deleted_at_ms)
+    nyx.model.update_attrs(db, table, id, attrs)
+
+def validate_format(value: str, col: str, must_contain: str) -> list[str]:
+    errors: list[str] = []
+    if len(value) == 0:
+        return errors
+    if not nox.strings.contains(value, must_contain):
+        errors.append(col + " format invalid")
+    return errors
+
+def validate_numericality(value: int, col: str, min_v: int, max_v: int) -> list[str]:
+    errors: list[str] = []
+    if value < min_v or value > max_v:
+        errors.append(col + " out of range")
+    return errors
+
+def index_records_by_id(rows: list[Record]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    i: int = 0
+    while i < len(rows):
+        out[str(rows[i].get_int("id"))] = i
+        i = i + 1
+    return out

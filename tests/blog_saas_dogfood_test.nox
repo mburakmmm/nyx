@@ -1,0 +1,77 @@
+# Blog SaaS dogfood: auth + session_store
+import nox.test
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.auth_engine
+import nyx.runtime
+import nyx.params
+import nyx.testing
+from nyx.app import Application
+from nyx.config import Config
+
+def setup(application: Application) -> None:
+    nyx.auth_engine.ensure_schema(application.db)
+
+    def register(ctx: Context) -> HttpResponse:
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        email: str = nyx.params.get(p, "email", "")
+        password: str = nyx.params.get(p, "password", "")
+        uid: int = nyx.auth_engine.register(application.db, email, password)
+        nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+        return nyx.ctrl.json(201, "{\"user_id\":" + str(uid) + "}")
+
+    def login(ctx: Context) -> HttpResponse:
+        p: dict[str, str] = nyx.params.from_request(ctx.request)
+        email: str = nyx.params.get(p, "email", "")
+        password: str = nyx.params.get(p, "password", "")
+        uid: int = nyx.auth_engine.authenticate(application.db, email, password)
+        nyx.runtime.set_session(nyx.auth_engine.session_data_for_user(uid))
+        return nyx.ctrl.json(200, "{\"user_id\":" + str(uid) + "}")
+
+    def me(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.json(200, nyx.runtime.session_json())
+
+    application.router.post("/register", register)
+    application.router.post("/login", login)
+    application.router.get("/me", me)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "db"
+cfg.metrics_enabled = False
+app: Application = nyx.app.boot(cfg, setup)
+
+headers: dict[str, str] = {}
+headers["Content-Type"] = "application/x-www-form-urlencoded"
+reg: HttpResponse = nyx.app.dispatch(
+    app,
+    HttpRequest("POST", "/register", "email=dog@example.com&password=password1", headers)
+)
+nox.test.assert_eq_int(reg.status, 201, "register")
+
+set_cookie: str | None = nyx.testing.header(reg, "Set-Cookie")
+nox.test.assert_true(set_cookie != None, "session cookie")
+cookie_hdr: str = ""
+if set_cookie != None:
+    cookie_hdr = set_cookie
+    semi: int = nox.strings.index_of(set_cookie, ";")
+    if semi >= 0:
+        cookie_hdr = ""
+        ci: int = 0
+        while ci < semi:
+            cookie_hdr = cookie_hdr + set_cookie[ci]
+            ci = ci + 1
+
+me_headers: dict[str, str] = {}
+me_headers["Cookie"] = cookie_hdr
+me_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", me_headers))
+nox.test.assert_eq_int(me_resp.status, 200, "me")
+nox.test.assert_true(nox.strings.contains(me_resp.body, "user_id"), "me body")
+
+nyx.app.shutdown(app)
+print("blog_saas_dogfood_test ok")

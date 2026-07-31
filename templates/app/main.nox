@@ -1,4 +1,4 @@
-# {{APP_NAME}} — nyx application entry
+# {{APP_NAME}} - nyx application entry
 # Requires Nox >= 1.22.0 (serve_tls / serve_ws; min for this template).
 # noxc fetch && NYX_ENV=development noxc run main.nox
 

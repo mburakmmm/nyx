@@ -5,8 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.10.0 · **Lisans:** MIT · **Nox ≥ 1.22.0** (önerilen **1.22.9**)  
-İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketici `requires[].alias` farklı olabilir).
+**Sürüm:** 0.15.0 · **Lisans:** MIT · **Nox ≥ 1.22.0** (önerilen **1.22.9**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -25,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.10.0"
+      "ref": "v0.15.0"
     }
   ]
 }
@@ -156,6 +155,16 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.15.0 — Batteries-included yol (B + Devise-core; 1.0 değil)
+- **DB session store:** imzalı `sid` cookie + `nyx_sessions`; revoke / logout-all; `NYX_SESSION_STORE`
+- **Auth engine:** register/login/reset/lockout + `nyx generate auth`
+- **Rate limit**, JSON log, derin `/ready`, `/metrics`
+- **ORM helpers:** soft-delete/format/numericality + preload index; dual `.pg.sql` migrate
+- **Jobs:** `work_forever` worker; `nyx jobs dead`
+- **Storage / mail / cable:** limitler, mail template, `ws_auth_broadcast_loop`, generators
+- **Ops:** `NYX_SECRET_KEY_PREVIOUS`; PG CI smoke
+- Sürüm **0.x** kalır (1.0 tag yok)
 
 ### 0.10.0 — Nox 1.22 kilidi (TLS/WS sunucu, hooks, dialect boot)
 - **Nox ≥ 1.22.0** (CI **1.22.9**)

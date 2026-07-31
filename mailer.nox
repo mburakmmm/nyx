@@ -20,6 +20,7 @@ import nox.uuid
 import nox.http
 import nox.json
 import nox.strings
+import nox.template
 from nox.http import HttpResponse, HttpError
 from nox.tls import TlsStream
 from nyx.config import Config
@@ -57,8 +58,8 @@ def _validate(mail: Mail) -> None:
     _reject_crlf("from", mail.from_addr)
     _reject_crlf("subject", mail.subject)
 
-# Header injection: CR/LF baytlarini reddet. Nox >= 1.8.2 `"\r"` kacisini
-# dogru cozer; yine de `byte_at` ile ham bayt kontrolu en guvenilir yoldur.
+# Header injection: CR/LF baytlarini reddet. Nox >= 1.8.2 '"\r"' kacisini
+# dogru cozer; yine de 'byte_at' ile ham bayt kontrolu en guvenilir yoldur.
 def _contains_cr_or_lf(s: str) -> bool:
     i: int = 0
     n: int = len(s)
@@ -87,8 +88,8 @@ def _ensure_dir(path: str) -> None:
 def _boundary() -> str:
     return "==NyxBoundary_" + nox.uuid.uuid4()
 
-# RFC 2822'ye yakin, basit bir .eml govdesi uretir. `html_body` bossa duz
-# metin, doluysa `multipart/alternative` uretilir.
+# RFC 2822'ye yakin, basit bir .eml govdesi uretir. 'html_body' bossa duz
+# metin, doluysa 'multipart/alternative' uretilir.
 def to_eml(mail: Mail) -> str:
     header: str = (
         "From: " + mail.from_addr + "\r\n" +
@@ -217,7 +218,7 @@ def _deliver_smtp(cfg: Config, mail: Mail) -> None:
         stream.close()
 
 # Yapilandirilmis teslimat yontemine (Config.mail_delivery) gore postayi
-# gonderir. `from_addr`/`to` bossa veya konu eksikse MailerError firlatir.
+# gonderir. 'from_addr'/'to' bossa veya konu eksikse MailerError firlatir.
 def deliver(cfg: Config, mail: Mail) -> None:
     _validate(mail)
     if cfg.mail_delivery == "file":
@@ -230,3 +231,24 @@ def deliver(cfg: Config, mail: Mail) -> None:
         _deliver_smtp(cfg, mail)
         return
     raise MailerError("desteklenmeyen mail_delivery: " + cfg.mail_delivery)
+
+# Render a mail body from a template file with {{key}} replacements.
+def render_template(path: str, context: dict[str, str]) -> str:
+    if not nox.fs.exists(path):
+        raise MailerError("mail template missing: " + path)
+    raw: str = nox.fs.read_to_string(path)
+    return nox.template.render(raw, context)
+
+def mail_from_template(
+    to: str,
+    from_addr: str,
+    subject: str,
+    template_path: str,
+    context: dict[str, str]
+) -> Mail:
+    body: str = render_template(template_path, context)
+    return new_mail(to, from_addr, subject, body)
+
+# STARTTLS/587: Nox has no plain TCP upgrade yet. Document proxy or use SMTPS/465.
+def smtp_starttls_supported() -> bool:
+    return False

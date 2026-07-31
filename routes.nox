@@ -3,10 +3,10 @@
 # import nyx.routes
 # nyx.routes.resources(router, "posts", posts_index, posts_show, posts_new, posts_create, posts_edit, posts_update, posts_destroy)
 #
-# Method override (Rails `_method` gizli form alani): HTML form yalnizca
-# GET/POST gonderebilir; PUT/PATCH/DELETE icin `_method=PUT` tasiyan POST
-# kullanilir. Router gercek HTTP metoduna bakar — override HANDLER
-# seviyesinde cozulur (`effective_method` / `post_with_override`).
+# Method override (Rails '_method' gizli form alani): HTML form yalnizca
+# GET/POST gonderebilir; PUT/PATCH/DELETE icin '_method=PUT' tasiyan POST
+# kullanilir. Router gercek HTTP metoduna bakar - override HANDLER
+# seviyesinde cozulur ('effective_method' / 'post_with_override').
 #
 #   def items_update(ctx: Context) -> HttpResponse: ...
 #   def items_destroy(ctx: Context) -> HttpResponse: ...
@@ -64,7 +64,7 @@ def get(router: Router, pattern: str, handler: (Context) -> HttpResponse) -> Non
 def post(router: Router, pattern: str, handler: (Context) -> HttpResponse) -> None:
     router.post(pattern, handler)
 
-# `_method` override'li POST: PUT/PATCH -> update, DELETE -> destroy.
+# '_method' override'li POST: PUT/PATCH -> update, DELETE -> destroy.
 def post_with_override(
     router: Router,
     pattern: str,

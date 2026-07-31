@@ -1,0 +1,111 @@
+# Batteries-included smoke (0.11-0.15)
+import nox.test
+import nox.fs
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+from nox.sqlite import Connection
+import nyx.db
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.model
+import nyx.session_store
+import nyx.rate_limit
+import nyx.auth_engine
+import nyx.metrics
+import nyx.orm
+import nyx.storage
+import nyx.mailer
+from nyx.app import Application
+from nyx.config import Config
+from nyx.model import Attributes, Record
+from nyx.rate_limit import MemoryStore
+from nyx.storage import StorageError
+
+store: MemoryStore = nyx.rate_limit.open_memory()
+nox.test.assert_true(nyx.rate_limit.allow(store, "k", 2, 60000), "rl1")
+nox.test.assert_true(nyx.rate_limit.allow(store, "k", 2, 60000), "rl2")
+nox.test.assert_true(not nyx.rate_limit.allow(store, "k", 2, 60000), "rl3")
+
+sdb: Connection = nyx.db.open(":memory:")
+nyx.session_store.ensure_schema(sdb)
+sid: str = nyx.session_store.create_sid(sdb, "{\"user_id\":7}", 3600, 7)
+loaded: str | None = nyx.session_store.load_sid(sdb, sid)
+nox.test.assert_true(loaded != None, "sid load")
+cookie: str = nyx.session_store.cookie_value_for_sid("nyx-test-secret-change-me-32bytes!", sid, 3600)
+sid2: str | None = nyx.session_store.sid_from_cookie_value("nyx-test-secret-change-me-32bytes!", cookie)
+nox.test.assert_true(sid2 != None, "sid2 present")
+if sid2 != None:
+    nox.test.assert_eq_str(sid2, sid, "sid cookie roundtrip")
+n: int = nyx.session_store.destroy_all_for_user(sdb, 7)
+nox.test.assert_true(n >= 1, "logout all")
+
+adb: Connection = nyx.db.open(":memory:")
+nyx.auth_engine.ensure_schema(adb)
+uid: int = nyx.auth_engine.register(adb, "a@example.com", "password1")
+nox.test.assert_true(uid > 0, "register")
+uid2: int = nyx.auth_engine.authenticate(adb, "a@example.com", "password1")
+nox.test.assert_eq_int(uid2, uid, "login")
+tok: str = nyx.auth_engine.request_password_reset(adb, "a@example.com")
+nox.test.assert_true(len(tok) > 0, "reset token")
+uid3: int = nyx.auth_engine.reset_password(adb, tok, "password2")
+nox.test.assert_eq_int(uid3, uid, "reset")
+
+nyx.metrics.reset()
+nyx.metrics.inc_requests()
+nyx.metrics.inc_5xx()
+mbody: str = nyx.metrics.prometheus_text()
+nox.test.assert_true(nox.strings.contains(mbody, "nyx_requests_total 1"), "metrics")
+
+errs: list[str] = nyx.orm.validate_format("not-an-email", "email", "@")
+nox.test.assert_eq_int(len(errs), 1, "format")
+odb: Connection = nyx.db.open(":memory:")
+odb.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, deleted_at INTEGER NOT NULL DEFAULT 0)")
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "title", "t")
+nyx.model.set_int(attrs, "deleted_at", 0)
+pid: int = nyx.orm.create_attrs_sqlite(odb, "posts", attrs)
+nyx.orm.soft_delete_sqlite(odb, "posts", pid, 123)
+row: Record | None = nyx.model.find(odb, "posts", pid)
+nox.test.assert_true(row != None, "post exists")
+if row != None:
+    nox.test.assert_eq_int(row.get_int("deleted_at"), 123, "soft delete")
+
+root: str = "/tmp/nyx_storage_v15_test"
+if not nox.fs.exists(root):
+    nox.fs.create_dir(root)
+hit_limit: bool = False
+try:
+    nyx.storage.store_limited(root, "x.txt", "hello", 2, "text/plain")
+except StorageError:
+    hit_limit = True
+nox.test.assert_true(hit_limit, "size limit")
+
+tpl: str = "/tmp/nyx_mail_tpl.txt"
+nox.fs.write_string(tpl, "Hi {{name}}")
+ctxm: dict[str, str] = {}
+ctxm["name"] = "Ada"
+rendered: str = nyx.mailer.render_template(tpl, ctxm)
+nox.test.assert_eq_str(rendered, "Hi Ada", "mail tpl")
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "db"
+cfg.metrics_enabled = True
+app: Application = nyx.app.boot(cfg, setup)
+req: HttpRequest = HttpRequest("GET", "/metrics", "", {})
+resp: HttpResponse = nyx.app.dispatch(app, req)
+nox.test.assert_eq_int(resp.status, 200, "metrics route")
+nyx.app.shutdown(app)
+
+sdb.close()
+adb.close()
+odb.close()
+print("v15_batteries_test ok")
