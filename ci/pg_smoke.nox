@@ -1,8 +1,11 @@
-# CI Postgres smoke (session_store_pg + auth_engine_pg). Run only with DATABASE_URL.
+# CI Postgres smoke (session_store_pg + auth_engine_pg).
+# Skips when DATABASE_URL is unset (main test job); pg-smoke job sets it.
+
 import nox.test
 import nox.os
 import nox.strings
 from nox.os import OsError
+from nox.db import Row
 import nyx.db
 import nyx.session_store_pg
 import nyx.auth_engine_pg
@@ -15,11 +18,16 @@ def _url() -> str:
         return ""
 
 url: str = _url()
-if len(url) == 0 or not nox.strings.contains(url, "postgres"):
+run_pg: bool = False
+if len(url) > 0:
+    if nox.strings.contains(url, "postgres"):
+        run_pg = True
+
+if not run_pg:
     print("pg_smoke_ci skipped")
 else:
     db: PgConnection = nyx.db.open_postgres(url)
-    rows = db.query("SELECT 1 AS n")
+    rows: list[Row] = db.query("SELECT 1 AS n")
     nox.test.assert_eq_int(rows[0].get_int(0), 1, "select1")
     nyx.session_store_pg.ensure_schema(db)
     sid: str = nyx.session_store_pg.create_sid(db, "{\"user_id\":1}", 3600, 1)
