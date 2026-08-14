@@ -220,22 +220,24 @@ def _install_framework_middleware(application: Application) -> None:
     router: Router = application.router
     if cfg.rate_limit_enabled:
         router.use_before(_rate_limit_before(application))
-    if cfg.session_store == "db":
-        if application.dialect == "postgres":
-            router.use_before(_session_pg_before(application))
-            router.use_after(_session_pg_after(application))
+    if cfg.session_enabled:
+        if cfg.session_store == "db":
+            if application.dialect == "postgres":
+                router.use_before(_session_pg_before(application))
+                router.use_after(_session_pg_after(application))
+            else:
+                router.use_before(_session_db_before(application))
+                router.use_after(_session_db_after(application))
         else:
-            router.use_before(_session_db_before(application))
-            router.use_after(_session_db_after(application))
-    else:
-        router.use_before(_session_before(cfg))
-        router.use_after(_session_after(cfg))
+            router.use_before(_session_before(cfg))
+            router.use_after(_session_after(cfg))
     if cfg.csrf_enabled:
         if cfg.csrf_api_exempt:
             router.use_before(nyx.csrf.protect_api_exempt(cfg.secret_key))
         else:
             router.use_before(nyx.csrf.protect(cfg.secret_key))
-    router.use_after(nyx.security.headers_after(cfg))
+    if cfg.security_headers:
+        router.use_after(nyx.security.headers_after(cfg))
     if cfg.metrics_enabled:
         router.use_after(_metrics_after())
     if cfg.log_requests:
@@ -314,7 +316,11 @@ def _rate_limit_before(application: Application) -> (Context) -> HttpResponse | 
         return None
     return handler
 
-def _ensure_session_seed() -> None:
+def _ensure_session_seed(cfg: Config) -> None:
+    # CSRF form tokens need a stable cookie across GET→POST. Only dirty+HMAC
+    # when CSRF is on. Stateless/API paths stay clean (no Set-Cookie on empty).
+    if not cfg.csrf_enabled:
+        return
     sess: str = nyx.runtime.session_json()
     if len(sess) == 0 or sess == "{}":
         seed: str = nox.uuid.uuid4()
@@ -331,13 +337,13 @@ def _load_session_from_cookie(cfg: Config, raw: str) -> None:
             nyx.runtime.load_session(data)
         else:
             nyx.runtime.load_session("{}")
-            _ensure_session_seed()
+            _ensure_session_seed(cfg)
     except KeyError:
         nyx.runtime.load_session("{}")
-        _ensure_session_seed()
+        _ensure_session_seed(cfg)
     except CookieError:
         nyx.runtime.load_session("{}")
-        _ensure_session_seed()
+        _ensure_session_seed(cfg)
 
 def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
     def handler(ctx: Context) -> HttpResponse | None:
@@ -346,7 +352,7 @@ def _session_before(cfg: Config) -> (Context) -> HttpResponse | None:
             _load_session_from_cookie(cfg, raw)
         else:
             nyx.runtime.load_session("{}")
-            _ensure_session_seed()
+            _ensure_session_seed(cfg)
         return None
     return handler
 
@@ -386,7 +392,7 @@ def _session_db_before(application: Application) -> (Context) -> HttpResponse | 
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
         if raw == None:
             nyx.runtime.load_session("{}")
-            _ensure_session_seed()
+            _ensure_session_seed(cfg)
             return None
         else:
             raw_s: str = raw
@@ -398,24 +404,24 @@ def _session_db_before(application: Application) -> (Context) -> HttpResponse | 
                 )
                 if sid == None:
                     nyx.runtime.load_session("{}")
-                    _ensure_session_seed()
+                    _ensure_session_seed(cfg)
                     return None
                 else:
                     sid_s: str = sid
                     data: str | None = nyx.session_store.load_sid(application.db, sid_s)
                     if data == None:
                         nyx.runtime.load_session("{}")
-                        _ensure_session_seed()
+                        _ensure_session_seed(cfg)
                         return None
                     else:
                         nyx.runtime.set_session_sid(sid_s)
                         nyx.runtime.load_session(data)
             except KeyError:
                 nyx.runtime.load_session("{}")
-                _ensure_session_seed()
+                _ensure_session_seed(cfg)
             except CookieError:
                 nyx.runtime.load_session("{}")
-                _ensure_session_seed()
+                _ensure_session_seed(cfg)
             return None
     return handler
 
@@ -474,7 +480,7 @@ def _session_pg_before(application: Application) -> (Context) -> HttpResponse | 
         raw: str | None = _header_get(ctx.request.headers, "Cookie")
         if raw == None:
             nyx.runtime.load_session("{}")
-            _ensure_session_seed()
+            _ensure_session_seed(cfg)
             return None
         else:
             raw_s: str = raw
@@ -486,24 +492,24 @@ def _session_pg_before(application: Application) -> (Context) -> HttpResponse | 
                 )
                 if sid == None:
                     nyx.runtime.load_session("{}")
-                    _ensure_session_seed()
+                    _ensure_session_seed(cfg)
                     return None
                 else:
                     sid_s: str = sid
                     data: str | None = nyx.session_store_pg.load_sid(pg(application), sid_s)
                     if data == None:
                         nyx.runtime.load_session("{}")
-                        _ensure_session_seed()
+                        _ensure_session_seed(cfg)
                         return None
                     else:
                         nyx.runtime.set_session_sid(sid_s)
                         nyx.runtime.load_session(data)
             except KeyError:
                 nyx.runtime.load_session("{}")
-                _ensure_session_seed()
+                _ensure_session_seed(cfg)
             except CookieError:
                 nyx.runtime.load_session("{}")
-                _ensure_session_seed()
+                _ensure_session_seed(cfg)
             return None
     return handler
 
@@ -587,11 +593,20 @@ def _log_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
 def _error_response(ctx: Context, cfg: Config, kind: str, message: str) -> HttpResponse:
     return nyx.ctrl.server_error_detail_for(ctx, cfg, kind, message)
 
+EMPTY_HEADERS: dict[str, str] = {}
+
 def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
-    rid: str = nox.uuid.uuid4()
-    nyx.runtime.begin(rid, nox.time.now_ms(), cfg.locale)
-    nyx.runtime.set_request_target(req.target)
+    rid: str = ""
+    if cfg.request_id:
+        rid = nox.uuid.uuid4()
+    started: int = 0
+    if cfg.request_id or cfg.log_requests:
+        started = nox.time.now_ms()
+    want_tl: bool = cfg.request_id or cfg.log_requests or cfg.session_enabled or cfg.csrf_enabled
+    if want_tl:
+        nyx.runtime.begin(rid, started, cfg.locale)
+        nyx.runtime.set_request_target(req.target)
     path: str = nyx.params.path_only(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
     empty_params: dict[str, str] = {}
@@ -616,5 +631,18 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
             if resp.status >= 500:
                 nyx.metrics.inc_5xx()
     finally:
-        nyx.runtime.end()
+        if want_tl:
+            nyx.runtime.end()
     return resp
+
+# Nox 1.29.2+: do not pass req into dispatch — reading req.headers marks
+# iterateHeaders required. Parts + EMPTY_HEADERS enables handle_bare.
+def dispatch_from_parts(
+    application: Application,
+    method: str,
+    target: str,
+    body: str,
+    headers: dict[str, str]
+) -> HttpResponse:
+    req: HttpRequest = HttpRequest(method, target, body, headers)
+    return dispatch(application, req)

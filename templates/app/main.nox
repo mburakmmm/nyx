@@ -1,6 +1,7 @@
 # {{APP_NAME}} - nyx application entry
-# Requires Nox >= 1.22.0 (serve_tls / serve_ws; min for this template).
-# noxc fetch && NYX_ENV=development noxc run main.nox
+# Requires Nox >= 1.29.0 (recommended 1.29.11): TaskLocal + M:N --release.
+# Dev:  noxc fetch && NYX_ENV=development noxc run main.nox
+# Prod: noxc build --release main.nox && NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main
 
 import nox.http
 from nox.http import HttpRequest, HttpResponse
@@ -39,16 +40,25 @@ cfg: Config = nyx.config.load()
 if not cfg.is_production() and len(cfg.secret_key) < 16:
     cfg.secret_key = "change-me-{{APP_NAME}}-secret-key-32b!"
 # Production: NYX_SECRET_KEY zorunlu; NYX_AUTO_MIGRATE varsayilan 0.
-# HTTPS: NYX_TLS_CERT + NYX_TLS_KEY -> nox.http.serve_tls
+# HTTPS: NYX_TLS_CERT + NYX_TLS_KEY
+# Multicore: NYX_WORKERS>1 (+ --release icin NOX_POOL_WORKERS)
 # Bearer-only /api/ icin NYX_CSRF_API_EXEMPT=1.
 application: Application = nyx.app.boot(cfg, setup)
 
 def handle(req: HttpRequest) -> HttpResponse:
     return nyx.app.dispatch(application, req)
 
-print("{{APP_NAME}} listening on :" + str(cfg.port))
+mode: str = nyx.server.serve_mode(cfg, False)
+print("{{APP_NAME}} listening on :" + str(cfg.port) + " mode=" + mode)
 try:
-    if nyx.server.has_tls(cfg):
+    if mode == "multicore_tls":
+        nyx.server.require_tls_files(cfg)
+        nox.http.serve_multicore_tls(
+            cfg.port, handle, nyx.server.workers(cfg), cfg.tls_cert_path, cfg.tls_key_path
+        )
+    elif mode == "multicore":
+        nox.http.serve_multicore(cfg.port, handle, nyx.server.workers(cfg))
+    elif mode == "tls":
         nyx.server.require_tls_files(cfg)
         nox.http.serve_tls(cfg.port, handle, cfg.tls_cert_path, cfg.tls_key_path)
     else:

@@ -55,7 +55,12 @@ class Config:
         trusted_proxies: str,
         rate_limit_auth_max: int,
         trust_x_forwarded_for: bool,
-        rate_limit_store: str
+        rate_limit_store: str,
+        workers: int,
+        session_enabled: bool,
+        security_headers: bool,
+        request_id: bool,
+        request_headers: bool
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -102,8 +107,18 @@ class Config:
         # Honest flag: when true, first X-Forwarded-For hop is used as client key.
         # Nox has no peer address yet, so this cannot verify the connecting proxy IP.
         self.trust_x_forwarded_for = trust_x_forwarded_for
-        # "memory" (default) | "db" (shared via jobs_db SQLite — multicore-safe on shared path)
+        # "memory" | "db" (jobs_db) — workers>1 ise boot db'ye zorlar
         self.rate_limit_store = rate_limit_store
+        # 1 = nox.http.serve*; >1 = serve_multicore* (Nox >= 1.22; --release M:N 1.28+)
+        self.workers = workers
+        # False: session middleware yok (API/bench). CSRF aciksa session zorlanır.
+        self.session_enabled = session_enabled
+        # False: security headers after-middleware yok (fair bench).
+        self.security_headers = security_headers
+        # False: uuid request-id + X-Request-Id yok.
+        self.request_id = request_id
+        # False: serve handler req.headers okumaz (Nox iterateHeaders skip).
+        self.request_headers = request_headers
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -208,7 +223,12 @@ def defaults(env: str) -> Config:
         "",
         20,
         False,
-        "memory"
+        "memory",
+        1,
+        True,
+        True,
+        True,
+        True
     )
 
 def from_env() -> Config:
@@ -270,6 +290,22 @@ def from_env() -> Config:
     if store != "memory" and store != "db":
         raise ConfigError("NYX_RATE_LIMIT_STORE must be memory|db")
     cfg.rate_limit_store = store
+    # NYX_WORKERS wins; NOX_POOL_WORKERS is the Nox runtime knob for --release pool size.
+    w: int = _env_int("NYX_WORKERS", cfg.workers)
+    if w < 1:
+        w = 1
+    cfg.workers = w
+    # Multicore + in-memory rate limit is racy under M:N; prefer jobs_db store.
+    if cfg.workers > 1 and cfg.rate_limit_store == "memory":
+        if len(_env_or("NYX_RATE_LIMIT_STORE", "")) == 0:
+            cfg.rate_limit_store = "db"
+    cfg.session_enabled = _env_bool("NYX_SESSION", cfg.session_enabled)
+    cfg.security_headers = _env_bool("NYX_SECURITY_HEADERS", cfg.security_headers)
+    cfg.request_id = _env_bool("NYX_REQUEST_ID", cfg.request_id)
+    cfg.request_headers = _env_bool("NYX_REQUEST_HEADERS", cfg.request_headers)
+    # CSRF requires a session bag; force session middleware on.
+    if cfg.csrf_enabled and not cfg.session_enabled:
+        cfg.session_enabled = True
     return cfg
 
 def load() -> Config:

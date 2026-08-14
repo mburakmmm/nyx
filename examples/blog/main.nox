@@ -1,6 +1,7 @@
 # Nyx blog example — boot-once + typed attrs + AppContext
-# Requires Nox >= 1.10
-# cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
+# Requires Nox >= 1.29 (recommended 1.29.11)
+# Dev:  cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
+# Prod: noxc build --release main.nox && NYX_WORKERS=4 NOX_POOL_WORKERS=4 ./main
 
 import nox.http
 from nox.http import HttpRequest, HttpResponse
@@ -14,6 +15,7 @@ import nyx.form
 import nyx.csrf
 import nyx.view
 import nyx.ctx
+import nyx.server
 from nyx.app import Application
 from nyx.config import Config
 from nyx.model import Record, Attributes
@@ -68,5 +70,20 @@ application: Application = nyx.app.boot(cfg, setup)
 def handle(req: HttpRequest) -> HttpResponse:
     return nyx.app.dispatch(application, req)
 
-print("nyx blog on :8080")
-nox.http.serve(8080, handle)
+mode: str = nyx.server.serve_mode(cfg, False)
+print("nyx blog on :" + str(cfg.port) + " mode=" + mode)
+try:
+    if mode == "multicore_tls":
+        nyx.server.require_tls_files(cfg)
+        nox.http.serve_multicore_tls(
+            cfg.port, handle, nyx.server.workers(cfg), cfg.tls_cert_path, cfg.tls_key_path
+        )
+    elif mode == "multicore":
+        nox.http.serve_multicore(cfg.port, handle, nyx.server.workers(cfg))
+    elif mode == "tls":
+        nyx.server.require_tls_files(cfg)
+        nox.http.serve_tls(cfg.port, handle, cfg.tls_cert_path, cfg.tls_key_path)
+    else:
+        nox.http.serve(cfg.port, handle)
+finally:
+    nyx.app.shutdown(application)

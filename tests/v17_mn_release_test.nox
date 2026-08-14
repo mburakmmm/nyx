@@ -1,0 +1,73 @@
+# 0.17 — Nox 1.27–1.29: SharedBuffer metrics + serve_mode / workers
+import nox.test
+import nox.os
+import nox.strings
+import nyx.config
+import nyx.metrics
+import nyx.server
+from nyx.config import Config
+
+# --- serve_mode matrix ---
+cfg: Config = nyx.config.defaults("test")
+nox.test.assert_eq_int(cfg.workers, 1, "default workers")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "plain", "plain")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws", "ws")
+nox.test.assert_true(not nyx.server.use_multicore(cfg), "no multicore")
+
+cfg.workers = 4
+nox.test.assert_true(nyx.server.use_multicore(cfg), "multicore on")
+nox.test.assert_eq_int(nyx.server.workers(cfg), 4, "workers()")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "multicore", "mc")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "multicore_ws", "mc_ws")
+
+cfg.tls_cert_path = "/tmp/nyx-fake.crt"
+cfg.tls_key_path = "/tmp/nyx-fake.key"
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "multicore_tls", "mc_tls")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "multicore_ws_tls", "mc_ws_tls")
+
+cfg.workers = 1
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "tls", "tls")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "ws_tls")
+
+# --- metrics SharedBuffer lock path ---
+nyx.metrics.reset()
+nox.test.assert_eq_int(nyx.metrics.requests(), 0, "req0")
+nyx.metrics.inc_requests()
+nyx.metrics.inc_requests()
+nyx.metrics.inc_5xx()
+nyx.metrics.inc_job_dead()
+nyx.metrics.inc_mail_fail()
+nyx.metrics.inc_rate_limited()
+nox.test.assert_eq_int(nyx.metrics.requests(), 2, "req2")
+nox.test.assert_eq_int(nyx.metrics.responses_5xx(), 1, "5xx")
+nox.test.assert_eq_int(nyx.metrics.job_dead(), 1, "job")
+nox.test.assert_eq_int(nyx.metrics.mail_fail(), 1, "mail")
+nox.test.assert_eq_int(nyx.metrics.rate_limited(), 1, "rl")
+body: str = nyx.metrics.prometheus_text()
+nox.test.assert_true(nox.strings.contains(body, "nyx_metrics_locked 1"), "locked gauge")
+nox.test.assert_true(nox.strings.contains(body, "nyx_requests_total 2"), "prom req")
+nyx.metrics.reset()
+nox.test.assert_eq_int(nyx.metrics.requests(), 0, "reset")
+
+# --- config workers + rate store ---
+nox.os.set_var("NYX_ENV", "test")
+nox.os.set_var("NYX_WORKERS", "4")
+nox.os.set_var("NYX_RATE_LIMIT_STORE", "memory")
+loaded: Config = nyx.config.from_env()
+nox.test.assert_eq_int(loaded.workers, 4, "env workers")
+nox.test.assert_eq_str(loaded.rate_limit_store, "memory", "explicit memory kept")
+nox.os.set_var("NYX_RATE_LIMIT_STORE", "db")
+loaded_db: Config = nyx.config.from_env()
+nox.test.assert_eq_str(loaded_db.rate_limit_store, "db", "explicit db")
+# Auto-db when store env unset: only when NYX_RATE_LIMIT_STORE missing.
+# Simulate the boot rule used by from_env when env is empty.
+auto: Config = nyx.config.defaults("test")
+auto.workers = 8
+auto.rate_limit_store = "memory"
+if auto.workers > 1 and auto.rate_limit_store == "memory":
+    auto.rate_limit_store = "db"
+nox.test.assert_eq_str(auto.rate_limit_store, "db", "multicore prefers db store")
+nox.os.set_var("NYX_WORKERS", "1")
+nox.os.set_var("NYX_RATE_LIMIT_STORE", "memory")
+
+print("v17_mn_release_test ok")

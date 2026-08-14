@@ -2,17 +2,17 @@
 
 Bu belge, [nyx](https://github.com/mburakmmm/nyx) geliştirirken **Nox dili / stdlib / codegen** kısıtlarını listeler.
 
-**Kaynak:** nyx 0.3.x → 0.16.0  
-**Nox sürümü (güncel doğrulama):** noxc **1.26.0** (2026-07-31)
+**Kaynak:** nyx 0.3.x → 0.17.0  
+**Nox sürümü (güncel doğrulama):** noxc **1.29.11** (2026-08-14)
 
-Nyx **0.16.0** için minimum Nox: **≥ 1.26.0** (`TaskLocal`, `Exception`, `dict[int, class]`, `nox.db.Row`).  
-Önerilen pin: **1.26.0**.
+Nyx **0.17.0** için minimum Nox: **≥ 1.29.0** (`TaskLocal`, `Exception`, `dict[int, class]`, `nox.db.Row`, `--release` M:N, `serve_multicore` work-steal).  
+Önerilen pin: **1.29.11**.
 
 Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2.md`
 
 ---
 
-## 1. Özet tablo (2026-07-31, noxc 1.26.0)
+## 1. Özet tablo (2026-08-14, noxc 1.29.11)
 
 | # | Konu | Durum | Nox | Nyx etkisi |
 |---|---|---|---|---|
@@ -30,20 +30,25 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 | P7 | postgres / mysql | **Var** | **1.11.0** | `open_postgres` / `open_mysql` |
 | P7b | PG/MySQL prepare/bind | **Açıldı** | **1.13.0** | ham sürücüler |
 | P7c | ortak `Row` + `DbConnection.query` | **Açıldı** | **1.23.0** | `from nox.db import Row` |
-| P8 | Process’ler arası shared state | **Kısmi** | **1.15+ `nox.sharedmem`** | cable store / jobs DB |
+| P8 | Process’ler arası shared state | **Kısmi** | **1.15+ `nox.sharedmem`** | metrics lock / cable / jobs DB |
 | P9 | TLS / WebSocket istemci | **Var** | **1.14.0** | `nyx.tls` / `nyx.websocket.connect` |
 | P9b | Sunucu TLS + WS Upgrade | **Açıldı** | **1.22.0** | `serve_tls` / `serve_ws*` |
 | P10 | Decorator + `nox.reflect` | **Açıldı** | **1.21.0** | isteğe bağlı `@get`/`@post` |
 | P11 | `dict[int, class]` | **Açıldı** | **1.26.0** | preload map O(1) |
+| P12 | `--release` LLVM + M:N | **Açıldı** | **1.27–1.29** | `NYX_WORKERS` + SharedBuffer metrics |
 
 ---
 
-## 2. Nyx 0.16.0 (Nox 1.26 kilidi)
+## 2. Nyx 0.17.0 (Nox 1.29 kilidi)
 
-1. Min Nox **≥ 1.26.0**; CI pin **1.26.0**  
-2. `nyx.runtime` → `TaskLocal[RuntimeState]`  
-3. Tüm `*Error(Exception)`; dispatch catch-all  
-4. `preload_belongs_to_map` / `index_records_by_id` → `dict[int, Record]`  
+1. Min Nox **≥ 1.29.0**; CI pin **1.29.11**  
+2. `nyx.server`: `workers` / `serve_mode` → `serve_multicore*` matrisi  
+3. `NYX_WORKERS` (+ `NOX_POOL_WORKERS` for `--release` pool)  
+4. `nyx.metrics`: kilitli `SharedBuffer` (M:N-safe)  
+5. `workers>1` + bellek rate limit → otomatik `rate_limit_store=db`  
+6. Template `main.nox`: multicore/TLS switch  
+
+Önceki 0.16 kilidi hâlâ geçerli: TaskLocal, `*Error(Exception)`, `dict[int, Record]`.
 
 ---
 
@@ -55,14 +60,24 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 - SMTP STARTTLS (587) — SMTPS/465 var  
 - MySQL dialect-aware Application boot  
 
-## 4. Nox 1.23–1.26 notları
+## 4. Nox 1.27–1.29 notları
+
+- **1.27.0:** deneysel `noxc build --release` (LLVM); M:N work-stealing altyapısı  
+- **1.28.0:** `nox.thread.pool_run`; `serve_multicore` → paylaşılan havuz (`--release`)  
+- **1.28.1:** `pool_run` sibling worker’larda modül-global görünürlük düzeltmeleri  
+- **1.29.0:** şeffaf M:N; TaskLocal/class/list/dict `--release` transfer  
+- **1.29.1–1.29.11:** TLS fiber race, multicore accept/work-steal, ECONNRESET crash, JSON decode hızı, Task.detached  
+
+**Kritik:** `--release` altında modül-global `int++` / bellek rate map yarışır. Nyx metrics SharedBuffer + multicore’da db rate store kullanır.
+
+## 5. Nox 1.23–1.26 notları
 
 - **1.23.0:** `nox.db.Row` + `DbConnection.query`  
 - **1.24.0:** `TaskLocal[T]` (`get`/`set`/`clear`)  
 - **1.25.0:** `Exception` tabanı; unhandled `Sinif (satir N)`  
 - **1.26.0:** `dict[K, class]` (anahtar sınıf değil)  
 
-## 5. Nyx runtime string kopyası
+## 6. Nyx runtime string kopyası
 
 Modül-global `str` doğrudan `HttpResponse` body / `session.create` ile paylaşılınca ARC use-after-free (SIGSEGV) görüldü.  
 `session_json()` ve diğer string getter’lar `+ ""` ile kopya döner (TaskLocal sonrası da aynı kural).

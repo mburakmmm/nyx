@@ -1,0 +1,86 @@
+# Nyx HTTP microbenchmark — Application.dispatch + fair-bench flags
+# GET /ping  → {"pong":true}
+# POST /echo → {"msg":"..."}
+#
+# Fair path (Aether-parity): NYX_SESSION=0 NYX_SECURITY_HEADERS=0
+#   NYX_REQUEST_ID=0 NYX_REQUEST_HEADERS=0 (+ rate/metrics/log/csrf off)
+# handle_bare avoids reading req.headers (Nox iterateHeaders skip).
+
+import nox.http
+import nox.json
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Router, Context
+import nyx.app
+import nyx.config
+import nyx.response
+import nyx.server
+from nyx.app import Application, EMPTY_HEADERS
+from nyx.config import Config
+
+_apps: list[Application] = []
+
+def ping(ctx: Context) -> HttpResponse:
+    return nyx.response.json(200, "{\"pong\":true}")
+
+def echo(ctx: Context) -> HttpResponse:
+    body: JsonValue = nox.json.decode(ctx.request.body)
+    msg: str = ""
+    i: int = 0
+    while i < nox.json.object_len(body):
+        k: str = nox.json.object_key(body, i)
+        v: JsonValue = nox.json.object_value(body, i)
+        if k == "msg" and nox.json.is_string(v):
+            msg = nox.json.as_string(v)
+        i = i + 1
+    return nyx.response.json(200, "{\"msg\":\"" + msg + "\"}")
+
+def setup(application: Application) -> None:
+    router: Router = application.router
+    router.get("/ping", ping)
+    router.post("/echo", echo)
+
+cfg: Config = nyx.config.load()
+cfg.secret_key = "nyx-bench-secret-key-32-bytes!!!!"
+cfg.db_path = ":memory:"
+cfg.jobs_db_path = ":memory:"
+cfg.auto_migrate = False
+cfg.csrf_enabled = False
+cfg.rate_limit_enabled = False
+cfg.metrics_enabled = False
+cfg.log_requests = False
+cfg.log_json = False
+cfg.session_store = "cookie"
+_boot: Application = nyx.app.boot(cfg, setup)
+_apps.append(_boot)
+
+def handle(req: HttpRequest) -> HttpResponse:
+    return nyx.app.dispatch_from_parts(
+        _apps[0], req.method, req.target, req.body, req.headers
+    )
+
+def handle_bare(req: HttpRequest) -> HttpResponse:
+    return nyx.app.dispatch_from_parts(
+        _apps[0], req.method, req.target, req.body, EMPTY_HEADERS
+    )
+
+mode: str = nyx.server.serve_mode(cfg, False)
+want_headers: bool = nyx.server.materialize_request_headers(cfg)
+print(
+    "nyx-bench listening :" + str(cfg.port)
+    + " mode=" + mode
+    + " workers=" + str(nyx.server.workers(cfg))
+    + " headers=" + str(want_headers)
+)
+try:
+    if mode == "multicore":
+        if want_headers:
+            nox.http.serve_multicore(cfg.port, handle, nyx.server.workers(cfg))
+        else:
+            nox.http.serve_multicore(cfg.port, handle_bare, nyx.server.workers(cfg))
+    else:
+        if want_headers:
+            nox.http.serve(cfg.port, handle)
+        else:
+            nox.http.serve(cfg.port, handle_bare)
+finally:
+    nyx.app.shutdown(_apps[0])

@@ -77,17 +77,13 @@ cfg.log_requests = False
 app: Application = nyx.app.boot(cfg, setup)
 nyx.auth_engine.register(app.db, "u@example.com", "password1")
 
+# CSRF off: anonymous GET must not mint a seed cookie (hot-path).
 r0: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}))
 c0: str | None = nyx.testing.header(r0, "Set-Cookie")
-nox.test.assert_true(c0 != None, "anon cookie")
-pre_sid: str = ""
-if c0 != None:
-    pre_sid = sid_from_set_cookie(cfg.secret_key, c0)
+nox.test.assert_true(c0 == None, "anon no seed cookie when csrf off")
 
 h1: dict[str, str] = {}
 h1["Content-Type"] = "application/x-www-form-urlencoded"
-if c0 != None:
-    h1["Cookie"] = cookie_pair(c0)
 login_resp: HttpResponse = nyx.app.dispatch(
     app,
     HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1)
@@ -95,16 +91,31 @@ login_resp: HttpResponse = nyx.app.dispatch(
 nox.test.assert_eq_int(login_resp.status, 200, "login")
 c1: str | None = nyx.testing.header(login_resp, "Set-Cookie")
 nox.test.assert_true(c1 != None, "login sets cookie")
-post_sid: str = ""
+sid1: str = ""
 if c1 != None:
-    post_sid = sid_from_set_cookie(cfg.secret_key, c1)
-nox.test.assert_true(len(pre_sid) > 0, "pre sid")
-nox.test.assert_true(len(post_sid) > 0, "post sid")
-nox.test.assert_true(pre_sid != post_sid, "SID rotated on login")
+    sid1 = sid_from_set_cookie(cfg.secret_key, c1)
+nox.test.assert_true(len(sid1) > 0, "sid1")
+
+h1b: dict[str, str] = {}
+h1b["Content-Type"] = "application/x-www-form-urlencoded"
+if c1 != None:
+    h1b["Cookie"] = cookie_pair(c1)
+login2: HttpResponse = nyx.app.dispatch(
+    app,
+    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1b)
+)
+nox.test.assert_eq_int(login2.status, 200, "login2")
+c1b: str | None = nyx.testing.header(login2, "Set-Cookie")
+nox.test.assert_true(c1b != None, "re-login sets cookie")
+sid2: str = ""
+if c1b != None:
+    sid2 = sid_from_set_cookie(cfg.secret_key, c1b)
+nox.test.assert_true(len(sid2) > 0, "sid2")
+nox.test.assert_true(sid1 != sid2, "SID rotated on login")
 
 h2: dict[str, str] = {}
-if c1 != None:
-    h2["Cookie"] = cookie_pair(c1)
+if c1b != None:
+    h2["Cookie"] = cookie_pair(c1b)
 out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h2))
 nox.test.assert_eq_int(out.status, 200, "logout")
 cout: str | None = nyx.testing.header(out, "Set-Cookie")

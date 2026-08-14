@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.16.0 · **License:** MIT · **Requires Nox ≥ 1.26.0** (recommended **1.26.0**)  
+**Version:** 0.17.0 · **License:** MIT · **Requires Nox ≥ 1.29.0** (recommended **1.29.11**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.16.0"
+      "ref": "v0.17.0"
     }
   ]
 }
@@ -151,10 +151,26 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 | `NYX_DB_PATH` / `DATABASE_URL` | SQLite for app ORM (`sqlite:///...`); use `open_postgres` / `open_mysql` for raw drivers |
 | `NYX_AUTO_MIGRATE` | `1`/`0` (production default `0`; prefer CLI migrate) |
 | `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | security & i18n (`CSRF_API_EXEMPT` opts into `/api/` CSRF skip) |
+| `NYX_WORKERS` | `1` = `serve*`; `>1` = `serve_multicore*` (pair with `NOX_POOL_WORKERS` under `--release`) |
+| `NYX_RATE_LIMIT_STORE` | `memory` \| `db`; auto-`db` when `NYX_WORKERS>1` and unset |
+| `NYX_TLS_CERT` / `NYX_TLS_KEY` | PEM paths → `serve_tls` / `serve_multicore_tls` |
+| `NYX_SESSION` | `0` skips session middleware (API/fair bench); CSRF forces session on |
+| `NYX_SECURITY_HEADERS` | `0` skips security after-middleware (fair bench) |
+| `NYX_REQUEST_ID` | `0` skips uuid + `X-Request-Id` |
+| `NYX_REQUEST_HEADERS` | `0` → `handle_bare` / `EMPTY_HEADERS` (Nox header-skip) |
 
 ---
 
 ## Changelog
+
+### 0.17.0 — Nox 1.27–1.29 M:N / `--release` (not 1.0)
+- Requires **Nox ≥ 1.29.0** (CI **1.29.11**)
+- **`NYX_WORKERS`** + `nyx.server.serve_mode` → `serve_multicore*` / TLS matrix
+- Prod path: `noxc build --release` + `NOX_POOL_WORKERS` (shared M:N pool)
+- **`nyx.metrics`**: locked `SharedBuffer` counters (safe under fiber steal)
+- Multicore + unset rate store → **`rate_limit_store=db`** on `jobs_db`
+- Hot-path: CSRF-only session seed (no HMAC on empty API); `with_headers` batch; fair flags `NYX_SESSION` / `NYX_SECURITY_HEADERS` / `NYX_REQUEST_ID` / `NYX_REQUEST_HEADERS`; `dispatch_from_parts` + `handle_bare`
+- Docs: 1.27–1.29 closed in NOX_REQUESTS / LIMITATIONS / DEPLOY
 
 ### 0.16.0 — Nox 1.24–1.26 unlock (not 1.0)
 - Requires **Nox ≥ 1.26.0**
@@ -259,7 +275,7 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ### 0.5.0 — Security core + Rails-ish DX
 
 - CSRF: `/api/` no longer exempt by default; opt in via `protect_api_exempt` / `NYX_CSRF_API_EXEMPT=1`
-- CSRF: empty sessions get a stable `_nyx` seed cookie so form tokens work across requests
+- CSRF: when enabled, empty sessions get a stable `_nyx` seed cookie (HMAC); CSRF off → no anon seed (API hot-path)
 - Auth: `require_bearer_unless_paths` (exact path match); production rejects placeholder secrets; `auto_migrate` defaults off in production
 - Params: `validate_max_length` / `min_length` / `validate_email`; form: `select`, `checkbox`, `method_override`, `form_with_token` / `csrf.form_with`
 - Routes: generic `path_index` / `path_show` / `path_edit` / `path_destroy`; ctrl: HTML/JSON error pages + `errors_html`
@@ -289,20 +305,22 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.26.0** (recommended **1.26.0**): `TaskLocal`, `Exception`, `dict[int, class]`, `nox.db.Row`, TLS/WS
+- Requires **Nox ≥ 1.29.0** (recommended **1.29.11**): TaskLocal, Exception, `dict[int, class]`, Row, TLS/WS, `--release` M:N
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
+- Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
+- Metrics: process-wide locked SharedBuffer (not module-global `int++`)
 - App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
 - TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = SMTPS/465 (no STARTTLS yet)
 - Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
-- Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore: `NYX_RATE_LIMIT_STORE=db`
+- Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
 - **Request state** uses `TaskLocal` (Nox ≥ 1.24) — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
 
-**Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, low–medium traffic with sync handlers per worker.  
-**Still Nox-bound:** peer IP / full stack spans — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
+**Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, multicore/`--release` for higher concurrency.  
+**Still Nox-bound:** peer IP / caught-exception spans / STARTTLS — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
 
 ---
 

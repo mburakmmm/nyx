@@ -4,3 +4,7 @@ nox.lock
 /zig-out/
 /tmp/
 .nox/
+
+benchmarks/results/
+benchmarks/fastify/node_modules/
+benchmarks/nyx/nox.lock

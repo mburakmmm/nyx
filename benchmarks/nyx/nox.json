@@ -1,0 +1,11 @@
+{
+  "name": "nyx-bench",
+  "entry": "main.nox",
+  "requires": [
+    {
+      "alias": "nyx",
+      "repo": "/Users/melihburakmemis/Documents/nyx",
+      "ref": "master"
+    }
+  ]
+}

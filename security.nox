@@ -17,25 +17,24 @@ def _default_production_csp() -> str:
 
 # Temel guvenlik basliklari HER ORTAMDA (development/test/production)
 # KOSULSUZ eklenir - bunlar tarayici-tarafi savunmalardir ve production'a
-# OZGU DEGILDIR (ör. bir gelistirici local'de XSS/clickjacking'e karsi
-# ayni korumayi test edebilmelidir). 'X-Request-Id', cagiran/log korelasyonu
-# icin 'nyx.runtime.request_id()'i (bkz. 'nyx.app.dispatch') yanita ekler.
+# OZGU DEGILDIR. Tek dict + with_headers: O(n) kopya (onceki 4-5x with_header degil).
 def headers_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
     def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
-        r: HttpResponse = resp
-        r = nyx.response.with_header(r, "X-Content-Type-Options", "nosniff")
-        r = nyx.response.with_header(r, "X-Frame-Options", "SAMEORIGIN")
-        r = nyx.response.with_header(r, "Referrer-Policy", "strict-origin-when-cross-origin")
-        r = nyx.response.with_header(r, "X-XSS-Protection", "0")
-        req_id: str = nyx.runtime.request_id()
-        if len(req_id) > 0:
-            r = nyx.response.with_header(r, "X-Request-Id", req_id)
+        extras: dict[str, str] = {}
+        extras["X-Content-Type-Options"] = "nosniff"
+        extras["X-Frame-Options"] = "SAMEORIGIN"
+        extras["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        extras["X-XSS-Protection"] = "0"
+        if cfg.request_id:
+            req_id: str = nyx.runtime.request_id()
+            if len(req_id) > 0:
+                extras["X-Request-Id"] = req_id
         csp: str = cfg.csp
         if len(csp) == 0 and cfg.is_production():
             csp = _default_production_csp()
         if len(csp) > 0:
-            r = nyx.response.with_header(r, "Content-Security-Policy", csp)
+            extras["Content-Security-Policy"] = csp
         if cfg.is_production():
-            r = nyx.response.with_header(r, "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        return r
+            extras["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return nyx.response.with_headers(resp, extras)
     return handler

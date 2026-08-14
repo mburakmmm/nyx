@@ -1,23 +1,16 @@
-# nyx.server - Nox >= 1.22 serve matrisi yardimcilari.
+# nyx.server - Nox >= 1.22 serve matrisi; Nox >= 1.28/1.29 multicore + --release.
 #
 # 'nox.http.serve*' handler/ws_handle parametreleri DERLEME ZAMANI bare
-# fonksiyon adi olmalidir; bu modul serve'i sarmalamaz, yalnizca mod/secim
-# ve TLS dosya dogrulamasi saglar.
+# fonksiyon adi olmalidir; bu modul serve'i sarmalamaz — mod secimi,
+# worker sayisi ve TLS dogrulamasi saglar.
 #
-# Ornek (duz HTTP):
-#   nox.http.serve(cfg.port, handle)
+# Production (onerilen):
+#   noxc build --release main.nox
+#   NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main   # veya env ile
+#   nox.http.serve_multicore(port, handle, cfg.workers)
 #
-# Ornek (HTTPS - OpenSSL libssl gerekir; macOS'ta Homebrew openssl):
-#   nyx.server.require_tls_files(cfg)
-#   nox.http.serve_tls(cfg.port, handle, cfg.tls_cert_path, cfg.tls_key_path)
-#
-# Ornek (HTTP + WebSocket Upgrade):
-#   def ws_handle(conn: WebSocketServerConn) -> None:
-#       nyx.cable.ws_echo(conn)
-#   nox.http.serve_ws(cfg.port, handle, ws_handle)
-#
-# Ornek (HTTPS + WS):
-#   nox.http.serve_ws_tls(cfg.port, handle, ws_handle, cfg.tls_cert_path, cfg.tls_key_path)
+# QBE (bayraksiz build): serve_multicore hâlâ bagimsiz worker modeli.
+# LLVM --release: paylasilan M:N havuz + work-stealing (1.29+).
 
 import nox.fs
 from nyx.config import Config
@@ -33,9 +26,32 @@ def has_tls(cfg: Config) -> bool:
         return False
     return True
 
-# "plain" | "tls" | "ws" | "ws_tls"
+def workers(cfg: Config) -> int:
+    # 1 = tek worker serve*; >1 = serve_multicore*
+    if cfg.workers < 1:
+        return 1
+    return cfg.workers
+
+def use_multicore(cfg: Config) -> bool:
+    return workers(cfg) > 1
+
+# Nox 1.29.2+: False → serve handler must not read req.headers (iterateHeaders skip).
+def materialize_request_headers(cfg: Config) -> bool:
+    return cfg.request_headers
+
+# "plain" | "tls" | "ws" | "ws_tls" | "multicore" | "multicore_tls" |
+# "multicore_ws" | "multicore_ws_tls"
 def serve_mode(cfg: Config, want_ws: bool) -> str:
     tls: bool = has_tls(cfg)
+    mc: bool = use_multicore(cfg)
+    if mc:
+        if tls:
+            if want_ws:
+                return "multicore_ws_tls"
+            return "multicore_tls"
+        if want_ws:
+            return "multicore_ws"
+        return "multicore"
     if tls:
         if want_ws:
             return "ws_tls"
@@ -53,3 +69,14 @@ def require_tls_files(cfg: Config) -> None:
         raise ServerError("TLS cert missing: " + cfg.tls_cert_path)
     if not nox.fs.exists(cfg.tls_key_path):
         raise ServerError("TLS key missing: " + cfg.tls_key_path)
+
+# Uygulama entry'sinde switch icin yardimci aciklama (bare serve cagrisi
+# entry dosyasinda kalmalidir). Ornek:
+#
+# mode: str = nyx.server.serve_mode(cfg, False)
+# if mode == "multicore":
+#     nox.http.serve_multicore(cfg.port, handle, nyx.server.workers(cfg))
+# elif mode == "tls":
+#     nox.http.serve_tls(...)
+# else:
+#     nox.http.serve(cfg.port, handle)

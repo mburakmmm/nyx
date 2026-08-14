@@ -1,68 +1,137 @@
-# nyx.metrics - in-process counters + optional Prometheus text exposition.
+# nyx.metrics - process-wide counters + Prometheus text.
 #
-# Counters are worker-local (one OS thread / serve worker). Prometheus text
-# includes nyx_worker_local info gauge = 1 to make that explicit.
+# Nox >= 1.28/1.29 --release M:N: module-global int++ is NOT safe across
+# stolen fibers/OS workers. Counters live in a locked SharedBuffer.
 #
 # import nyx.metrics
 # nyx.metrics.inc_requests()
 # body: str = nyx.metrics.prometheus_text()
 
-_requests: int = 0
-_responses_5xx: int = 0
-_job_dead: int = 0
-_mail_fail: int = 0
-_rate_limited: int = 0
+import nox.uuid
+import nox.sharedmem
+from nox.sharedmem import SharedBuffer
+
+# Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited
+_SLOT_REQ: int = 0
+_SLOT_5XX: int = 8
+_SLOT_JOB: int = 16
+_SLOT_MAIL: int = 24
+_SLOT_RL: int = 32
+_SIZE: int = 64
+
+def _compact_shm_name() -> str:
+    # macOS PSEMNAMLEN ≈ 31; UUID with dashes is too long for shm_open.
+    u: str = nox.uuid.uuid4()
+    compact: str = ""
+    i: int = 0
+    while i < len(u):
+        c: str = u[i]
+        if c != "-":
+            compact = compact + c
+        i = i + 1
+    name: str = "/nyxm"
+    j: int = 0
+    while j < len(compact) and len(name) < 30:
+        name = name + compact[j]
+        j = j + 1
+    return name
+
+class _MetricsBag:
+    buf: SharedBuffer | None
+    name: str
+
+    def __init__(self: _MetricsBag) -> None:
+        self.buf = None
+        self.name = ""
+
+    def ensure(self: _MetricsBag) -> SharedBuffer:
+        got: SharedBuffer | None = self.buf
+        if got == None:
+            if len(self.name) == 0:
+                self.name = _compact_shm_name()
+            opened: SharedBuffer = nox.sharedmem.open(self.name, _SIZE)
+            self.buf = opened
+            return opened
+        else:
+            return got
+
+_store: _MetricsBag = _MetricsBag()
+
+def _bump(offset: int) -> None:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    cur: int = buf.read_int(offset)
+    buf.write_int(offset, cur + 1)
+    buf.unlock()
+
+def _get(offset: int) -> int:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    v: int = buf.read_int(offset)
+    buf.unlock()
+    return v
 
 def reset() -> None:
-    _requests = 0
-    _responses_5xx = 0
-    _job_dead = 0
-    _mail_fail = 0
-    _rate_limited = 0
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    buf.write_int(_SLOT_REQ, 0)
+    buf.write_int(_SLOT_5XX, 0)
+    buf.write_int(_SLOT_JOB, 0)
+    buf.write_int(_SLOT_MAIL, 0)
+    buf.write_int(_SLOT_RL, 0)
+    buf.unlock()
 
 def inc_requests() -> None:
-    _requests = _requests + 1
+    _bump(_SLOT_REQ)
 
 def inc_5xx() -> None:
-    _responses_5xx = _responses_5xx + 1
+    _bump(_SLOT_5XX)
 
 def inc_job_dead() -> None:
-    _job_dead = _job_dead + 1
+    _bump(_SLOT_JOB)
 
 def inc_mail_fail() -> None:
-    _mail_fail = _mail_fail + 1
+    _bump(_SLOT_MAIL)
 
 def inc_rate_limited() -> None:
-    _rate_limited = _rate_limited + 1
+    _bump(_SLOT_RL)
 
 def requests() -> int:
-    return _requests
+    return _get(_SLOT_REQ)
 
 def responses_5xx() -> int:
-    return _responses_5xx
+    return _get(_SLOT_5XX)
 
 def job_dead() -> int:
-    return _job_dead
+    return _get(_SLOT_JOB)
 
 def mail_fail() -> int:
-    return _mail_fail
+    return _get(_SLOT_MAIL)
 
 def rate_limited() -> int:
-    return _rate_limited
+    return _get(_SLOT_RL)
 
 def prometheus_text() -> str:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    r: int = buf.read_int(_SLOT_REQ)
+    x: int = buf.read_int(_SLOT_5XX)
+    j: int = buf.read_int(_SLOT_JOB)
+    m: int = buf.read_int(_SLOT_MAIL)
+    rl: int = buf.read_int(_SLOT_RL)
+    buf.unlock()
     out: str = ""
-    out = out + "# HELP nyx_worker_local Counters are per OS worker/thread, not process-aggregated\n"
-    out = out + "# TYPE nyx_worker_local gauge\n"
-    out = out + "nyx_worker_local 1\n"
+    out = out + "# HELP nyx_metrics_locked Process-wide counters (SharedBuffer lock; M:N safe)\n"
+    out = out + "# TYPE nyx_metrics_locked gauge\n"
+    out = out + "nyx_metrics_locked 1\n"
     out = out + "# TYPE nyx_requests_total counter\n"
-    out = out + "nyx_requests_total " + str(_requests) + "\n"
+    out = out + "nyx_requests_total " + str(r) + "\n"
     out = out + "# TYPE nyx_responses_5xx_total counter\n"
-    out = out + "nyx_responses_5xx_total " + str(_responses_5xx) + "\n"
+    out = out + "nyx_responses_5xx_total " + str(x) + "\n"
     out = out + "# TYPE nyx_job_dead_total counter\n"
-    out = out + "nyx_job_dead_total " + str(_job_dead) + "\n"
+    out = out + "nyx_job_dead_total " + str(j) + "\n"
     out = out + "# TYPE nyx_mail_fail_total counter\n"
-    out = out + "nyx_mail_fail_total " + str(_mail_fail) + "\n"
+    out = out + "nyx_mail_fail_total " + str(m) + "\n"
     out = out + "# TYPE nyx_rate_limited_total counter\n"
-    out = out + "nyx_rate_limited_total " + str(_rate_limited) + "\n"
+    out = out + "nyx_rate_limited_total " + str(rl) + "\n"
     return out

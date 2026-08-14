@@ -32,5 +32,22 @@ def with_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
     out[key] = value
     return HttpResponse(resp.status, resp.body, out)
 
+# Tek kopya: mevcut header'lari koru, extras'i uygula (security hot-path).
+def with_headers(resp: HttpResponse, extras: dict[str, str]) -> HttpResponse:
+    out: dict[str, str] = {}
+    keys: list[str] = resp.headers.keys()
+    i: int = 0
+    while i < len(keys):
+        k: str = keys[i]
+        out[k] = resp.headers[k]
+        i = i + 1
+    ek: list[str] = extras.keys()
+    j: int = 0
+    while j < len(ek):
+        k2: str = ek[j]
+        out[k2] = extras[k2]
+        j = j + 1
+    return HttpResponse(resp.status, resp.body, out)
+
 def with_status_body_headers(status: int, body: str, headers: dict[str, str]) -> HttpResponse:
     return HttpResponse(status, body, headers)

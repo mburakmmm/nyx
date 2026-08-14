@@ -1,6 +1,16 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.16+ Nox 1.24–1.26 kilidini kullanır (sürüm 1.0 değil).
+# Nyx 0.17+ Nox 1.27–1.29 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **1.29.11**.
+
+## Kapandı (Nox 1.27–1.29) — runtime / sunucu
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| LLVM `--release` + M:N altyapı | **1.27.0** | prod: `noxc build --release` |
+| `nox.thread.pool_run` + `serve_multicore` → paylaşılan havuz | **1.28.0** | `NYX_WORKERS` + `serve_multicore*` |
+| Şeffaf M:N (`--release`); TaskLocal/class/list/dict transfer | **1.29.0** | request bag M:N altında doğru |
+| Multicore accept/work-steal + TLS/ECONNRESET/JSON | **1.29.1–1.29.11** | CI pin **1.29.11**; metrics SharedBuffer |
 
 ## Kapandı (Nox 1.23–1.26)
 
@@ -24,6 +34,17 @@
 ### Ortak dialect ORM
 - Row ortak; `prepare`/`Connection` hâlâ sürücüye özel → `model` / `pg_model` ayrı.
 
+### SMTP STARTTLS
+- SMTPS/465 var; 587 STARTTLS yok.
+
+## M:N / `--release` entegrasyon kuralları (Nyx)
+
+1. **İstek durumu:** yalnızca `TaskLocal` (`nyx.runtime`) — modül-global session/user yok.
+2. **Sayaçlar:** `nyx.metrics` → kilitli `nox.sharedmem.SharedBuffer` (modül-global `int++` M:N’de yarışır).
+3. **Rate limit:** `NYX_WORKERS>1` iken varsayılan store `db` (`jobs_db`); memory store worker-local kalır.
+4. **Serve:** `nyx.server.serve_mode` → `serve` / `serve_tls` / `serve_multicore` / `serve_multicore_tls` (+ WS varyantları).
+5. **Prod:** `noxc build --release` + `NYX_WORKERS` + `NOX_POOL_WORKERS` (havuz boyutu).
+
 ## Kapandı (Nox 1.21–1.22)
 
 | İstek | Nox |
@@ -34,4 +55,4 @@
 | on_shutdown + nested Router | 1.18.1+ |
 
 ## İzleme
-`noxc upgrade` (≥1.26) → full `tests/*.nox` → blog dogfood → PG CI smoke.
+`noxc upgrade` (≥1.29.11) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.

@@ -1,0 +1,116 @@
+# 0.17 hot-path: session seed, with_headers, fair flags
+import nox.test
+import nox.os
+import nox.strings
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.response
+import nyx.runtime
+import nyx.security
+from nyx.app import Application, EMPTY_HEADERS
+from nyx.config import Config
+
+# --- with_headers single-copy ---
+base: HttpResponse = nyx.response.json(200, "{\"ok\":true}")
+extras: dict[str, str] = {}
+extras["X-A"] = "1"
+extras["X-B"] = "2"
+merged: HttpResponse = nyx.response.with_headers(base, extras)
+nox.test.assert_eq_str(merged.headers["Content-Type"], "application/json; charset=utf-8", "keep ct")
+nox.test.assert_eq_str(merged.headers["X-A"], "1", "xa")
+nox.test.assert_eq_str(merged.headers["X-B"], "2", "xb")
+
+# --- security headers respect request_id flag ---
+nyx.runtime.begin("rid-1", 0, "en")
+cfg_sec: Config = nyx.config.defaults("development")
+cfg_sec.request_id = False
+h_off: (Context, HttpResponse) -> HttpResponse = nyx.security.headers_after(cfg_sec)
+req: HttpRequest = HttpRequest("GET", "/", "", {})
+ctx: Context = Context(req, {})
+r0: HttpResponse = h_off(ctx, HttpResponse(200, "ok", {}))
+try:
+    ignore: str = r0.headers["X-Request-Id"]
+    nox.test.assert_true(False, "request_id=0 → no X-Request-Id")
+except KeyError:
+    nox.test.assert_true(True, "no rid")
+nox.test.assert_eq_str(r0.headers["X-Content-Type-Options"], "nosniff", "still nosniff")
+nyx.runtime.end()
+
+# --- empty session + CSRF off: no dirty (no HMAC cookie) ---
+def setup_plain(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.response.json(200, "{\"pong\":true}")
+    application.router.get("/ping", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_enabled = True
+cfg.session_store = "cookie"
+cfg.security_headers = False
+cfg.metrics_enabled = False
+cfg.log_requests = False
+cfg.rate_limit_enabled = False
+cfg.auto_migrate = False
+cfg.db_path = ":memory:"
+cfg.jobs_db_path = ":memory:"
+app: Application = nyx.app.boot(cfg, setup_plain)
+ping_req: HttpRequest = HttpRequest("GET", "/ping", "", {})
+ping_resp: HttpResponse = nyx.app.dispatch(app, ping_req)
+nox.test.assert_eq_int(ping_resp.status, 200, "ping status")
+try:
+    sc: str = ping_resp.headers["Set-Cookie"]
+    nox.test.assert_true(False, "csrf off → no Set-Cookie seed: " + sc)
+except KeyError:
+    nox.test.assert_true(True, "no set-cookie")
+nyx.app.shutdown(app)
+
+# --- fair flags: session/security/request_id off ---
+nox.os.set_var("NYX_ENV", "test")
+nox.os.set_var("NYX_SESSION", "0")
+nox.os.set_var("NYX_SECURITY_HEADERS", "0")
+nox.os.set_var("NYX_REQUEST_ID", "0")
+nox.os.set_var("NYX_REQUEST_HEADERS", "0")
+nox.os.set_var("NYX_CSRF", "0")
+fair: Config = nyx.config.from_env()
+nox.test.assert_true(not fair.session_enabled, "session off")
+nox.test.assert_true(not fair.security_headers, "sec off")
+nox.test.assert_true(not fair.request_id, "rid off")
+nox.test.assert_true(not fair.request_headers, "hdr off")
+
+def setup_fair(application: Application) -> None:
+    def home2(ctx: Context) -> HttpResponse:
+        return nyx.response.json(200, "{\"pong\":true}")
+    application.router.get("/ping", home2)
+
+fair.secret_key = "nyx-test-secret-change-me-32bytes!"
+fair.db_path = ":memory:"
+fair.jobs_db_path = ":memory:"
+fair.auto_migrate = False
+fair.rate_limit_enabled = False
+fair.metrics_enabled = False
+fair.log_requests = False
+app2: Application = nyx.app.boot(fair, setup_fair)
+r2: HttpResponse = nyx.app.dispatch_from_parts(app2, "GET", "/ping", "", EMPTY_HEADERS)
+nox.test.assert_eq_int(r2.status, 200, "fair ping")
+nox.test.assert_true(nox.strings.contains(r2.body, "pong"), "body")
+try:
+    sc2: str = r2.headers["Set-Cookie"]
+    nox.test.assert_true(False, "fair no cookie")
+except KeyError:
+    nox.test.assert_true(True, "fair clean")
+try:
+    rid: str = r2.headers["X-Request-Id"]
+    nox.test.assert_true(False, "fair no rid header")
+except KeyError:
+    nox.test.assert_true(True, "fair no rid")
+nyx.app.shutdown(app2)
+
+nox.os.set_var("NYX_SESSION", "1")
+nox.os.set_var("NYX_SECURITY_HEADERS", "1")
+nox.os.set_var("NYX_REQUEST_ID", "1")
+nox.os.set_var("NYX_REQUEST_HEADERS", "1")
+
+print("v17_perf_hotpath_test ok")
