@@ -2,17 +2,17 @@
 
 Bu belge, [nyx](https://github.com/mburakmmm/nyx) geliştirirken **Nox dili / stdlib / codegen** kısıtlarını listeler.
 
-**Kaynak:** nyx 0.3.x → 0.17.0  
-**Nox sürümü (güncel doğrulama):** noxc **1.29.11** (2026-08-14)
+**Kaynak:** nyx 0.3.x → 0.18.0  
+**Nox sürümü (güncel doğrulama):** noxc **1.104.0** (2026-09-27)
 
-Nyx **0.17.0** için minimum Nox: **≥ 1.29.0** (`TaskLocal`, `Exception`, `dict[int, class]`, `nox.db.Row`, `--release` M:N, `serve_multicore` work-steal).  
-Önerilen pin: **1.29.11**.
+Nyx **0.18.0** için minimum Nox: **≥ 1.104.0** (`nox.smtp` STARTTLS, ortak `nox.db.Statement`, TaskLocal, `--release` M:N).  
+Önerilen / CI pin: **1.104.0**.
 
 Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2.md`
 
 ---
 
-## 1. Özet tablo (2026-08-14, noxc 1.29.11)
+## 1. Özet tablo (2026-09-27, noxc 1.104.0)
 
 | # | Konu | Durum | Nox | Nyx etkisi |
 |---|---|---|---|---|
@@ -36,10 +36,25 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 | P10 | Decorator + `nox.reflect` | **Açıldı** | **1.21.0** | isteğe bağlı `@get`/`@post` |
 | P11 | `dict[int, class]` | **Açıldı** | **1.26.0** | preload map O(1) |
 | P12 | `--release` LLVM + M:N | **Açıldı** | **1.27–1.29** | `NYX_WORKERS` + SharedBuffer metrics |
+| P13 | ortak `nox.db.Statement` | **Açıldı** | **1.76.0** | import `nox.db`; SQL hâlâ `?` / `$1` |
+| P14 | SMTP STARTTLS | **Kısmi** | **1.75.0** | protokol var; Gmail/Outlook `TlsUnexpectedMessage` |
 
 ---
 
-## 2. Nyx 0.17.0 (Nox 1.29 kilidi)
+## 2. Nyx 0.18.0 (Nox 1.104 kilidi)
+
+1. Min / CI Nox **1.104.0**  
+2. `nyx.mailer` → `nox.smtp` (`NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` + dot-stuffing)  
+3. `Statement` tek sınıf (`nox.db`); `model` / `pg_model` SQL ayrı  
+4. `nox.orm` Nyx modelinin yerine geçmez  
+
+`SmtpClient.quit()` içindeki `try`, aynı fonksiyondaki `finally` ile noxc 1.104 codegen'ini sonsuz açar. Nyx QUIT'i `_send_line` ile yazar ve her iki yolda `close()` çağırır.
+
+Önceki 0.17 kilidi hâlâ geçerli: multicore, SharedBuffer metrics, TaskLocal.
+
+---
+
+## 2b. Nyx 0.17.0 (Nox 1.29 kilidi)
 
 1. Min Nox **≥ 1.29.0**; CI pin **1.29.11**  
 2. `nyx.server`: `workers` / `serve_mode` → `serve_multicore*` matrisi  
@@ -56,8 +71,8 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 
 - `HttpRequest` peer/remote address (trusted proxy doğrulaması)  
 - Yakalanmış Exception üzerinde satır/span alanı (1.25 yalnızca unhandled raporu)  
-- Tek dialect ORM yüzeyi (`prepare` Connection hâlâ sürücüye özel)  
-- SMTP STARTTLS (587) — SMTPS/465 var  
+- Tek dialect ORM yüzeyi (`Statement` ortak; SQL ve `Record`/`Attributes` ayrı. `nox.orm` mikro-CRUD)  
+- Gmail 465/587 ve Office365 587 SMTP TLS (`TlsUnexpectedMessage`; protokol API'si var)  
 - MySQL dialect-aware Application boot  
 
 ## 4. Nox 1.27–1.29 notları

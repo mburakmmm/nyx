@@ -8,7 +8,8 @@
 
 import nyx.model
 from nyx.model import Record
-from nox.sqlite import Connection, Statement
+from nox.sqlite import Connection
+from nox.db import Statement
 from nox.db import Row
 
 def belongs_to(db: Connection, child_table: str, child_id: int, parent_table: str, fk_col: str) -> Record | None:

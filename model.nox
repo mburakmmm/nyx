@@ -19,7 +19,8 @@
 import nox.sqlite
 import nox.json
 import nox.strings
-from nox.sqlite import Connection, Statement, SqliteError
+from nox.sqlite import Connection, SqliteError
+from nox.db import Statement
 from nox.json import JsonError
 from nox.db import Row
 

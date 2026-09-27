@@ -14,9 +14,10 @@
 #
 # Application.db: SQLite Connection (nyx.model / jobs).
 # Application.pg: Postgres Connection listesi uzerinden nyx.app.pg()
-#   (Nox DbConnection protokolu execute+close paylasir; query/prepare
-#   Row tipleri ayri oldugu icin tek Application.db tipi yok - Nox 1.21.3+).
-# PG/MySQL ham: open_postgres / open_mysql (prepare/bind Nox >= 1.13).
+#   (Nox DbConnection protokolu execute+close paylasir).
+# Nox >= 1.76: prepare() her iki surucude ayni nox.db.Statement sinifini dondurur.
+# SQL yer tutuculari ayri kalir (? sqlite, $1 postgres). Row okuma surucuye gore.
+# PG/MySQL ham: open_postgres / open_mysql.
 # Postgres last_insert_rowid yok - INSERT ... RETURNING kullanin.
 
 import nox.sqlite
@@ -26,8 +27,9 @@ import nox.fs
 import nox.path
 import nox.strings
 import nox.url
-from nox.sqlite import Connection, Statement, SqliteError
-from nox.postgres import Connection as PgConnection, PostgresError, Statement as PgStatement
+from nox.sqlite import Connection, SqliteError
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.db import Statement
 from nox.mysql import Connection as MysqlConnection, MysqlError
 from nox.url import URL, UrlError
 from nox.db import Row
@@ -135,7 +137,7 @@ def postgres_insert_returning_id_bound(conn: PgConnection, sql: str, binds: list
     if len(binds) != len(nulls):
         raise DbError("binds/nulls length mismatch")
     try:
-        stmt: PgStatement = conn.prepare(sql)
+        stmt: Statement = conn.prepare(sql)
         i: int = 0
         while i < len(binds):
             if nulls[i]:
@@ -293,13 +295,13 @@ def _ensure_migrations_table_pg(conn: PgConnection) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
 
 def _already_applied_pg(conn: PgConnection, version: str) -> bool:
-    stmt: PgStatement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = $1")
+    stmt: Statement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = $1")
     stmt.bind_str(0, version)
     rows: list[PgRow] = stmt.query()
     return len(rows) > 0
 
 def _record_applied_pg(conn: PgConnection, version: str) -> None:
-    stmt: PgStatement = conn.prepare("INSERT INTO schema_migrations (version) VALUES ($1)")
+    stmt: Statement = conn.prepare("INSERT INTO schema_migrations (version) VALUES ($1)")
     stmt.bind_str(0, version)
     stmt.execute()
 
@@ -355,7 +357,7 @@ def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
     conn.execute("BEGIN")
     try:
         conn.execute(sql)
-        del_stmt: PgStatement = conn.prepare("DELETE FROM schema_migrations WHERE version = $1")
+        del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = $1")
         del_stmt.bind_str(0, version)
         del_stmt.execute()
         conn.execute("COMMIT")

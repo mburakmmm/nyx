@@ -22,8 +22,9 @@ import nox.fs
 import nox.path
 import nox.sqlite
 from nox.http import HttpResponse
-from nox.sqlite import Connection as SqliteConnection, Statement as SqliteStatement
-from nox.postgres import Connection as PgConnection, Statement as PgStatement, PostgresError
+from nox.sqlite import Connection as SqliteConnection
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.db import Statement
 from nox.websocket import WebSocketServerConn
 from nox.json import JsonValue
 import nox.uuid
@@ -223,7 +224,7 @@ def close_store(store: Store) -> None:
     store.db.close()
 
 def store_subscribe(store: Store, channel: str) -> str:
-    stmt: SqliteStatement = store.db.prepare(
+    stmt: Statement = store.db.prepare(
         "SELECT COALESCE(MAX(id), 0) FROM cable_messages WHERE channel = ?"
     )
     stmt.bind_str(0, channel)
@@ -234,7 +235,7 @@ def store_subscribe(store: Store, channel: str) -> str:
 
 def store_broadcast(store: Store, channel: str, event: str, data_json: str) -> int:
     now: int = nox.time.now_ms()
-    stmt: SqliteStatement = store.db.prepare(
+    stmt: Statement = store.db.prepare(
         "INSERT INTO cable_messages (channel, event, data_json, ts_ms) VALUES (?, ?, ?, ?)"
     )
     stmt.bind_str(0, channel)
@@ -244,14 +245,14 @@ def store_broadcast(store: Store, channel: str, event: str, data_json: str) -> i
     stmt.execute()
     id: int = store.db.last_insert_rowid()
     # Cap per channel
-    cnt_stmt: SqliteStatement = store.db.prepare(
+    cnt_stmt: Statement = store.db.prepare(
         "SELECT COUNT(*) FROM cable_messages WHERE channel = ?"
     )
     cnt_stmt.bind_str(0, channel)
     cnt_rows: list[SqliteRow] = cnt_stmt.query()
     if len(cnt_rows) > 0 and cnt_rows[0].get_int(0) > store.capacity:
         overflow: int = cnt_rows[0].get_int(0) - store.capacity
-        del_stmt: SqliteStatement = store.db.prepare(
+        del_stmt: Statement = store.db.prepare(
             "DELETE FROM cable_messages WHERE id IN (" +
             "SELECT id FROM cable_messages WHERE channel = ? ORDER BY id ASC LIMIT ?" +
             ")"
@@ -262,7 +263,7 @@ def store_broadcast(store: Store, channel: str, event: str, data_json: str) -> i
     return id
 
 def _store_messages_since(store: Store, channel: str, since_id: int) -> list[Message]:
-    stmt: SqliteStatement = store.db.prepare(
+    stmt: Statement = store.db.prepare(
         "SELECT id, event, data_json, ts_ms FROM cable_messages " +
         "WHERE channel = ? AND id > ? ORDER BY id ASC"
     )
@@ -421,7 +422,7 @@ def consume_ws_nonce(db: SqliteConnection, nonce: str, max_age_sec: int) -> bool
     db.execute("DELETE FROM nyx_ws_nonces WHERE expires_at_ms < " + str(now))
     exp: int = now + (max_age_sec * 1000)
     try:
-        stmt: SqliteStatement = db.prepare(
+        stmt: Statement = db.prepare(
             "INSERT INTO nyx_ws_nonces (nonce, expires_at_ms) VALUES (?, ?)"
         )
         stmt.bind_str(0, nonce)
@@ -445,12 +446,12 @@ def consume_ws_nonce_pg(db: PgConnection, nonce: str, max_age_sec: int) -> bool:
     if max_age_sec <= 0:
         max_age_sec = 60
     now: int = nox.time.now_ms()
-    purge: PgStatement = db.prepare("DELETE FROM nyx_ws_nonces WHERE expires_at_ms < $1")
+    purge: Statement = db.prepare("DELETE FROM nyx_ws_nonces WHERE expires_at_ms < $1")
     purge.bind_int(0, now)
     purge.execute()
     exp: int = now + (max_age_sec * 1000)
     try:
-        stmt: PgStatement = db.prepare(
+        stmt: Statement = db.prepare(
             "INSERT INTO nyx_ws_nonces (nonce, expires_at_ms) VALUES ($1, $2)"
         )
         stmt.bind_str(0, nonce)

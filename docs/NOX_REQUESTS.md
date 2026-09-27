@@ -1,7 +1,15 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.17+ Nox 1.27–1.29 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **1.29.11**.
+# Nyx 0.18+ Nox 1.104 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **1.104.0**.
+
+## Kapandı (Nox 1.75–1.76) — smtp / Statement
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| `nox.smtp` STARTTLS (`connect` + `starttls`) | **1.75.0** | `NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` korunur. Gmail 465/587 ve Office365 587 `nox.tls` içinde `TlsUnexpectedMessage` ile düşebilir — API bağlı, bu sunucular iddia edilmez |
+| `and`/`or` kısa devre | **1.76.0** | mevcut kod olduğu gibi |
+| Ortak `nox.db.Statement` | **1.76.0** | sqlite/postgres `Statement` importları `nox.db`. SQL (`?` / `$1`) ve `nyx.model` / `pg_model` ayrı. `nox.orm` mikro-CRUD; Nyx modeli değil |
 
 ## Kapandı (Nox 1.27–1.29) — runtime / sunucu
 
@@ -32,10 +40,8 @@
 - Nyx: `server_error_detail_for(kind, message)` — satır API gelince zenginleşir.
 
 ### Ortak dialect ORM
-- Row ortak; `prepare`/`Connection` hâlâ sürücüye özel → `model` / `pg_model` ayrı.
-
-### SMTP STARTTLS
-- SMTPS/465 var; 587 STARTTLS yok.
+- `nox.db.Statement` ortak (1.76). SQL yer tutucuları ve doğrulama/`Attributes`/`Record` yüzeyi sürücüye özel kalır → `model` / `pg_model` ayrı.
+- `nox.orm` satır döndüren mikro-CRUD; Nyx modeli onunla değiştirilmez.
 
 ## M:N / `--release` entegrasyon kuralları (Nyx)
 
@@ -55,4 +61,4 @@
 | on_shutdown + nested Router | 1.18.1+ |
 
 ## İzleme
-`noxc upgrade` (≥1.29.11) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.
+`noxc upgrade` (≥1.104.0) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.

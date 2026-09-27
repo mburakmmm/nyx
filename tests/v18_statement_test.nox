@@ -1,0 +1,19 @@
+import nox.sqlite
+import nox.test
+from nox.db import Row, Statement
+from nox.sqlite import Connection
+
+# nox.db.Statement ile sqlite prepare() ayni sinif: bu imza derlenirse kimlik kanitlanir.
+def bind_name(stmt: Statement, name: str) -> None:
+    stmt.bind_str(0, name)
+    stmt.execute()
+
+db: Connection = nox.sqlite.open(":memory:")
+db.execute("CREATE TABLE people (name TEXT)")
+ins: Statement = db.prepare("INSERT INTO people (name) VALUES (?)")
+bind_name(ins, "ada")
+rows: list[Row] = db.query("SELECT name FROM people")
+nox.test.assert_true(len(rows) == 1, "bir satir yazildi")
+nox.test.assert_eq_str(rows[0].get_str(0), "ada", "nox.db.Statement sqlite prepare ile baglandi")
+db.close()
+print("v18_statement_test ok")

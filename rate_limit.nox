@@ -3,7 +3,8 @@
 # Capacity eviction drops oldest window entries when full.
 
 import nox.time
-from nox.sqlite import Connection, Statement
+from nox.sqlite import Connection
+from nox.db import Statement
 from nox.db import Row
 
 class RateLimitError(Exception):

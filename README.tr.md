@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.17.0 · **Lisans:** MIT · **Nox ≥ 1.29.0** (önerilen **1.29.11**)  
+**Sürüm:** 0.18.0 · **Lisans:** MIT · **Nox ≥ 1.104.0** (CI **1.104.0**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.17.0"
+      "ref": "v0.18.0"
     }
   ]
 }
@@ -151,10 +151,19 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 | `NYX_DB_PATH` / `DATABASE_URL` | SQLite (ORM); ham PG/MySQL için `open_postgres` / `open_mysql` |
 | `NYX_AUTO_MIGRATE` | `1`/`0` (production varsayılan `0`; CLI migrate tercih) |
 | `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | güvenlik & i18n (`CSRF_API_EXEMPT` = `/api/` CSRF muafiyeti opt-in) |
+| `NYX_MAIL_SMTP_PORT` | SMTP portu (varsayılan `465`, anında TLS) |
+| `NYX_MAIL_SMTP_STARTTLS` | `1` = düz TCP sonra STARTTLS (tipik `587`); `0` veya boş = anında TLS |
 
 ---
 
 ## Sürüm notları
+
+### 0.18.0 — Nox 1.104 pin (1.0 değil)
+- **Nox ≥ 1.104.0** (CI **1.104.0**)
+- Mailer `nox.smtp`: varsayılan anında TLS (465); `NYX_MAIL_SMTP_STARTTLS=1` düz TCP + STARTTLS. HTML `to_eml` durur
+- Gmail 465/587 ve Office365 587, `nox.tls` içinde `TlsUnexpectedMessage` ile düşebilir; API bağlı, bu sunucuların çalıştığı iddia edilmez
+- `Statement` importları `nox.db` üzerinden. `nyx.model` / `nyx.pg_model` SQL ayrı (`?` / `$1`); `nox.orm` Nyx modeli değil
+- Peer IP ve yakalanmış Exception satırı hâlâ yok
 
 ### 0.17.0 — Nox 1.27–1.29 M:N / `--release` (1.0 değil)
 - **Nox ≥ 1.29.0** (CI **1.29.11**); `NYX_WORKERS` + `serve_multicore*`; SharedBuffer metrics; multicore’da db rate store
@@ -263,7 +272,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.29.0** (önerilen **1.29.11**): TaskLocal, Exception, Row, TLS/WS, `--release` M:N
+- **Nox ≥ 1.104.0** (CI **1.104.0**): TaskLocal, Exception, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite veya Postgres; jobs kuyruğu SQLite
@@ -272,7 +281,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
 **Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`.  
-**Hâlâ Nox’a bağlı:** peer IP, yakalanmış Exception satırı, STARTTLS.
+**Hâlâ Nox’a bağlı:** peer IP, yakalanmış Exception satırı. STARTTLS protokolü var; Gmail/Outlook TLS el sıkışması düşebilir.
 
 ---
 

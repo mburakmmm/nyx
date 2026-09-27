@@ -1,6 +1,6 @@
-# Nyx 0.17 — Deployment guide
+# Nyx 0.18 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.104.0**.
 
 ## 1. Process model
 
@@ -26,7 +26,8 @@ Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22
 | `NYX_SECURE_COOKIES` | `1` (behind HTTPS) |
 | `NYX_JOBS_DB_PATH` | Separate SQLite file (default `db/jobs.sqlite`) |
 | `NYX_MAIL_DELIVERY` | `smtp` / `http` / `file` |
-| `NYX_MAIL_SMTP_*` | When `smtp` — SMTPS/465 |
+| `NYX_MAIL_SMTP_HOST` / `PORT` / `USER` / `PASSWORD` | When `smtp`. Default port `465` = immediate TLS |
+| `NYX_MAIL_SMTP_STARTTLS` | `1` = plain TCP then STARTTLS (typical 587). `0` or empty = immediate TLS |
 | `NYX_PORT` / `NYX_HOST` | Bind address |
 | `NYX_TLS_CERT` / `NYX_TLS_KEY` | Optional PEM paths for `serve_*tls` |
 | `NYX_WORKERS` | `1` default; `>1` enables `serve_multicore*` |
@@ -107,7 +108,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.17.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.18.0" }
 ```
 
-Requires **noxc ≥ 1.29.0** (recommended **1.29.11**).
+Requires **noxc ≥ 1.104.0** (CI pin **1.104.0**).
+
+SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. Gmail 465/587 and Office365 587 can fail in `nox.tls` with `TlsUnexpectedMessage`; do not treat those hosts as supported.

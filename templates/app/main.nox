@@ -1,5 +1,5 @@
 # {{APP_NAME}} - nyx application entry
-# Requires Nox >= 1.29.0 (recommended 1.29.11): TaskLocal + M:N --release.
+# Requires Nox >= 1.104.0: TaskLocal, M:N --release, nox.smtp, nox.db.Statement.
 # Dev:  noxc fetch && NYX_ENV=development noxc run main.nox
 # Prod: noxc build --release main.nox && NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main
 

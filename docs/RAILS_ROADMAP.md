@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.17.0** (1.0 değil) · Nox **≥ 1.29.0** (önerilen **1.29.11**)  
+**Durum:** Nyx **0.18.0** (1.0 değil) · Nox **≥ 1.104.0** (CI **1.104.0**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -45,6 +45,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.15.5** | PG smoke Row typing |
 | **0.16.0** | TaskLocal runtime, Exception, dict[int,Record] |
 | **0.17.0** | Nox 1.27–1.29: NYX_WORKERS/multicore, SharedBuffer metrics, --release M:N |
+| **0.18.0** | Nox 1.104: nox.smtp STARTTLS (Gmail/Outlook TLS sınırı), ortak nox.db.Statement |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 
@@ -54,7 +55,8 @@ Hotwire, OAuth/OIDC/2FA, ActiveStorage variants, multi-tenant, MySQL first-class
 
 N1/N5/`dict[int,Record]`/Row → Nox 1.23–1.26  
 M:N / `--release` / `serve_multicore` work-steal → Nox 1.27–1.29  
-(peer IP + caught Exception span + STARTTLS hâlâ kısmi)
+STARTTLS API + ortak `Statement` → Nox 1.75–1.76 (CI **1.104.0**)  
+(peer IP + yakalanmış Exception satırı hâlâ açık; Gmail/Outlook SMTP TLS düşebilir)
 
 ## 6. Dogfood kriteri (0.15)
 

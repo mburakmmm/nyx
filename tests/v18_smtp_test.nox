@@ -1,0 +1,58 @@
+import nox.fs
+import nox.os
+import nox.process
+import nox.strings
+import nox.test
+import nox.time
+from nox.process import Command, Output
+import nyx.config
+import nyx.mailer
+from nyx.config import Config
+from nyx.mailer import Mail, MailerError
+
+nox.test.assert_true(nyx.mailer.smtp_starttls_supported(), "STARTTLS protokolu var")
+
+nox.os.set_var("NYX_MAIL_SMTP_STARTTLS", "1")
+on_cfg: Config = nyx.config.from_env()
+nox.test.assert_true(on_cfg.mail_smtp_starttls, "NYX_MAIL_SMTP_STARTTLS=1")
+nox.os.set_var("NYX_MAIL_SMTP_STARTTLS", "0")
+off_cfg: Config = nyx.config.from_env()
+nox.test.assert_true(not off_cfg.mail_smtp_starttls, "NYX_MAIL_SMTP_STARTTLS=0 aninda TLS")
+
+port: int = 18025
+bg: Command = Command("sh")
+bg.arg("-c")
+bg.arg("python3 tests/fake_smtp.py " + str(port) + " >/tmp/nyx-fake-smtp.log 2>&1 &")
+out: Output = bg.run()
+nox.test.assert_true(out.success(), "sahte SMTP basladi")
+nox.time.sleep_ms(200)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.mail_delivery = "smtp"
+cfg.mail_smtp_host = "127.0.0.1"
+cfg.mail_smtp_port = port
+cfg.mail_smtp_starttls = True
+cfg.mail_smtp_user = ""
+mail: Mail = nyx.mailer.new_html_mail("a@b.c", "from@b.c", "Konu", "duz", "<b>html</b>")
+failed: bool = False
+err_msg: str = ""
+try:
+    nyx.mailer.deliver(cfg, mail)
+except MailerError as err:
+    failed = True
+    err_msg = err.message
+nox.test.assert_true(failed, "STARTTLS teslimati TLS yukseltmesinde dustu")
+nox.test.assert_true(nox.strings.contains(err_msg, "TLS yukseltme"), "hata TLS yukseltmesi: " + err_msg)
+nox.test.assert_true(nox.strings.contains(err_msg, "beklenmeyen SMTP kodu") == False, "STARTTLS oncesi kod hatasi yok: " + err_msg)
+
+file_cfg: Config = nyx.config.defaults("test")
+file_cfg.mail_delivery = "file"
+plain: Mail = nyx.mailer.new_mail("alice@example.com", "noreply@example.com", "Dosya", "govde")
+before_count: int = 0
+if nox.fs.exists("tmp/mail"):
+    before_count = len(nox.fs.read_dir("tmp/mail"))
+nyx.mailer.deliver(file_cfg, plain)
+after_count: int = len(nox.fs.read_dir("tmp/mail"))
+nox.test.assert_true(after_count == before_count + 1, "dosya teslimati duruyor")
+
+print("v18_smtp_test ok")

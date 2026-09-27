@@ -10,7 +10,8 @@
 # protokolu Nox'ta henuz yok (Row kovaryansi).
 
 import nox.strings
-from nox.postgres import Connection, Statement, PostgresError
+from nox.postgres import Connection, PostgresError
+from nox.db import Statement
 from nox.db import Row
 import nyx.model
 from nyx.model import ModelError, Attributes

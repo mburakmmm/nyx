@@ -10,7 +10,8 @@ import nox.time
 import nox.uuid
 import nox.json
 import nox.strings
-from nox.sqlite import Connection, Statement
+from nox.sqlite import Connection
+from nox.db import Statement
 from nox.json import JsonValue
 import nyx.session
 from nyx.session import SessionError

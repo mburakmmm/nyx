@@ -37,6 +37,7 @@ class Config:
         mail_smtp_port: int,
         mail_smtp_user: str,
         mail_smtp_password: str,
+        mail_smtp_starttls: bool,
         jobs_db_path: str,
         cable_store_path: str,
         csp: str,
@@ -85,6 +86,8 @@ class Config:
         self.mail_smtp_port = mail_smtp_port
         self.mail_smtp_user = mail_smtp_user
         self.mail_smtp_password = mail_smtp_password
+        # False: aninda TLS (SMTPS, tipik 465). True: duz TCP sonra STARTTLS (tipik 587).
+        self.mail_smtp_starttls = mail_smtp_starttls
         self.jobs_db_path = jobs_db_path
         self.cable_store_path = cable_store_path
         self.csp = csp
@@ -205,6 +208,7 @@ def defaults(env: str) -> Config:
         465,
         "",
         "",
+        False,
         jobs_path,
         "",
         "",
@@ -264,6 +268,8 @@ def from_env() -> Config:
     cfg.mail_smtp_port = _env_int("NYX_MAIL_SMTP_PORT", cfg.mail_smtp_port)
     cfg.mail_smtp_user = _env_or("NYX_MAIL_SMTP_USER", cfg.mail_smtp_user)
     cfg.mail_smtp_password = _env_or("NYX_MAIL_SMTP_PASSWORD", cfg.mail_smtp_password)
+    # 1: duz TCP + STARTTLS. 0 veya bos: aninda TLS (bugunku 465 davranisi).
+    cfg.mail_smtp_starttls = _env_bool("NYX_MAIL_SMTP_STARTTLS", cfg.mail_smtp_starttls)
     cfg.jobs_db_path = _env_or("NYX_JOBS_DB_PATH", cfg.jobs_db_path)
     cfg.cable_store_path = _env_or("NYX_CABLE_STORE_PATH", cfg.cable_store_path)
     cfg.csp = _env_or("NYX_CSP", cfg.csp)

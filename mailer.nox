@@ -10,7 +10,8 @@
 #   "http" - Config.mail_api_url adresine Bearer Config.mail_api_key ile
 #            JSON govdeli bir POST yapar (SendGrid/Postmark/Mailgun benzeri
 #            HTTP API saglayicilariyla uyumlu).
-#   "smtp" - SMTPS (TLS, tipik 465) AUTH LOGIN; NYX_MAIL_SMTP_*.
+#   "smtp" - nox.smtp: varsayilan aninda TLS (465). NYX_MAIL_SMTP_STARTTLS=1
+#            duz TCP sonra STARTTLS (tipik 587). HTML to_eml korunur.
 # Ikisi de GERCEK G/C yapar - mock yoktur.
 
 import nox.fs
@@ -22,10 +23,9 @@ import nox.json
 import nox.strings
 import nox.template
 from nox.http import HttpResponse, HttpError
-from nox.tls import TlsStream
+from nox.smtp import SmtpClient, SmtpError
 from nyx.config import Config
-import nyx.tls
-import nyx.base64
+import nox.smtp
 
 class MailerError(Exception):
     def __init__(self: MailerError, message: str) -> None:
@@ -143,79 +143,47 @@ def _deliver_http(cfg: Config, mail: Mail) -> None:
     except HttpError:
         raise MailerError("mail API istegi basarisiz: " + cfg.mail_api_url)
 
-def _smtp_read_line(stream: TlsStream) -> str:
-    buf: str = ""
-    done: bool = False
-    while not done:
-        chunk: str = stream.read(1)
-        if len(chunk) == 0:
-            raise MailerError("SMTP connection closed while reading")
-        buf = buf + chunk
-        if nox.strings.ends_with(buf, "\n"):
-            done = True
-    return buf
+def _smtp_open(host: str, port: int, use_tls: bool) -> SmtpClient:
+    try:
+        return nox.smtp.connect(host, port, use_tls)
+    except SmtpError as err:
+        raise MailerError("smtp: " + err.message)
 
-def _smtp_expect(stream: TlsStream, code_prefix: str) -> str:
-    line: str = _smtp_read_line(stream)
-    # Multi-line replies: "250-..." then "250 ..."
-    while len(line) >= 4 and line[3] == "-":
-        line = _smtp_read_line(stream)
-    if not nox.strings.starts_with(line, code_prefix):
-        raise MailerError("SMTP unexpected reply (want " + code_prefix + "): " + line)
-    return line
-
-def _smtp_write(stream: TlsStream, cmd: str) -> None:
-    stream.write(cmd + "\r\n")
-
-# SMTPS (implicit TLS, tipik port 465) - AUTH LOGIN + DATA.
-# STARTTLS/plain TCP Nox stdlib'de yok; 587 icin TLS-wrap proxy kullanin.
+# nox.smtp: use_tls=true aninda TLS (465). STARTTLS icin once duz TCP.
+# HTML/multipart to_eml korunur; nox.smtp.send duz metin baslik uretir.
+# quit() icindeki try, ayni fonksiyondaki finally ile 1.104 codegen'i sonsuz acar;
+# QUIT satiri ve close burada yazilir.
+# Gmail 465/587 ve Office365 587, nox.tls icinde TlsUnexpectedMessage ile dusebilir.
 def _deliver_smtp(cfg: Config, mail: Mail) -> None:
     if len(cfg.mail_smtp_host) == 0:
         raise MailerError("mail_smtp_host yapilandirilmamis")
     if cfg.mail_smtp_port <= 0:
         raise MailerError("mail_smtp_port gecersiz")
-    stream: TlsStream = nyx.tls.connect(cfg.mail_smtp_host, cfg.mail_smtp_port)
+    use_tls: bool = True
+    if cfg.mail_smtp_starttls:
+        use_tls = False
+    eml: str = to_eml(mail)
+    client: SmtpClient = _smtp_open(cfg.mail_smtp_host, cfg.mail_smtp_port, use_tls)
     try:
-        _smtp_expect(stream, "220")
-        _smtp_write(stream, "EHLO nyx.mailer")
-        _smtp_expect(stream, "250")
+        client.ehlo("nyx.mailer")
+        if cfg.mail_smtp_starttls:
+            client.starttls()
+            client.ehlo("nyx.mailer")
         if len(cfg.mail_smtp_user) > 0:
-            _smtp_write(stream, "AUTH LOGIN")
-            _smtp_expect(stream, "334")
-            _smtp_write(stream, nyx.base64.encode(cfg.mail_smtp_user))
-            _smtp_expect(stream, "334")
-            _smtp_write(stream, nyx.base64.encode(cfg.mail_smtp_password))
-            _smtp_expect(stream, "235")
-        _smtp_write(stream, "MAIL FROM:<" + mail.from_addr + ">")
-        _smtp_expect(stream, "250")
-        _smtp_write(stream, "RCPT TO:<" + mail.to + ">")
-        _smtp_expect(stream, "250")
-        _smtp_write(stream, "DATA")
-        _smtp_expect(stream, "354")
-        eml: str = to_eml(mail)
-        # DATA body must not contain lone "." line - escape leading dots.
-        escaped: str = ""
-        lines: list[str] = nox.strings.split(eml, "\n")
-        li: int = 0
-        while li < len(lines):
-            line: str = lines[li]
-            if nox.strings.ends_with(line, "\r"):
-                stripped: str = ""
-                si: int = 0
-                while si < len(line) - 1:
-                    stripped = stripped + line[si]
-                    si = si + 1
-                line = stripped
-            if nox.strings.starts_with(line, "."):
-                escaped = escaped + "." + line + "\r\n"
-            else:
-                escaped = escaped + line + "\r\n"
-            li = li + 1
-        stream.write(escaped + ".\r\n")
-        _smtp_expect(stream, "250")
-        _smtp_write(stream, "QUIT")
-    finally:
-        stream.close()
+            client.auth_login(cfg.mail_smtp_user, cfg.mail_smtp_password)
+        client._send_line("MAIL FROM:<" + mail.from_addr + ">")
+        client._expect(250)
+        client._send_line("RCPT TO:<" + mail.to + ">")
+        client._expect(250)
+        client._send_line("DATA")
+        client._expect(354)
+        client._send_dot_stuffed(eml)
+        client._expect(250)
+        client._send_line("QUIT")
+    except SmtpError as err:
+        client.close()
+        raise MailerError("smtp: " + err.message)
+    client.close()
 
 # Yapilandirilmis teslimat yontemine (Config.mail_delivery) gore postayi
 # gonderir. 'from_addr'/'to' bossa veya konu eksikse MailerError firlatir.
@@ -249,6 +217,7 @@ def mail_from_template(
     body: str = render_template(template_path, context)
     return new_mail(to, from_addr, subject, body)
 
-# STARTTLS/587: Nox has no plain TCP upgrade yet. Document proxy or use SMTPS/465.
+# STARTTLS protokolu nox.smtp icinde var. Gmail/Outlook TLS el sikismasi
+# nox.tls'te TlsUnexpectedMessage ile dusebilir; bu fonksiyon protokolu bildirir.
 def smtp_starttls_supported() -> bool:
-    return False
+    return True

@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.17.0 · **License:** MIT · **Requires Nox ≥ 1.29.0** (recommended **1.29.11**)  
+**Version:** 0.18.0 · **License:** MIT · **Requires Nox ≥ 1.104.0** (CI **1.104.0**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.17.0"
+      "ref": "v0.18.0"
     }
   ]
 }
@@ -158,10 +158,19 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 | `NYX_SECURITY_HEADERS` | `0` skips security after-middleware (fair bench) |
 | `NYX_REQUEST_ID` | `0` skips uuid + `X-Request-Id` |
 | `NYX_REQUEST_HEADERS` | `0` → `handle_bare` / `EMPTY_HEADERS` (Nox header-skip) |
+| `NYX_MAIL_SMTP_PORT` | SMTP port (default `465`, immediate TLS) |
+| `NYX_MAIL_SMTP_STARTTLS` | `1` = plain TCP then STARTTLS (typical `587`); `0` or empty = immediate TLS |
 
 ---
 
 ## Changelog
+
+### 0.18.0 — Nox 1.104 pin (not 1.0)
+- Requires **Nox ≥ 1.104.0** (CI **1.104.0**)
+- Mailer uses `nox.smtp`: default immediate TLS (465); `NYX_MAIL_SMTP_STARTTLS=1` for plain TCP then STARTTLS. HTML `to_eml` is preserved (`nox.smtp.send` is plain-text only)
+- Gmail 465/587 and Office365 587 can still fail inside `nox.tls` with `TlsUnexpectedMessage`; the API is wired, those servers are not claimed to work
+- `Statement` imports go through `nox.db` (sqlite and postgres share the class). `nyx.model` / `nyx.pg_model` SQL stays split (`?` vs `$1`); `nox.orm` is not the Nyx model
+- Peer IP and caught-exception line are still absent
 
 ### 0.17.0 — Nox 1.27–1.29 M:N / `--release` (not 1.0)
 - Requires **Nox ≥ 1.29.0** (CI **1.29.11**)
@@ -305,14 +314,14 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.29.0** (recommended **1.29.11**): TaskLocal, Exception, `dict[int, class]`, Row, TLS/WS, `--release` M:N
+- Requires **Nox ≥ 1.104.0** (CI **1.104.0**): TaskLocal, Exception, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
 - App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
-- TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = SMTPS/465 (no STARTTLS yet)
+- TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587). Gmail/Outlook may fail in `nox.tls` (`TlsUnexpectedMessage`)
 - Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
 - Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
@@ -320,7 +329,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - **Request state** uses `TaskLocal` (Nox ≥ 1.24) — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
 
 **Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, multicore/`--release` for higher concurrency.  
-**Still Nox-bound:** peer IP / caught-exception spans / STARTTLS — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
+**Still Nox-bound:** peer IP / caught-exception line — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
 
 ---
 

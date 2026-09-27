@@ -4,7 +4,8 @@
 import nox.time
 import nox.uuid
 import nox.strings
-from nox.postgres import Connection as PgConnection, Statement as PgStatement, PostgresError
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.db import Statement
 from nox.db import Row
 import nyx.password
 import nyx.auth_engine
@@ -25,7 +26,7 @@ def ensure_schema(db: PgConnection) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token)")
 
 def find_by_email(db: PgConnection, email: str) -> Row | None:
-    stmt: PgStatement = db.prepare(
+    stmt: Statement = db.prepare(
         "SELECT id, email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms " +
         "FROM users WHERE email = $1"
     )
@@ -42,7 +43,7 @@ def register(db: PgConnection, email: str, password: str) -> int:
     if len(password) < 8:
         raise AuthEngineError("password too short (min 8)")
     digest: str = nyx.password.hash(password)
-    stmt: PgStatement = db.prepare(
+    stmt: Statement = db.prepare(
         "INSERT INTO users (email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms) " +
         "VALUES ($1, $2, 0, 0, '', 0) RETURNING id"
     )
@@ -60,7 +61,7 @@ def _bump_failure(db: PgConnection, user_id: int) -> None:
     # Atomic increment; CASE uses pre-update failed_attempts.
     now: int = nox.time.now_ms()
     max_a: int = nyx.auth_engine.max_failed_attempts()
-    stmt: PgStatement = db.prepare(
+    stmt: Statement = db.prepare(
         "UPDATE users SET failed_attempts = failed_attempts + 1, " +
         "locked_at_ms = CASE WHEN failed_attempts + 1 >= $1 THEN $2 ELSE locked_at_ms END " +
         "WHERE id = $3"
@@ -71,7 +72,7 @@ def _bump_failure(db: PgConnection, user_id: int) -> None:
     stmt.execute()
 
 def _clear_failure(db: PgConnection, user_id: int) -> None:
-    stmt: PgStatement = db.prepare(
+    stmt: Statement = db.prepare(
         "UPDATE users SET failed_attempts = 0, locked_at_ms = 0 WHERE id = $1"
     )
     stmt.bind_int(0, user_id)
@@ -101,7 +102,7 @@ def request_password_reset(db: PgConnection, email: str) -> str:
         return ""
     else:
         raw: str = nox.uuid.uuid4()
-        stmt: PgStatement = db.prepare(
+        stmt: Statement = db.prepare(
             "UPDATE users SET reset_token = $1, reset_sent_at_ms = $2 WHERE id = $3"
         )
         stmt.bind_str(0, nyx.auth_engine.hash_reset_token(raw))
@@ -116,7 +117,7 @@ def reset_password(db: PgConnection, token: str, new_password: str) -> int:
     if len(new_password) < 8:
         raise AuthEngineError("password too short (min 8)")
     hashed: str = nyx.auth_engine.hash_reset_token(token)
-    stmt: PgStatement = db.prepare(
+    stmt: Statement = db.prepare(
         "SELECT id, reset_sent_at_ms FROM users WHERE reset_token = $1"
     )
     stmt.bind_str(0, hashed)
@@ -127,7 +128,7 @@ def reset_password(db: PgConnection, token: str, new_password: str) -> int:
     sent: int = rows[0].get_int(1)
     if sent <= 0 or nox.time.now_ms() - sent > 3600000:
         raise AuthEngineError("reset token expired")
-    upd: PgStatement = db.prepare(
+    upd: Statement = db.prepare(
         "UPDATE users SET password_digest = $1, reset_token = '', reset_sent_at_ms = 0, " +
         "failed_attempts = 0, locked_at_ms = 0 WHERE id = $2"
     )

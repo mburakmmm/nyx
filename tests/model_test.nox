@@ -1,7 +1,8 @@
 import nox.test
 import nyx.db
 import nyx.model
-from nox.sqlite import Connection, Statement
+from nox.sqlite import Connection
+from nox.db import Statement
 from nyx.model import Record, ModelError, Attributes
 from nox.db import Row
 

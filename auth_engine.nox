@@ -8,7 +8,8 @@ import nox.time
 import nox.uuid
 import nox.strings
 import nox.crypto
-from nox.sqlite import Connection, SqliteError, Statement
+from nox.sqlite import Connection, SqliteError
+from nox.db import Statement
 import nyx.password
 import nyx.model
 import nyx.runtime
