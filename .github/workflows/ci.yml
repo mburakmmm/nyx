@@ -14,10 +14,17 @@ jobs:
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
 
+      - name: Cache Nox toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.nox-lang
+          key: nox-v1.104.0-x86_64_v3
+
       - name: Install Nox
         run: |
-          # install.sh uses bash-only 'set -o pipefail'; must not pipe to dash/sh
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.104.0 bash
+          if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then
+            bash ci/install_nox.sh
+          fi
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
 
       - name: Point package at checkout
@@ -86,9 +93,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
+      - name: Cache Nox toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.nox-lang
+          key: nox-v1.104.0-x86_64_v3
       - name: Install Nox
         run: |
-          curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.104.0 bash
+          if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then
+            bash ci/install_nox.sh
+          fi
           echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
       - name: Point package at checkout
         run: |
