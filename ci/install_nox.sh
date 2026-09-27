@@ -23,4 +23,13 @@ git clone --depth 1 --branch "$NOX_TAG" https://github.com/mburakmmm/nox-lang.gi
     -Dcpu="$CPU" \
     --prefix "$PREFIX"
 )
+curl -fsSL -o "$work/qbe.tar.xz" https://c9x.me/compile/release/qbe-1.3.tar.xz
+tar -xf "$work/qbe.tar.xz" -C "$work"
+make -C "$work/qbe-1.3" -j"$(nproc)"
+mkdir -p "$PREFIX/bin"
+cp "$work/qbe-1.3/qbe" "$PREFIX/bin/qbe"
+
 "$PREFIX/bin/noxc" --version
+test -x "$PREFIX/bin/qbe"
+test -f "$PREFIX/lib/noxrt.o"
+test -f "$PREFIX/lib/nox/stdlib/nox/core.nox"
