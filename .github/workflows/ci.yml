@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y build-essential curl
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
 
       - name: Install Nox
         run: |
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y build-essential curl
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
       - name: Install Nox
         run: |
           curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/main/install.sh | NOX_VERSION=v1.104.0 bash
@@ -121,6 +121,8 @@ jobs:
         env:
           DATABASE_URL: postgres://nyx:nyx@127.0.0.1:5432/nyx
         run: |
+          echo "CPU: $(grep -m1 'model name' /proc/cpuinfo || true)"
+          noxc --version
           noxc fetch
           noxc run ci/pg_smoke.nox
           noxc test tests/v152_pg_session_e2e_test.nox

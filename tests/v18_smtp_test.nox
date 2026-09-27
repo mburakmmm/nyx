@@ -20,12 +20,24 @@ off_cfg: Config = nyx.config.from_env()
 nox.test.assert_true(not off_cfg.mail_smtp_starttls, "NYX_MAIL_SMTP_STARTTLS=0 aninda TLS")
 
 port: int = 18025
-bg: Command = Command("sh")
+if nox.fs.exists("/tmp/nyx-fake-smtp.ready"):
+    nox.fs.remove_file("/tmp/nyx-fake-smtp.ready")
+bg: Command = Command("python3")
 bg.arg("-c")
-bg.arg("python3 tests/fake_smtp.py " + str(port) + " >/tmp/nyx-fake-smtp.log 2>&1 &")
+bg.arg("import subprocess,sys; subprocess.Popen(['python3','tests/fake_smtp.py',sys.argv[1]], start_new_session=True, stdout=open('/tmp/nyx-fake-smtp.log','w'), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)")
+bg.arg(str(port))
 out: Output = bg.run()
 nox.test.assert_true(out.success(), "sahte SMTP basladi")
-nox.time.sleep_ms(200)
+ready: bool = False
+wait_i: int = 0
+while wait_i < 50:
+    if nox.fs.exists("/tmp/nyx-fake-smtp.ready"):
+        ready = True
+        wait_i = 50
+    else:
+        nox.time.sleep_ms(100)
+        wait_i = wait_i + 1
+nox.test.assert_true(ready, "sahte SMTP dinlemiyor")
 
 cfg: Config = nyx.config.defaults("test")
 cfg.mail_delivery = "smtp"

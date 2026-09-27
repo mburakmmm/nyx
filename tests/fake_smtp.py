@@ -1,14 +1,23 @@
-# Tek baglanti: 220, EHLO 250, STARTTLS 220, sonra soketi kapat.
-# TLS yukseltmesi basarisiz olmali; STARTTLS oncesi kod hatasi olmamali.
+# Tek baglanti: 220, EHLO 250, STARTTLS 220, sonra gercek TLS (self-signed).
+# Istemci sertifika dogrulamasinda dusmeli. Soketi STARTTLS'ten once
+# kapatmak Linux'ta nox.tls icinde illegal instruction (ud2) uretebiliyor.
+import os
 import socket
+import ssl
 import sys
 
 port = int(sys.argv[1])
+here = os.path.dirname(os.path.abspath(__file__))
+cert = os.path.join(here, "fixtures", "smtp.crt")
+key = os.path.join(here, "fixtures", "smtp.key")
+
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", port))
 srv.listen(1)
 srv.settimeout(8)
+open("/tmp/nyx-fake-smtp.ready", "w").write("1")
+
 try:
     conn, _addr = srv.accept()
 except Exception:
@@ -40,5 +49,18 @@ if not line.upper().startswith("STARTTLS"):
     conn.close()
     sys.exit(0)
 send("220 ready to start tls\r\n")
-conn.close()
+
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+ctx.load_cert_chain(cert, key)
+try:
+    tls = ctx.wrap_socket(conn, server_side=True)
+    tls.settimeout(3)
+    tls.recv(64)
+    tls.close()
+except Exception:
+    try:
+        conn.close()
+    except Exception:
+        pass
 srv.close()
