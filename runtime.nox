@@ -4,6 +4,10 @@
 # state'ini GORMEZ. Modul-seviyesi TaskLocal ornegi paylasilir; deger
 # fiber-local haritada saklanir.
 #
+# Nox >= 1.122: main, TaskLocal yuzunden fiber'a sarilmaz. Fiber yokken
+# set/get no-op'tur (kok test ve noxc run). O yol modul-yerel kutuda durur.
+# serve baglanti fiber'i TaskLocal kullanir.
+#
 # 'current()' BIR SNAPSHOT doner - alanlarini dogrudan degistirmek kalici
 # degildir; 'set_*' / 'load_*' / 'touch_*' / 'cycle_session' / 'logout' kullanin.
 #
@@ -58,11 +62,42 @@ class RuntimeState:
         self.session_rotate = False
         self.expire_session_cookie = False
 
+class _FiberProbe:
+    def __init__(self: _FiberProbe) -> None:
+        self.ok = True
+
 _tl: TaskLocal[RuntimeState] = TaskLocal[RuntimeState]()
+_probe_tl: TaskLocal[_FiberProbe] = TaskLocal[_FiberProbe]()
+_root_box: list[RuntimeState] = []
+
+def _has_fiber() -> bool:
+    marker: _FiberProbe = _FiberProbe()
+    _probe_tl.set(marker)
+    got: _FiberProbe | None = _probe_tl.get()
+    if got == None:
+        return False
+    return True
+
+def _root_state() -> RuntimeState:
+    if len(_root_box) == 0:
+        created: RuntimeState = RuntimeState()
+        _root_box.append(created)
+    return _root_box[0]
+
+def _install(st: RuntimeState) -> None:
+    _tl.set(st)
+    got: RuntimeState | None = _tl.get()
+    if got == None:
+        if len(_root_box) == 0:
+            _root_box.append(st)
+        else:
+            _root_box[0] = st
 
 def _state() -> RuntimeState:
     got: RuntimeState | None = _tl.get()
     if got == None:
+        if not _has_fiber():
+            return _root_state()
         created: RuntimeState = RuntimeState()
         _tl.set(created)
         return created
@@ -107,7 +142,7 @@ def begin(req_id: str, start_ms: int, loc: str) -> RequestBag:
     st.session_sid = ""
     st.session_rotate = False
     st.expire_session_cookie = False
-    _tl.set(st)
+    _install(st)
     return current()
 
 def end() -> None:

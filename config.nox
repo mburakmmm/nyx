@@ -8,8 +8,7 @@ import nox.os
 from nox.os import OsError
 
 class ConfigError(Exception):
-    def __init__(self: ConfigError, message: str) -> None:
-        self.message = message
+    pass
 
 class Config:
     def __init__(
@@ -107,8 +106,9 @@ class Config:
         # Legacy name: non-empty still enables XFF trust (see trust_x_forwarded_for).
         self.trusted_proxies = trusted_proxies
         self.rate_limit_auth_max = rate_limit_auth_max
-        # Honest flag: when true, first X-Forwarded-For hop is used as client key.
-        # Nox has no peer address yet, so this cannot verify the connecting proxy IP.
+        # When true, first X-Forwarded-For hop is the client key.
+        # Non-empty trusted_proxies is an IP allowlist: XFF is used only if
+        # HttpRequest.peer_addr's IP is in that list (Nox >= 1.127).
         self.trust_x_forwarded_for = trust_x_forwarded_for
         # "memory" | "db" (jobs_db) — workers>1 ise boot db'ye zorlar
         self.rate_limit_store = rate_limit_store

@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.18.0 · **Lisans:** MIT · **Nox ≥ 1.104.0** (CI **1.104.0**)  
+**Sürüm:** 0.19.0 · **Lisans:** MIT · **Nox ≥ 1.142.3** (CI **1.142.3**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.18.0"
+      "ref": "v0.19.0"
     }
   ]
 }
@@ -158,12 +158,21 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.19.0 — Nox 1.142 pin (1.0 değil)
+- **Nox ≥ 1.142.3** (CI **1.142.3**, `x86-64-v3` + qbe)
+- `HttpRequest.peer_addr` (Nox 1.127) trust kapalıyken rate-limit anahtarı. Boş peer (`dispatch_from_parts`, testler) `"direct"` kovasında kalır
+- `NYX_TRUSTED_PROXIES` IP allowlist: `X-Forwarded-For` yalnızca bağlanan IP listede ise kullanılır. Liste boş + `NYX_TRUST_X_FORWARDED_FOR=1` eski “kenar güvenilir” davranışını korur
+- Nyx `*Error` sınıfları `__init__` yazmaz; yakalanan istisna `Exception.line` (Nox 1.126) taşır. Development 500 JSON/HTML `line` içerir; production genel kalır
+- `nyx.jwt` durur (exp/nbf/iat). `nox.jwt` yalnızca HS256, claim kontrolü yok
+- Gmail/Outlook SMTP TLS ve `nox.orm`’un Nyx modeli olması kapsam dışı
+- Nox 1.122, `TaskLocal` yüzünden `main`’i fiber’a sarmıyor. `nyx.runtime` bu kök yolda istek durumunu modül kutusunda tutar; bağlantı fiber’ı `TaskLocal` kullanır
+
 ### 0.18.0 — Nox 1.104 pin (1.0 değil)
 - **Nox ≥ 1.104.0** (CI **1.104.0**)
 - Mailer `nox.smtp`: varsayılan anında TLS (465); `NYX_MAIL_SMTP_STARTTLS=1` düz TCP + STARTTLS. HTML `to_eml` durur
 - Gmail 465/587 ve Office365 587, `nox.tls` içinde `TlsUnexpectedMessage` ile düşebilir; API bağlı, bu sunucuların çalıştığı iddia edilmez
 - `Statement` importları `nox.db` üzerinden. `nyx.model` / `nyx.pg_model` SQL ayrı (`?` / `$1`); `nox.orm` Nyx modeli değil
-- Peer IP ve yakalanmış Exception satırı hâlâ yok
+- Peer IP ve yakalanmış Exception satırı 0.19.0’da bağlandı
 
 ### 0.17.0 — Nox 1.27–1.29 M:N / `--release` (1.0 değil)
 - **Nox ≥ 1.29.0** (CI **1.29.11**); `NYX_WORKERS` + `serve_multicore*`; SharedBuffer metrics; multicore’da db rate store
@@ -272,7 +281,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.104.0** (CI **1.104.0**): TaskLocal, Exception, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- **Nox ≥ 1.142.3** (CI **1.142.3**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite veya Postgres; jobs kuyruğu SQLite
@@ -281,7 +290,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
 **Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`.  
-**Hâlâ Nox’a bağlı:** peer IP, yakalanmış Exception satırı. STARTTLS protokolü var; Gmail/Outlook TLS el sıkışması düşebilir.
+**Hâlâ Nox’a bağlı:** STARTTLS protokolü var; Gmail/Outlook TLS el sıkışması düşebilir. `nox.orm` Nyx modeli değil.
 
 ---
 

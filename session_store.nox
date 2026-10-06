@@ -18,8 +18,7 @@ from nyx.session import SessionError
 from nox.db import Row
 
 class SessionStoreError(Exception):
-    def __init__(self: SessionStoreError, message: str) -> None:
-        self.message = message
+    pass
 
 def ensure_schema(db: Connection) -> None:
     db.execute(

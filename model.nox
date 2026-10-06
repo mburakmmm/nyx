@@ -25,8 +25,7 @@ from nox.json import JsonError
 from nox.db import Row
 
 class ModelError(Exception):
-    def __init__(self: ModelError, message: str) -> None:
-        self.message = message
+    pass
 
 class Record:
     def __init__(self: Record, row: Row) -> None:

@@ -2,17 +2,17 @@
 
 Bu belge, [nyx](https://github.com/mburakmmm/nyx) geliştirirken **Nox dili / stdlib / codegen** kısıtlarını listeler.
 
-**Kaynak:** nyx 0.3.x → 0.18.0  
-**Nox sürümü (güncel doğrulama):** noxc **1.104.0** (2026-09-27)
+**Kaynak:** nyx 0.3.x → 0.19.0  
+**Nox sürümü (güncel doğrulama):** noxc **1.142.3** (2026-10-06)
 
-Nyx **0.18.0** için minimum Nox: **≥ 1.104.0** (`nox.smtp` STARTTLS, ortak `nox.db.Statement`, TaskLocal, `--release` M:N).  
-Önerilen / CI pin: **1.104.0**.
+Nyx **0.19.0** için minimum Nox: **≥ 1.142.3** (`HttpRequest.peer_addr`, `Exception.line`, `nox.smtp` STARTTLS, ortak `nox.db.Statement`, TaskLocal, `--release` M:N).  
+Önerilen / CI pin: **1.142.3** (`x86-64-v3` + qbe; yayınlanan linux ikilisi hâlâ `cpu=native`).
 
 Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2.md`
 
 ---
 
-## 1. Özet tablo (2026-09-27, noxc 1.104.0)
+## 1. Özet tablo (2026-10-06, noxc 1.142.3)
 
 | # | Konu | Durum | Nox | Nyx etkisi |
 |---|---|---|---|---|
@@ -38,10 +38,30 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 | P12 | `--release` LLVM + M:N | **Açıldı** | **1.27–1.29** | `NYX_WORKERS` + SharedBuffer metrics |
 | P13 | ortak `nox.db.Statement` | **Açıldı** | **1.76.0** | import `nox.db`; SQL hâlâ `?` / `$1` |
 | P14 | SMTP STARTTLS | **Kısmi** | **1.75.0** | protokol var; Gmail/Outlook `TlsUnexpectedMessage` |
+| P15 | `HttpRequest.peer_addr` | **Açıldı** | **1.127.0** | rate-limit + `NYX_TRUSTED_PROXIES` allowlist |
+| P16 | yakalanmış `Exception.line` | **Açıldı** | **1.126.0** | development 500 `line`; `*Error` `__init__` yok |
 
 ---
 
-## 2. Nyx 0.18.0 (Nox 1.104 kilidi)
+## 2. Nyx 0.19.0 (Nox 1.142 kilidi)
+
+1. Min / CI Nox **1.142.3** (kaynak derleme: `-Dcpu=x86_64_v3` + qbe 1.3)  
+2. `HttpRequest` 5. argüman `peer_addr`. Trust kapalıyken gerçek peer IP kovası; boş peer `"direct"`  
+3. `NYX_TRUSTED_PROXIES` doluysa XFF yalnızca listelenen bağlanan IP’lerden  
+4. `*Error(Exception): pass` — `e.line` development hata gövdesinde  
+5. `nyx.jwt` (exp/nbf/iat) durur; `nox.jwt` claim süresi kontrol etmez  
+
+`serve_multicore` hâlâ closure handler kabul etmez; üretim yolu çıplak fonksiyon adı + `_apps` listesi.
+
+Nox 1.122’den beri `TaskLocal[T]()` main’i fiber’a sarmaz. Fiber yokken `set`/`get` tutmaz. `nyx.runtime` bu kök yolu modül-yerel kutuda tutar; bağlantı fiber’ı TaskLocal’da kalır.
+
+Önceki 0.18 kilidi hâlâ geçerli: `nox.smtp` STARTTLS, ortak `Statement`.
+
+`SmtpClient.quit()` içindeki `try`, aynı fonksiyondaki `finally` ile noxc codegen'ini sonsuz açabiliyor (1.104’te görüldü). Nyx QUIT'i `_send_line` ile yazar ve her iki yolda `close()` çağırır.
+
+---
+
+## 2c. Nyx 0.18.0 (Nox 1.104 kilidi)
 
 1. Min / CI Nox **1.104.0**  
 2. `nyx.mailer` → `nox.smtp` (`NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` + dot-stuffing)  
@@ -69,8 +89,6 @@ Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2
 
 ## 3. Hâlâ açık
 
-- `HttpRequest` peer/remote address (trusted proxy doğrulaması)  
-- Yakalanmış Exception üzerinde satır/span alanı (1.25 yalnızca unhandled raporu)  
 - Tek dialect ORM yüzeyi (`Statement` ortak; SQL ve `Record`/`Attributes` ayrı. `nox.orm` mikro-CRUD)  
 - Gmail 465/587 ve Office365 587 SMTP TLS (`TlsUnexpectedMessage`; protokol API'si var)  
 - MySQL dialect-aware Application boot  

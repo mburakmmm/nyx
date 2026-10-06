@@ -78,7 +78,7 @@ app: Application = nyx.app.boot(cfg, setup)
 nyx.auth_engine.register(app.db, "u@example.com", "password1")
 
 # CSRF off: anonymous GET must not mint a seed cookie (hot-path).
-r0: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}))
+r0: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}, ""))
 c0: str | None = nyx.testing.header(r0, "Set-Cookie")
 nox.test.assert_true(c0 == None, "anon no seed cookie when csrf off")
 
@@ -86,7 +86,7 @@ h1: dict[str, str] = {}
 h1["Content-Type"] = "application/x-www-form-urlencoded"
 login_resp: HttpResponse = nyx.app.dispatch(
     app,
-    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1)
+    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1, "")
 )
 nox.test.assert_eq_int(login_resp.status, 200, "login")
 c1: str | None = nyx.testing.header(login_resp, "Set-Cookie")
@@ -102,7 +102,7 @@ if c1 != None:
     h1b["Cookie"] = cookie_pair(c1)
 login2: HttpResponse = nyx.app.dispatch(
     app,
-    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1b)
+    HttpRequest("POST", "/login", "email=u@example.com&password=password1", h1b, "")
 )
 nox.test.assert_eq_int(login2.status, 200, "login2")
 c1b: str | None = nyx.testing.header(login2, "Set-Cookie")
@@ -116,7 +116,7 @@ nox.test.assert_true(sid1 != sid2, "SID rotated on login")
 h2: dict[str, str] = {}
 if c1b != None:
     h2["Cookie"] = cookie_pair(c1b)
-out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h2))
+out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h2, ""))
 nox.test.assert_eq_int(out.status, 200, "logout")
 cout: str | None = nyx.testing.header(out, "Set-Cookie")
 nox.test.assert_true(cout != None, "logout Set-Cookie")
@@ -124,7 +124,7 @@ if cout != None:
     nox.test.assert_true(nox.strings.contains(cout, "Max-Age=0"), "cookie expired")
 
 nyx.metrics.reset()
-me2: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}))
+me2: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", {}, ""))
 nox.test.assert_eq_int(me2.status, 200, "me2")
 nox.test.assert_true(nyx.metrics.requests() >= 1, "metrics without request log")
 
@@ -148,11 +148,11 @@ def setup2(application: Application) -> None:
 app2: Application = nyx.app.boot(cfg2, setup2)
 hx: dict[str, str] = {}
 hx["X-Forwarded-For"] = "1.2.3.4"
-r_a: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx))
-r_b: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx))
+r_a: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx, ""))
+r_b: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx, ""))
 hx2: dict[str, str] = {}
 hx2["X-Forwarded-For"] = "9.9.9.9"
-r_c: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx2))
+r_c: HttpResponse = nyx.app.dispatch(app2, HttpRequest("GET", "/", "", hx2, ""))
 nox.test.assert_eq_int(r_a.status, 200, "rl a")
 nox.test.assert_eq_int(r_b.status, 200, "rl b")
 nox.test.assert_eq_int(r_c.status, 429, "xff spoof ignored")

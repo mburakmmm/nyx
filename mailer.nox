@@ -28,8 +28,7 @@ from nyx.config import Config
 import nox.smtp
 
 class MailerError(Exception):
-    def __init__(self: MailerError, message: str) -> None:
-        self.message = message
+    pass
 
 class Mail:
     def __init__(self: Mail, to: str, from_addr: str, subject: str, body: str, html_body: str) -> None:

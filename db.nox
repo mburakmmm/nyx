@@ -36,8 +36,7 @@ from nox.db import Row
 from nox.db import Row as PgRow
 
 class DbError(Exception):
-    def __init__(self: DbError, message: str) -> None:
-        self.message = message
+    pass
 
 def _drop_prefix(s: str, n: int) -> str:
     out: str = ""

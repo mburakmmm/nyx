@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.18.0 · **License:** MIT · **Requires Nox ≥ 1.104.0** (CI **1.104.0**)  
+**Version:** 0.19.0 · **License:** MIT · **Requires Nox ≥ 1.142.3** (CI **1.142.3**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.18.0"
+      "ref": "v0.19.0"
     }
   ]
 }
@@ -165,12 +165,21 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.19.0 — Nox 1.142 pin (not 1.0)
+- Requires **Nox ≥ 1.142.3** (CI **1.142.3**, built for `x86-64-v3` plus qbe)
+- `HttpRequest.peer_addr` (`"ip:port"`, Nox 1.127) is the rate-limit client key when trust is off. Empty peer (tests, `dispatch_from_parts`) still shares the `"direct"` bucket
+- `NYX_TRUSTED_PROXIES` is an IP allowlist: `X-Forwarded-For` is used only when the connecting IP is in that list. Empty list + `NYX_TRUST_X_FORWARDED_FOR=1` keeps the previous “operator asserts the edge” behavior
+- Nyx `*Error` types no longer override `__init__`, so caught exceptions carry `Exception.line` (Nox 1.126). Development 500 JSON/HTML includes `line`; production stays generic
+- `nyx.jwt` stays (exp/nbf/iat). `nox.jwt` is HS256-only and does not check those claims
+- Nox 1.122 no longer wraps `main` in a fiber just because `TaskLocal` exists. `nyx.runtime` keeps request state in a module box on that root path; connection fibers still use `TaskLocal`
+- Gmail/Outlook SMTP TLS and `nox.orm` as the Nyx model remain out of scope
+
 ### 0.18.0 — Nox 1.104 pin (not 1.0)
 - Requires **Nox ≥ 1.104.0** (CI **1.104.0**)
 - Mailer uses `nox.smtp`: default immediate TLS (465); `NYX_MAIL_SMTP_STARTTLS=1` for plain TCP then STARTTLS. HTML `to_eml` is preserved (`nox.smtp.send` is plain-text only)
 - Gmail 465/587 and Office365 587 can still fail inside `nox.tls` with `TlsUnexpectedMessage`; the API is wired, those servers are not claimed to work
 - `Statement` imports go through `nox.db` (sqlite and postgres share the class). `nyx.model` / `nyx.pg_model` SQL stays split (`?` vs `$1`); `nox.orm` is not the Nyx model
-- Peer IP and caught-exception line are still absent
+- Peer IP and caught-exception line land in 0.19.0
 
 ### 0.17.0 — Nox 1.27–1.29 M:N / `--release` (not 1.0)
 - Requires **Nox ≥ 1.29.0** (CI **1.29.11**)
@@ -314,7 +323,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.104.0** (CI **1.104.0**): TaskLocal, Exception, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- Requires **Nox ≥ 1.142.3** (CI **1.142.3**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
@@ -323,7 +332,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
 - TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587). Gmail/Outlook may fail in `nox.tls` (`TlsUnexpectedMessage`)
 - Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
-- Rate limit: default ignores XFF; set `NYX_TRUST_X_FORWARDED_FOR=1` only behind a stripping edge (Nox has no peer IP yet). Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
+- Rate limit: a real `peer_addr` is the client key. `NYX_TRUST_X_FORWARDED_FOR=1` uses the first XFF hop; with `NYX_TRUSTED_PROXIES` set, only those connecting IPs may supply XFF. Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
 - **Request state** uses `TaskLocal` (Nox ≥ 1.24) — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)

@@ -8,4 +8,4 @@ def home(ctx: Context) -> HttpResponse:
 
 router: Router = Router()
 router.get("/", home)
-print(router.dispatch(HttpRequest("GET", "/", "", {})).body)
+print(router.dispatch(HttpRequest("GET", "/", "", {}, "")).body)

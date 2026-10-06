@@ -40,7 +40,7 @@ cfg.session_store = "cookie"
 cfg.metrics_enabled = False
 cfg.log_requests = False
 app: Application = nyx.app.boot(cfg, setup)
-bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/boom", "", {}))
+bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/boom", "", {}, ""))
 nox.test.assert_eq_int(bad.status, 500, "boom 500")
 nox.test.assert_true(len(bad.body) > 0, "error body")
 nyx.app.shutdown(app)

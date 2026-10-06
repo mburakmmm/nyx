@@ -1,6 +1,6 @@
-# Nyx 0.18 — Deployment guide
+# Nyx 0.19 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.104.0**.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.142.3**.
 
 ## 1. Process model
 
@@ -108,9 +108,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.18.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.19.0" }
 ```
 
-Requires **noxc ≥ 1.104.0** (CI pin **1.104.0**).
+Requires **noxc ≥ 1.142.3** (CI pin **1.142.3**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır.
 
 SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. Gmail 465/587 and Office365 587 can fail in `nox.tls` with `TlsUnexpectedMessage`; do not treat those hosts as supported.

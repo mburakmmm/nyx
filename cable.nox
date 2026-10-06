@@ -34,8 +34,7 @@ import nyx.session
 from nox.db import Row as SqliteRow
 
 class CableError(Exception):
-    def __init__(self: CableError, message: str) -> None:
-        self.message = message
+    pass
 
 class Message:
     id: int

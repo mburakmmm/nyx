@@ -55,7 +55,7 @@ headers: dict[str, str] = {}
 headers["Content-Type"] = "application/x-www-form-urlencoded"
 reg: HttpResponse = nyx.app.dispatch(
     app,
-    HttpRequest("POST", "/register", "email=dog@example.com&password=password1", headers)
+    HttpRequest("POST", "/register", "email=dog@example.com&password=password1", headers, "")
 )
 nox.test.assert_eq_int(reg.status, 201, "register")
 
@@ -74,7 +74,7 @@ if set_cookie != None:
 
 me_headers: dict[str, str] = {}
 me_headers["Cookie"] = cookie_hdr
-me_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", me_headers))
+me_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", me_headers, ""))
 nox.test.assert_eq_int(me_resp.status, 200, "me")
 nox.test.assert_true(nox.strings.contains(me_resp.body, "user_id"), "me body")
 
@@ -83,7 +83,7 @@ login_headers["Content-Type"] = "application/x-www-form-urlencoded"
 login_headers["Cookie"] = cookie_hdr
 login_resp: HttpResponse = nyx.app.dispatch(
     app,
-    HttpRequest("POST", "/login", "email=dog@example.com&password=password1", login_headers)
+    HttpRequest("POST", "/login", "email=dog@example.com&password=password1", login_headers, "")
 )
 nox.test.assert_eq_int(login_resp.status, 200, "login")
 login_cookie: str | None = nyx.testing.header(login_resp, "Set-Cookie")
@@ -100,7 +100,7 @@ if login_cookie != None:
             lh = lh + login_cookie[li]
             li = li + 1
     out_headers["Cookie"] = lh
-out_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", out_headers))
+out_resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", out_headers, ""))
 nox.test.assert_eq_int(out_resp.status, 200, "logout")
 out_cookie: str | None = nyx.testing.header(out_resp, "Set-Cookie")
 nox.test.assert_true(out_cookie != None, "logout cookie")

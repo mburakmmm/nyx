@@ -12,7 +12,7 @@ nox.test.assert_eq_str(q["body"], "There", "body")
 
 headers: dict[str, str] = {}
 headers["Content-Type"] = "application/x-www-form-urlencoded"
-req: HttpRequest = HttpRequest("POST", "/posts?src=web", "title=Ok&body=Yes", headers)
+req: HttpRequest = HttpRequest("POST", "/posts?src=web", "title=Ok&body=Yes", headers, "")
 form: dict[str, str] = nyx.params.from_request(req)
 nox.test.assert_eq_str(form["src"], "web", "query merge")
 nox.test.assert_eq_str(form["title"], "Ok", "form title")
@@ -59,7 +59,7 @@ nox.test.assert_eq_int(len(email_ok), 0, "validate_email ok")
 
 mh: dict[str, str] = {}
 mh["Content-Type"] = "multipart/form-data; boundary=x"
-mreq: HttpRequest = HttpRequest("POST", "/upload?x=1", "ignored-body", mh)
+mreq: HttpRequest = HttpRequest("POST", "/upload?x=1", "ignored-body", mh, "")
 mp: dict[str, str] = nyx.params.from_request(mreq)
 nox.test.assert_eq_str(mp["x"], "1", "multipart keeps query only")
 try:

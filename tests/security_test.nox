@@ -8,7 +8,7 @@ from nyx.config import Config
 
 nyx.runtime.begin("req-security-test", 0, "en")
 
-req: HttpRequest = HttpRequest("GET", "/", "", {})
+req: HttpRequest = HttpRequest("GET", "/", "", {}, "")
 ctx: Context = Context(req, {})
 base: HttpResponse = HttpResponse(200, "ok", {})
 

@@ -12,8 +12,7 @@ import nox.strings
 import nyx.base64
 
 class JwtError(Exception):
-    def __init__(self: JwtError, message: str) -> None:
-        self.message = message
+    pass
 
 def _header_json() -> str:
     return "{\"alg\":\"HS256\",\"typ\":\"JWT\"}"

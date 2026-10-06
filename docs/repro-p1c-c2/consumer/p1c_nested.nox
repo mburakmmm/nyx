@@ -11,6 +11,6 @@ def make_mw(flag: str) -> (Context) -> HttpResponse | None:
     return handler
 
 mw: (Context) -> HttpResponse | None = make_mw("x")
-ctx: Context = Context(HttpRequest("GET", "/", "", {}), {})
+ctx: Context = Context(HttpRequest("GET", "/", "", {}, ""), {})
 ignore: HttpResponse | None = mw(ctx)
 print("should not print")

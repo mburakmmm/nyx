@@ -8,8 +8,7 @@ from nox.db import Statement
 from nox.db import Row
 
 class RateLimitError(Exception):
-    def __init__(self: RateLimitError, message: str) -> None:
-        self.message = message
+    pass
 
 class MemoryStore:
     keys: list[str]

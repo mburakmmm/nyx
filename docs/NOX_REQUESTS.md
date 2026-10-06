@@ -1,7 +1,7 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.18+ Nox 1.104 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **1.104.0**.
+# Nyx 0.19+ Nox 1.142 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **1.142.3**.
 
 ## Kapandı (Nox 1.75–1.76) — smtp / Statement
 
@@ -29,15 +29,16 @@
 | Exception tabanı + satır/tip raporu (N5 kısmi) | **1.25.0** | `*Error(Exception)`; dispatch `except Exception`; unhandled: `Sinif (satir N)` |
 | `dict[int, class]` / `dict[int, Record]` | **1.26.0** | `assoc.preload_belongs_to_map`, `orm.index_records_by_id` |
 
+## Kapandı (Nox 1.126–1.127) — peer / satır
+
+| İstek | Nox | Nyx |
+|---|---|---|
+| `HttpRequest.peer_addr` (`"ip:port"`, ctor 5. argüman) | **1.127.0** | rate-limit anahtarı. Trust kapalı: peer IP. Boş peer: `"direct"`. `NYX_TRUSTED_PROXIES` doluysa XFF yalnızca o IP’lerden |
+| `Exception.line` (raise anı) | **1.126.0** | `*Error` `__init__` yazmaz; development 500 `line` alanı. Production genel 500 |
+
+`nyx.jwt` durur: exp/nbf/iat kontrolü var. `nox.jwt` (1.126) yalnızca HS256, claim süresi yok.
+
 ## Hâlâ açık / kısmi
-
-### Peer / remote address
-- Trusted-proxy doğrulaması için `HttpRequest` peer IP hâlâ yok.
-- Nyx: `NYX_TRUST_X_FORWARDED_FOR` dürüst bayrak (peer yokken gerçek proxy IP doğrulanamaz).
-
-### Exception source span
-- 1.25 yakalanmamış istisnada sınıf + satır verir; yakalanmış `Exception` üzerinde satır alanı yok.
-- Nyx: `server_error_detail_for(kind, message)` — satır API gelince zenginleşir.
 
 ### Ortak dialect ORM
 - `nox.db.Statement` ortak (1.76). SQL yer tutucuları ve doğrulama/`Attributes`/`Record` yüzeyi sürücüye özel kalır → `model` / `pg_model` ayrı.
@@ -45,7 +46,7 @@
 
 ## M:N / `--release` entegrasyon kuralları (Nyx)
 
-1. **İstek durumu:** yalnızca `TaskLocal` (`nyx.runtime`) — modül-global session/user yok.
+1. **İstek durumu:** fiber’da `TaskLocal` (`nyx.runtime`). Nox ≥ 1.122 kök `main` fiber değil; o yolda modül kutusu. Fiber’lar birbirinin oturumunu görmez.
 2. **Sayaçlar:** `nyx.metrics` → kilitli `nox.sharedmem.SharedBuffer` (modül-global `int++` M:N’de yarışır).
 3. **Rate limit:** `NYX_WORKERS>1` iken varsayılan store `db` (`jobs_db`); memory store worker-local kalır.
 4. **Serve:** `nyx.server.serve_mode` → `serve` / `serve_tls` / `serve_multicore` / `serve_multicore_tls` (+ WS varyantları).
@@ -61,4 +62,4 @@
 | on_shutdown + nested Router | 1.18.1+ |
 
 ## İzleme
-`noxc upgrade` (≥1.104.0) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.
+`noxc upgrade` (≥1.142.3) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.

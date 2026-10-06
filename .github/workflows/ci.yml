@@ -18,7 +18,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nox-lang
-          key: nox-v1.104.0-x86_64_v3-qbe
+          key: nox-v1.142.3-x86_64_v3-qbe
 
       - name: Install Nox
         run: |
@@ -97,7 +97,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nox-lang
-          key: nox-v1.104.0-x86_64_v3-qbe
+          key: nox-v1.142.3-x86_64_v3-qbe
       - name: Install Nox
         run: |
           if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then

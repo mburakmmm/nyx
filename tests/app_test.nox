@@ -29,15 +29,15 @@ cfg.csrf_enabled = False
 cfg.log_requests = False
 
 application: Application = nyx.app.boot(cfg, setup)
-req: HttpRequest = HttpRequest("GET", "/", "", {})
+req: HttpRequest = HttpRequest("GET", "/", "", {}, "")
 resp: HttpResponse = nyx.app.dispatch(application, req)
 nox.test.assert_eq_int(resp.status, 200, "status")
 nox.test.assert_eq_str(resp.body, "ok", "body")
 
 # health + ready
-h: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/health", "", {}))
+h: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/health", "", {}, ""))
 nox.test.assert_eq_int(h.status, 200, "health")
-r: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/ready", "", {}))
+r: HttpResponse = nyx.app.dispatch(application, HttpRequest("GET", "/ready", "", {}, ""))
 nox.test.assert_eq_int(r.status, 200, "ready")
 nox.test.assert_eq_str(application.dialect, "sqlite", "dialect")
 

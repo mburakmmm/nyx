@@ -47,8 +47,7 @@ from nyx.model import ModelError
 from nyx.rate_limit import MemoryStore
 
 class AppError(Exception):
-    def __init__(self: AppError, message: str) -> None:
-        self.message = message
+    pass
 
 _rate_store: MemoryStore = nyx.rate_limit.open_memory()
 
@@ -270,20 +269,54 @@ def _first_xff_ip(raw: str) -> str:
         return ""
     return nox.strings.trim(parts[0])
 
+def _peer_ip(peer_addr: str) -> str:
+    if len(peer_addr) == 0:
+        return ""
+    parts: list[str] = nox.strings.split(peer_addr, ":")
+    if len(parts) == 0:
+        return ""
+    return parts[0]
+
+def _proxy_allows(cfg: Config, peer_ip: str) -> bool:
+    if len(peer_ip) == 0:
+        return False
+    parts: list[str] = nox.strings.split(cfg.trusted_proxies, ",")
+    i: int = 0
+    while i < len(parts):
+        if nox.strings.trim(parts[i]) == peer_ip:
+            return True
+        i = i + 1
+    return False
+
 def _client_key(cfg: Config, ctx: Context) -> str:
-    # Nox has no peer/remote address yet. When trust_x_forwarded_for is false,
-    # all clients share the "direct" bucket. When true, operator asserts the
-    # edge strips/rewrites X-Forwarded-For (NYX_TRUST_X_FORWARDED_FOR=1, or
-    # legacy non-empty NYX_TRUSTED_PROXIES).
+    # peer_addr is "ip:port" (Nox >= 1.127). Empty peer (constructed tests,
+    # dispatch_from_parts) keeps the shared "direct" bucket.
+    # trust off: real peers are keyed by their own IP; X-Forwarded-For is ignored.
+    # trust on + empty trusted_proxies: operator asserts the edge; first XFF hop.
+    # trust on + trusted_proxies: XFF only when the connecting IP is in that list.
+    peer: str = _peer_ip(ctx.request.peer_addr)
     if not cfg.trust_x_forwarded_for:
-        return "direct"
+        if len(peer) == 0:
+            return "direct"
+        return peer
+    use_xff: bool = True
+    if len(cfg.trusted_proxies) > 0:
+        use_xff = _proxy_allows(cfg, peer)
+    if not use_xff:
+        if len(peer) == 0:
+            return "direct"
+        return peer
     xf: str | None = _header_get(ctx.request.headers, "X-Forwarded-For")
     if xf == None:
-        return "direct"
+        if len(peer) == 0:
+            return "direct"
+        return peer
     else:
         ip: str = _first_xff_ip(xf)
         if len(ip) == 0:
-            return "direct"
+            if len(peer) == 0:
+                return "direct"
+            return peer
         return ip
 
 def _is_auth_path(path: str) -> bool:
@@ -590,8 +623,8 @@ def _log_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
         return resp
     return handler
 
-def _error_response(ctx: Context, cfg: Config, kind: str, message: str) -> HttpResponse:
-    return nyx.ctrl.server_error_detail_for(ctx, cfg, kind, message)
+def _error_response(ctx: Context, cfg: Config, kind: str, message: str, line: int) -> HttpResponse:
+    return nyx.ctrl.server_error_detail_for(ctx, cfg, kind, message, line)
 
 EMPTY_HEADERS: dict[str, str] = {}
 
@@ -608,7 +641,7 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
         nyx.runtime.begin(rid, started, cfg.locale)
         nyx.runtime.set_request_target(req.target)
     path: str = nyx.params.path_only(req.target)
-    routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers)
+    routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers, req.peer_addr)
     empty_params: dict[str, str] = {}
     err_ctx: Context = Context(routed, empty_params)
     resp: HttpResponse = HttpResponse(500, "", {})
@@ -618,13 +651,13 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
             resp = application.router.dispatch(routed)
             counted = True
         except ModelError as e:
-            resp = _error_response(err_ctx, cfg, "ModelError", e.message)
+            resp = _error_response(err_ctx, cfg, "ModelError", e.message, e.line)
         except AppError as e:
-            resp = _error_response(err_ctx, cfg, "AppError", e.message)
+            resp = _error_response(err_ctx, cfg, "AppError", e.message, e.line)
         except DbError as e:
-            resp = _error_response(err_ctx, cfg, "DbError", e.message)
+            resp = _error_response(err_ctx, cfg, "DbError", e.message, e.line)
         except Exception as e:
-            resp = _error_response(err_ctx, cfg, "Exception", e.message)
+            resp = _error_response(err_ctx, cfg, "Exception", e.message, e.line)
         # Router after-middleware may not run on exceptions caught here.
         if not counted and cfg.metrics_enabled:
             nyx.metrics.inc_requests()
@@ -644,5 +677,5 @@ def dispatch_from_parts(
     body: str,
     headers: dict[str, str]
 ) -> HttpResponse:
-    req: HttpRequest = HttpRequest(method, target, body, headers)
+    req: HttpRequest = HttpRequest(method, target, body, headers, "")
     return dispatch(application, req)

@@ -7,8 +7,7 @@ import nyx.model
 from nyx.model import Attributes, Record
 
 class OrmError(Exception):
-    def __init__(self: OrmError, message: str) -> None:
-        self.message = message
+    pass
 
 def create_attrs_sqlite(db: Connection, table: str, attrs: Attributes) -> int:
     return nyx.model.create_attrs(db, table, attrs)

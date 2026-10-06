@@ -116,7 +116,7 @@ else:
     email: str = "e2e_" + nox.uuid.uuid4() + "@example.com"
     body_reg: str = "email=" + email + "&password=password1"
     r_reg: HttpResponse = nyx.app.dispatch(
-        app, HttpRequest("POST", "/register", body_reg, h0)
+        app, HttpRequest("POST", "/register", body_reg, h0, "")
     )
     nox.test.assert_eq_int(r_reg.status, 200, "register")
     c_reg: str | None = nyx.testing.header(r_reg, "Set-Cookie")
@@ -129,7 +129,7 @@ else:
     h1: dict[str, str] = {}
     if c_reg != None:
         h1["Cookie"] = cookie_pair(c_reg)
-    me1: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h1))
+    me1: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h1, ""))
     nox.test.assert_eq_int(me1.status, 200, "me1")
     nox.test.assert_true(nox.strings.contains(me1.body, "user_id"), "session has user")
 
@@ -138,7 +138,7 @@ else:
     if c_reg != None:
         h2["Cookie"] = cookie_pair(c_reg)
     r_login: HttpResponse = nyx.app.dispatch(
-        app, HttpRequest("POST", "/login", "email=" + email + "&password=password1", h2)
+        app, HttpRequest("POST", "/login", "email=" + email + "&password=password1", h2, "")
     )
     nox.test.assert_eq_int(r_login.status, 200, "login")
     c2: str | None = nyx.testing.header(r_login, "Set-Cookie")
@@ -154,7 +154,7 @@ else:
     h3: dict[str, str] = {}
     if c2 != None:
         h3["Cookie"] = cookie_pair(c2)
-    r_out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h3))
+    r_out: HttpResponse = nyx.app.dispatch(app, HttpRequest("POST", "/logout", "", h3, ""))
     nox.test.assert_eq_int(r_out.status, 200, "logout")
     cout: str | None = nyx.testing.header(r_out, "Set-Cookie")
     nox.test.assert_true(cout != None, "expire cookie")
@@ -166,7 +166,7 @@ else:
     h4: dict[str, str] = {}
     if c2 != None:
         h4["Cookie"] = cookie_pair(c2)
-    me_bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h4))
+    me_bad: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/me", "", h4, ""))
     nox.test.assert_eq_int(me_bad.status, 200, "me after logout")
     nox.test.assert_true(not nox.strings.contains(me_bad.body, "\"user_id\""), "no user")
 

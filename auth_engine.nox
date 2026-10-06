@@ -16,8 +16,7 @@ import nyx.runtime
 from nyx.model import Attributes, ModelError, Record
 
 class AuthEngineError(Exception):
-    def __init__(self: AuthEngineError, message: str) -> None:
-        self.message = message
+    pass
 
 def max_failed_attempts() -> int:
     return 5

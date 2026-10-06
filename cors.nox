@@ -7,8 +7,7 @@ from nox.router import Context
 import nyx.response
 
 class CorsError(Exception):
-    def __init__(self: CorsError, message: str) -> None:
-        self.message = message
+    pass
 
 class CorsConfig:
     # Fetch/CORS spesifikasyonu 'Access-Control-Allow-Origin: *' ile

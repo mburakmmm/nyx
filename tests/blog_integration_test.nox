@@ -71,7 +71,7 @@ cfg.log_requests = False
 application: Application = nyx.app.boot(cfg, setup)
 nyx.app.db(application).execute("CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
 
-get_req: HttpRequest = HttpRequest("GET", "/", "", {})
+get_req: HttpRequest = HttpRequest("GET", "/", "", {}, "")
 get_resp: HttpResponse = nyx.app.dispatch(application, get_req)
 nox.test.assert_eq_int(get_resp.status, 200, "index 200")
 nox.test.assert_true(nox.strings.contains(get_resp.body, "name=\"_csrf\""), "index CSRF field")
@@ -97,7 +97,7 @@ nox.test.assert_true(len(csrf_tok) > 0, "csrf token extracted")
 
 bad_headers: dict[str, str] = {}
 bad_headers["Content-Type"] = "application/x-www-form-urlencoded"
-bad_req: HttpRequest = HttpRequest("POST", "/posts", "title=Nope", bad_headers)
+bad_req: HttpRequest = HttpRequest("POST", "/posts", "title=Nope", bad_headers, "")
 bad_resp: HttpResponse = nyx.app.dispatch(application, bad_req)
 nox.test.assert_eq_int(bad_resp.status, 403, "missing csrf -> 403")
 
@@ -114,7 +114,7 @@ if cookie != None:
             cookie_hdr = cookie_hdr + cookie[ci]
             ci = ci + 1
     ok_headers["Cookie"] = cookie_hdr
-ok_req: HttpRequest = HttpRequest("POST", "/posts", "title=Hello&_csrf=" + csrf_tok, ok_headers)
+ok_req: HttpRequest = HttpRequest("POST", "/posts", "title=Hello&_csrf=" + csrf_tok, ok_headers, "")
 ok_resp: HttpResponse = nyx.app.dispatch(application, ok_req)
 nox.test.assert_eq_int(ok_resp.status, 302, "create redirects")
 loc: str | None = nyx.testing.header(ok_resp, "Location")
@@ -129,7 +129,7 @@ nox.test.assert_true(nox.strings.contains(get2.body, "count=1"), "post created")
 # Jeton yoksa 403 (handler'a ulasilmamali).
 api_headers: dict[str, str] = {}
 api_headers["Content-Type"] = "application/json"
-api_req: HttpRequest = HttpRequest("POST", "/api/ping", "{}", api_headers)
+api_req: HttpRequest = HttpRequest("POST", "/api/ping", "{}", api_headers, "")
 api_resp: HttpResponse = nyx.app.dispatch(application, api_req)
 nox.test.assert_eq_int(api_resp.status, 403, "/api/ kayitli rota da CSRF ister (default)")
 

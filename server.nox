@@ -16,8 +16,7 @@ import nox.fs
 from nyx.config import Config
 
 class ServerError(Exception):
-    def __init__(self: ServerError, message: str) -> None:
-        self.message = message
+    pass
 
 def has_tls(cfg: Config) -> bool:
     if len(cfg.tls_cert_path) == 0:

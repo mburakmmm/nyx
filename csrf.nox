@@ -18,8 +18,7 @@ from nox.http import HttpResponse
 from nox.router import Context
 
 class CsrfError(Exception):
-    def __init__(self: CsrfError, message: str) -> None:
-        self.message = message
+    pass
 
 def _sign(secret: str, payload: str) -> str:
     return nyx.base64.encode_hex_url(nox.crypto.hmac_sha256(secret, payload))

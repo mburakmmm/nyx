@@ -49,12 +49,12 @@ nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "serve ws_tls
 
 headers: dict[str, str] = {}
 headers["Content-Type"] = "application/x-www-form-urlencoded"
-req: HttpRequest = HttpRequest("POST", "/items/1", "_method=DELETE", headers)
+req: HttpRequest = HttpRequest("POST", "/items/1", "_method=DELETE", headers, "")
 resp: HttpResponse = nyx.app.dispatch(app, req)
 nox.test.assert_eq_int(resp.status, 200, "override status")
 nox.test.assert_eq_str(resp.body, "destroyed", "override destroy")
 
-req2: HttpRequest = HttpRequest("POST", "/items/2", "_method=PUT", headers)
+req2: HttpRequest = HttpRequest("POST", "/items/2", "_method=PUT", headers, "")
 resp2: HttpResponse = nyx.app.dispatch(app, req2)
 nox.test.assert_eq_str(resp2.body, "updated", "override update")
 
@@ -76,11 +76,13 @@ cfg2.auto_migrate = False
 cfg2.db_path = ":memory:"
 cfg2.jobs_db_path = ":memory:"
 app2: Application = nyx.app.boot(cfg2, setup_err)
-err_req: HttpRequest = HttpRequest("GET", "/boom", "", boom_headers)
+err_req: HttpRequest = HttpRequest("GET", "/boom", "", boom_headers, "")
 err_resp: HttpResponse = nyx.app.dispatch(app2, err_req)
 nox.test.assert_eq_int(err_resp.status, 500, "err status")
 nox.test.assert_true(nox.strings.contains(err_resp.body, "detail-me"), "err message")
 nox.test.assert_true(nox.strings.contains(err_resp.body, "AppError"), "err kind")
+nox.test.assert_true(nox.strings.contains(err_resp.body, "\"line\":"), "err line field")
+nox.test.assert_true(not nox.strings.contains(err_resp.body, "\"line\":0"), "err line set")
 nyx.app.shutdown(app2)
 
 nyx.app.shutdown(app)

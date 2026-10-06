@@ -27,7 +27,7 @@ nyx.runtime.begin("rid-1", 0, "en")
 cfg_sec: Config = nyx.config.defaults("development")
 cfg_sec.request_id = False
 h_off: (Context, HttpResponse) -> HttpResponse = nyx.security.headers_after(cfg_sec)
-req: HttpRequest = HttpRequest("GET", "/", "", {})
+req: HttpRequest = HttpRequest("GET", "/", "", {}, "")
 ctx: Context = Context(req, {})
 r0: HttpResponse = h_off(ctx, HttpResponse(200, "ok", {}))
 try:
@@ -57,7 +57,7 @@ cfg.auto_migrate = False
 cfg.db_path = ":memory:"
 cfg.jobs_db_path = ":memory:"
 app: Application = nyx.app.boot(cfg, setup_plain)
-ping_req: HttpRequest = HttpRequest("GET", "/ping", "", {})
+ping_req: HttpRequest = HttpRequest("GET", "/ping", "", {}, "")
 ping_resp: HttpResponse = nyx.app.dispatch(app, ping_req)
 nox.test.assert_eq_int(ping_resp.status, 200, "ping status")
 try:

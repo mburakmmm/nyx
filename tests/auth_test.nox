@@ -14,7 +14,7 @@ token: str = nyx.jwt.encode(secret, "{\"sub\":\"u1\"}", now + 3600)
 mw: (Context) -> HttpResponse | None = nyx.auth.require_bearer(secret)
 
 h0: dict[str, str] = {}
-req0: HttpRequest = HttpRequest("GET", "/me", "", h0)
+req0: HttpRequest = HttpRequest("GET", "/me", "", h0, "")
 ctx0: Context = Context(req0, {})
 r0: HttpResponse | None = mw(ctx0)
 nox.test.assert_true(r0 != None, "missing auth")
@@ -23,30 +23,30 @@ if r0 != None:
 
 h1: dict[str, str] = {}
 h1["Authorization"] = "Bearer " + token
-req1: HttpRequest = HttpRequest("GET", "/me", "", h1)
+req1: HttpRequest = HttpRequest("GET", "/me", "", h1, "")
 ctx1: Context = Context(req1, {})
 nox.test.assert_true(mw(ctx1) == None, "valid bearer")
 
 h2: dict[str, str] = {}
 h2["Authorization"] = "Bearer totally-invalid"
-req2: HttpRequest = HttpRequest("GET", "/me", "", h2)
+req2: HttpRequest = HttpRequest("GET", "/me", "", h2, "")
 ctx2: Context = Context(req2, {})
 r2: HttpResponse | None = mw(ctx2)
 nox.test.assert_true(r2 != None, "invalid token")
 
 skip: (Context) -> HttpResponse | None = nyx.auth.require_bearer_unless(secret, "/login")
 h3: dict[str, str] = {}
-req3: HttpRequest = HttpRequest("POST", "/login", "", h3)
+req3: HttpRequest = HttpRequest("POST", "/login", "", h3, "")
 ctx3: Context = Context(req3, {})
 nox.test.assert_true(skip(ctx3) == None, "exempt login")
 
 h3q: dict[str, str] = {}
-req3q: HttpRequest = HttpRequest("POST", "/login?next=/", "", h3q)
+req3q: HttpRequest = HttpRequest("POST", "/login?next=/", "", h3q, "")
 ctx3q: Context = Context(req3q, {})
 nox.test.assert_true(skip(ctx3q) == None, "exempt login with query")
 
 h3x: dict[str, str] = {}
-req3x: HttpRequest = HttpRequest("POST", "/login/extra", "", h3x)
+req3x: HttpRequest = HttpRequest("POST", "/login/extra", "", h3x, "")
 ctx3x: Context = Context(req3x, {})
 r3x: HttpResponse | None = skip(ctx3x)
 nox.test.assert_true(r3x != None, "/login prefix /login/extra muaf tutmaz")
@@ -56,11 +56,11 @@ exempts.append("/login")
 exempts.append("/health")
 multi: (Context) -> HttpResponse | None = nyx.auth.require_bearer_unless_paths(secret, exempts)
 h_health: dict[str, str] = {}
-req_health: HttpRequest = HttpRequest("GET", "/health", "", h_health)
+req_health: HttpRequest = HttpRequest("GET", "/health", "", h_health, "")
 ctx_health: Context = Context(req_health, {})
 nox.test.assert_true(multi(ctx_health) == None, "unless_paths health muaf")
 h_me: dict[str, str] = {}
-req_me: HttpRequest = HttpRequest("GET", "/me", "", h_me)
+req_me: HttpRequest = HttpRequest("GET", "/me", "", h_me, "")
 ctx_me: Context = Context(req_me, {})
 r_me: HttpResponse | None = multi(ctx_me)
 nox.test.assert_true(r_me != None, "unless_paths /me hala korumali")
@@ -77,14 +77,14 @@ session_mw: (Context) -> HttpResponse | None = nyx.auth.require_session(session_
 with_user_id: str = nyx.session.create(session_secret, "{\"user_id\":\"u1\"}", 3600)
 h_with_uid: dict[str, str] = {}
 h_with_uid["Cookie"] = "nyx_session=" + with_user_id
-req_with_uid: HttpRequest = HttpRequest("GET", "/me", "", h_with_uid)
+req_with_uid: HttpRequest = HttpRequest("GET", "/me", "", h_with_uid, "")
 ctx_with_uid: Context = Context(req_with_uid, {})
 nox.test.assert_true(session_mw(ctx_with_uid) == None, "user_id iceren oturum gecer")
 
 without_user_id: str = nyx.session.create(session_secret, "{\"other\":\"x\"}", 3600)
 h_without_uid: dict[str, str] = {}
 h_without_uid["Cookie"] = "nyx_session=" + without_user_id
-req_without_uid: HttpRequest = HttpRequest("GET", "/me", "", h_without_uid)
+req_without_uid: HttpRequest = HttpRequest("GET", "/me", "", h_without_uid, "")
 ctx_without_uid: Context = Context(req_without_uid, {})
 r_without_uid: HttpResponse | None = session_mw(ctx_without_uid)
 nox.test.assert_true(r_without_uid != None, "user_id icermeyen oturum reddedilmeli")

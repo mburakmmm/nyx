@@ -15,26 +15,26 @@ router.post("/items/:id", items_post)
 headers: dict[str, str] = {}
 headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-plain_post: HttpRequest = HttpRequest("POST", "/items/1", "title=x", headers)
+plain_post: HttpRequest = HttpRequest("POST", "/items/1", "title=x", headers, "")
 plain_resp: HttpResponse = router.dispatch(plain_post)
 nox.test.assert_eq_int(plain_resp.status, 200, "duz POST 200 doner")
 nox.test.assert_eq_str(plain_resp.body, "method=POST", "_method yoksa etkin metod POST")
 
-put_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=PUT&title=y", headers)
+put_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=PUT&title=y", headers, "")
 put_resp: HttpResponse = router.dispatch(put_override)
 nox.test.assert_eq_str(put_resp.body, "method=PUT", "_method=PUT ile etkin metod PUT")
 
-delete_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=delete", headers)
+delete_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=delete", headers, "")
 delete_resp: HttpResponse = router.dispatch(delete_override)
 nox.test.assert_eq_str(delete_resp.body, "method=DELETE", "_method kucuk harfli 'delete' de calismali")
 
-bogus_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=TELEPORT", headers)
+bogus_override: HttpRequest = HttpRequest("POST", "/items/1", "_method=TELEPORT", headers, "")
 bogus_resp: HttpResponse = router.dispatch(bogus_override)
 nox.test.assert_eq_str(bogus_resp.body, "method=POST", "gecersiz _method degeri POST'a duser")
 
 # GET istekler bu POST-only rotayla eslesmez (gercek HTTP metodu router
 # seviyesinde ASLA degistirilmez).
-get_req: HttpRequest = HttpRequest("GET", "/items/1", "", {})
+get_req: HttpRequest = HttpRequest("GET", "/items/1", "", {}, "")
 get_resp: HttpResponse = router.dispatch(get_req)
 nox.test.assert_eq_int(get_resp.status, 404, "GET, POST-only rotayla eslesmemeli")
 

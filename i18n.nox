@@ -26,8 +26,7 @@ from nox.os import OsError
 from nox.json import JsonError
 
 class I18nError(Exception):
-    def __init__(self: I18nError, message: str) -> None:
-        self.message = message
+    pass
 
 def _locale_env_name(locale: str) -> str:
     return "NYX_I18N_LOCALE_" + locale

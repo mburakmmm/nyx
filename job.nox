@@ -30,8 +30,7 @@ from nyx.db import DbError
 from nox.db import Row
 
 class JobError(Exception):
-    def __init__(self: JobError, message: str) -> None:
-        self.message = message
+    pass
 
 def status_queued() -> str:
     return "queued"

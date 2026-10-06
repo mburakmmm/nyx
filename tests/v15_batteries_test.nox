@@ -100,7 +100,7 @@ cfg.csrf_enabled = False
 cfg.session_store = "db"
 cfg.metrics_enabled = True
 app: Application = nyx.app.boot(cfg, setup)
-req: HttpRequest = HttpRequest("GET", "/metrics", "", {})
+req: HttpRequest = HttpRequest("GET", "/metrics", "", {}, "")
 resp: HttpResponse = nyx.app.dispatch(app, req)
 nox.test.assert_eq_int(resp.status, 200, "metrics route")
 nyx.app.shutdown(app)

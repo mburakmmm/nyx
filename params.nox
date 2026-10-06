@@ -14,8 +14,7 @@ from nox.url import UrlError
 import nyx.runtime
 
 class ParamsError(Exception):
-    def __init__(self: ParamsError, message: str) -> None:
-        self.message = message
+    pass
 
 def _substr(s: str, start: int, end: int) -> str:
     out: str = ""

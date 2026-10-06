@@ -5,8 +5,7 @@
 import nox.strings
 
 class CookieError(Exception):
-    def __init__(self: CookieError, message: str) -> None:
-        self.message = message
+    pass
 
 def _is_forbidden_byte(b: int) -> bool:
     if b < 33:

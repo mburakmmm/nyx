@@ -33,7 +33,7 @@ nox.test.assert_true(nox.strings.contains(r3.body, "<html><body>"), "render_layo
 nox.test.assert_true(nox.strings.contains(r3.body, "<h1>Merhaba</h1>"), "render_layout govdesi view icermeli")
 
 no_headers: dict[str, str] = {}
-req_no_referer: HttpRequest = HttpRequest("GET", "/posts", "", no_headers)
+req_no_referer: HttpRequest = HttpRequest("GET", "/posts", "", no_headers, "")
 params_empty: dict[str, str] = {}
 ctx_no_referer: Context = Context(req_no_referer, params_empty)
 r4: HttpResponse = nyx.ctrl.redirect_back(ctx_no_referer, "/anasayfa")
@@ -42,7 +42,7 @@ nox.test.assert_eq_str(r4.headers["Location"], "/anasayfa", "referer yoksa fallb
 
 with_referer: dict[str, str] = {}
 with_referer["Referer"] = "/onceki-sayfa"
-req_with_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_referer)
+req_with_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_referer, "")
 ctx_with_referer: Context = Context(req_with_referer, params_empty)
 r5: HttpResponse = nyx.ctrl.redirect_back(ctx_with_referer, "/anasayfa")
 nox.test.assert_eq_str(r5.headers["Location"], "/onceki-sayfa", "referer varsa ona yonlendirmeli")
@@ -66,7 +66,7 @@ nox.test.assert_eq_str(r_scheme_embedded.headers["Location"], "/fallback", "'://
 
 with_evil_referer: dict[str, str] = {}
 with_evil_referer["Referer"] = "http://evil.example.com/phish"
-req_evil_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_evil_referer)
+req_evil_referer: HttpRequest = HttpRequest("GET", "/posts", "", with_evil_referer, "")
 ctx_evil_referer: Context = Context(req_evil_referer, params_empty)
 r_evil: HttpResponse = nyx.ctrl.redirect_back(ctx_evil_referer, "/anasayfa")
 nox.test.assert_eq_str(r_evil.headers["Location"], "/anasayfa", "redirect_back mutlak Referer'i reddedip fallback kullanmali")

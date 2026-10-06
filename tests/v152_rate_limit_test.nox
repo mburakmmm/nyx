@@ -28,11 +28,11 @@ cfg.log_requests = False
 app: Application = nyx.app.boot(cfg, setup)
 hx: dict[str, str] = {}
 hx["X-Forwarded-For"] = "1.2.3.4"
-r_a: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx))
-r_b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx))
+r_a: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx, ""))
+r_b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx, ""))
 hx2: dict[str, str] = {}
 hx2["X-Forwarded-For"] = "9.9.9.9"
-r_c: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx2))
+r_c: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx2, ""))
 nox.test.assert_eq_int(r_a.status, 200, "rl a")
 nox.test.assert_eq_int(r_b.status, 200, "rl b")
 nox.test.assert_eq_int(r_c.status, 429, "xff ignored without trust")
@@ -53,9 +53,9 @@ ha: dict[str, str] = {}
 ha["X-Forwarded-For"] = "10.0.0.1"
 hb: dict[str, str] = {}
 hb["X-Forwarded-For"] = "10.0.0.2"
-ra: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha))
-rb: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", hb))
-ra2: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha))
+ra: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha, ""))
+rb: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", hb, ""))
+ra2: HttpResponse = nyx.app.dispatch(app_t, HttpRequest("GET", "/", "", ha, ""))
 nox.test.assert_eq_int(ra.status, 200, "trust a")
 nox.test.assert_eq_int(rb.status, 200, "trust b other ip")
 nox.test.assert_eq_int(ra2.status, 429, "trust a limited")
@@ -72,9 +72,9 @@ cfg_db.rate_limit_store = "db"
 cfg_db.metrics_enabled = False
 cfg_db.log_requests = False
 app_db: Application = nyx.app.boot(cfg_db, setup)
-d1: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
-d2: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
-d3: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}))
+d1: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}, ""))
+d2: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}, ""))
+d3: HttpResponse = nyx.app.dispatch(app_db, HttpRequest("GET", "/", "", {}, ""))
 nox.test.assert_eq_int(d1.status, 200, "db rl1")
 nox.test.assert_eq_int(d2.status, 200, "db rl2")
 nox.test.assert_eq_int(d3.status, 429, "db rl3")

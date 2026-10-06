@@ -160,13 +160,13 @@ def server_error_for(ctx: Context) -> HttpResponse:
 
 # development: ayrıntılı HTML/JSON; production: generic 500.
 # 'cfg' - nyx.config.Config (is_development).
-# Nox >= 1.25: yakalanmamis istisnalar runtime'da "Sinif (satir N)" raporlar;
-# dispatch 'except Exception' ile message'i buraya tasir (satir alani Exception'da yok).
+# Nox >= 1.126: yakalanmis Exception.line raise anindaki kaynak satiri.
 def server_error_detail_for(
     ctx: Context,
     cfg: Config,
     kind: str,
-    message: str
+    message: str,
+    line: int
 ) -> HttpResponse:
     if not cfg.is_development():
         return server_error_for(ctx)
@@ -177,6 +177,7 @@ def server_error_detail_for(
         body: str = "{"
         body = body + "\"error\":" + nox.json.encode_string(kind) + ","
         body = body + "\"message\":" + nox.json.encode_string(message) + ","
+        body = body + "\"line\":" + str(line) + ","
         body = body + "\"request_id\":" + nox.json.encode_string(rid) + ","
         body = body + "\"method\":" + nox.json.encode_string(method) + ","
         body = body + "\"target\":" + nox.json.encode_string(target)
@@ -187,6 +188,7 @@ def server_error_detail_for(
     html_body = html_body + "<h1>Internal Server Error</h1>"
     html_body = html_body + "<p><b>Type:</b> " + nox.template.escape_html(kind) + "</p>"
     html_body = html_body + "<p><b>Message:</b> " + nox.template.escape_html(message) + "</p>"
+    html_body = html_body + "<p><b>Line:</b> " + str(line) + "</p>"
     html_body = html_body + "<p><b>Request ID:</b> " + nox.template.escape_html(rid) + "</p>"
     html_body = html_body + "<p><b>Request:</b> " + nox.template.escape_html(method + " " + target) + "</p>"
     html_body = html_body + "<p><b>Env:</b> " + nox.template.escape_html(cfg.env) + "</p>"

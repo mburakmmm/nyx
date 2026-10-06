@@ -8,8 +8,7 @@
 import nox.json
 
 class FlashError(Exception):
-    def __init__(self: FlashError, message: str) -> None:
-        self.message = message
+    pass
 
 def _drop_last(s: str) -> str:
     n: int = len(s)

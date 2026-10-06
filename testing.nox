@@ -24,7 +24,7 @@ def _copy_headers(src: dict[str, str]) -> dict[str, str]:
     return out
 
 def request(handler: (HttpRequest) -> HttpResponse, method: str, path: str, body: str, headers: dict[str, str]) -> HttpResponse:
-    req: HttpRequest = HttpRequest(method, path, body, headers)
+    req: HttpRequest = HttpRequest(method, path, body, headers, "")
     return handler(req)
 
 def get(handler: (HttpRequest) -> HttpResponse, path: str) -> HttpResponse:

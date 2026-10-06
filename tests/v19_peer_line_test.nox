@@ -1,0 +1,68 @@
+# 0.19 peer_addr client key + trusted proxy allowlist
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+from nyx.app import Application
+from nyx.config import Config
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "cookie"
+cfg.rate_limit_enabled = True
+cfg.rate_limit_max = 1
+cfg.rate_limit_window_ms = 60000
+cfg.trust_x_forwarded_for = False
+cfg.trusted_proxies = ""
+cfg.rate_limit_store = "memory"
+cfg.metrics_enabled = False
+cfg.log_requests = False
+app: Application = nyx.app.boot(cfg, setup)
+empty: dict[str, str] = {}
+p1: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.1:4000"))
+p2: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.2:4000"))
+p1b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.1:4001"))
+nox.test.assert_eq_int(p1.status, 200, "peer a")
+nox.test.assert_eq_int(p2.status, 200, "peer b other ip")
+nox.test.assert_eq_int(p1b.status, 429, "peer a limited")
+
+spoof: dict[str, str] = {}
+spoof["X-Forwarded-For"] = "1.2.3.4"
+sp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", spoof, "10.0.0.2:5000"))
+nox.test.assert_eq_int(sp.status, 429, "xff ignored when peer is real")
+
+cfg_p: Config = nyx.config.defaults("test")
+cfg_p.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg_p.csrf_enabled = False
+cfg_p.session_store = "cookie"
+cfg_p.rate_limit_enabled = True
+cfg_p.rate_limit_max = 1
+cfg_p.rate_limit_window_ms = 60000
+cfg_p.trust_x_forwarded_for = True
+cfg_p.trusted_proxies = "10.0.0.8"
+cfg_p.rate_limit_store = "memory"
+cfg_p.metrics_enabled = False
+cfg_p.log_requests = False
+app_p: Application = nyx.app.boot(cfg_p, setup)
+via: dict[str, str] = {}
+via["X-Forwarded-For"] = "1.1.1.1"
+ok_proxy: HttpResponse = nyx.app.dispatch(app_p, HttpRequest("GET", "/", "", via, "10.0.0.8:443"))
+outsider: HttpResponse = nyx.app.dispatch(app_p, HttpRequest("GET", "/", "", via, "8.8.8.8:443"))
+again: HttpResponse = nyx.app.dispatch(app_p, HttpRequest("GET", "/", "", via, "10.0.0.8:443"))
+nox.test.assert_eq_int(ok_proxy.status, 200, "trusted proxy uses xff")
+nox.test.assert_eq_int(outsider.status, 200, "untrusted peer ignores xff")
+nox.test.assert_eq_int(again.status, 429, "xff bucket limited")
+out2: HttpResponse = nyx.app.dispatch(app_p, HttpRequest("GET", "/", "", via, "8.8.8.8:444"))
+nox.test.assert_eq_int(out2.status, 429, "untrusted peer limited by its ip")
+
+nyx.app.shutdown(app)
+nyx.app.shutdown(app_p)
+print("v19_peer_line_test ok")

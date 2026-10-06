@@ -17,8 +17,7 @@ import nyx.db
 from nox.db import Row
 
 class CacheError(Exception):
-    def __init__(self: CacheError, message: str) -> None:
-        self.message = message
+    pass
 
 class Cache:
     mem_keys: list[str]

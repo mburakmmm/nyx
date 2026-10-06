@@ -18,8 +18,7 @@ import nox.http
 from nox.http import HttpResponse, HttpError
 
 class StorageError(Exception):
-    def __init__(self: StorageError, message: str) -> None:
-        self.message = message
+    pass
 
 def _ensure_dir(path: str) -> None:
     if len(path) == 0 or path == ".":

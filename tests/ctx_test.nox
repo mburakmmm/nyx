@@ -34,7 +34,7 @@ cfg.migrate_path = dir_path
 cfg.csrf_enabled = False
 cfg.log_requests = False
 application: Application = nyx.app.boot(cfg, setup)
-req: HttpRequest = HttpRequest("GET", "/show?q=nyx", "", {})
+req: HttpRequest = HttpRequest("GET", "/show?q=nyx", "", {}, "")
 resp: HttpResponse = nyx.app.dispatch(application, req)
 nox.test.assert_eq_int(resp.status, 200, "status")
 nox.test.assert_eq_str(resp.body, "q=nyx;env=test", "appcontext params+db")
