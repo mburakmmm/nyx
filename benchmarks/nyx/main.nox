@@ -72,7 +72,13 @@ print(
     + " headers=" + str(want_headers)
 )
 try:
-    if mode == "multicore":
+    if nyx.server.use_ipv6(cfg):
+        fd: int = nyx.server.listen_fd(cfg)
+        if want_headers:
+            nox.http.serve_fd(fd, handle)
+        else:
+            nox.http.serve_fd(fd, handle_bare)
+    elif mode == "multicore":
         if want_headers:
             nox.http.serve_multicore(cfg.port, handle, nyx.server.workers(cfg))
         else:

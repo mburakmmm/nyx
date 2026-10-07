@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.19.0 · **License:** MIT · **Requires Nox ≥ 1.142.3** (CI **1.142.3**)  
+**Version:** 0.20.0 · **License:** MIT · **Requires Nox ≥ 1.142.23** (CI **1.142.23**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.19.0"
+      "ref": "v0.20.0"
     }
   ]
 }
@@ -164,6 +164,15 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (not 1.0)
+- Requires **Nox ≥ 1.142.23** (CI installs the official **1.142.23** tarball: linux-x64 `x86_64_v2`, `qbe` in the package)
+- `NYX_IPV6=1` binds with `listen_v6` and serves that fd (`serve_fd` / `serve_fd_tls`). `NYX_IPV6_ONLY=1` disables dual-stack. `NYX_WORKERS>1` with IPv6 raises `ServerError` because `serve_multicore*` listens on IPv4
+- Rate-limit keys parse `[addr]:port` as the address inside the brackets
+- A subclass `__init__` that only sets `message` still receives `Exception.line` at the `raise` site (rechecked on 1.142.23)
+- `nox.db.DbConnection` accepts sqlite, postgres, and mysql connections for `close` / `execute` / `query` / `prepare`. Model modules stay split on SQL dialect (`?` vs `$n`, `RETURNING`, identifier quotes). `last_insert_rowid` is not on the protocol
+- Gmail 465/587 and Office365 587 completed EHLO, STARTTLS where used, and QUIT on 1.142.23. Authentication and a real message were not sent
+- `DATABASE_URL=mysql://...` boots, migrates, and serves sessions and auth through `nyx.mysql_model`, `nyx.session_store_mysql`, and `nyx.auth_engine_mysql`
 
 ### 0.19.0 — Nox 1.142 pin (not 1.0)
 - Requires **Nox ≥ 1.142.3** (CI **1.142.3**, built for `x86-64-v3` plus qbe)
@@ -323,14 +332,14 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.142.3** (CI **1.142.3**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- Requires **Nox ≥ 1.142.23** (CI **1.142.23**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
-- App ORM: **SQLite** (`application.db` / `nyx.model`) or **Postgres** (`application.pg` / `nyx.pg_model`)
+- App ORM: **SQLite** (`application.db` / `nyx.model`), **Postgres** (`application.pg` / `nyx.pg_model`), or **MySQL** (`application.mysql` / `nyx.mysql_model`)
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
-- TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587). Gmail/Outlook may fail in `nox.tls` (`TlsUnexpectedMessage`)
+- TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587)
 - Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
 - Rate limit: a real `peer_addr` is the client key. `NYX_TRUST_X_FORWARDED_FOR=1` uses the first XFF hop; with `NYX_TRUSTED_PROXIES` set, only those connecting IPs may supply XFF. Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`

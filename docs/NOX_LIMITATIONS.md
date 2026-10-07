@@ -1,116 +1,56 @@
-# Nox sınırları ve Nyx’te gözlemlenen çökme / codegen hataları
+# Nyx sınırları (güncel)
 
-Bu belge, [nyx](https://github.com/mburakmmm/nyx) geliştirirken **Nox dili / stdlib / codegen** kısıtlarını listeler.
+Bu dosya **şu an geçerli** sınırları listeler. Kapanmış codegen hataları ve sürüm notları burada yok; onlar `docs/NOX_REQUESTS.md` ve README sürüm notlarında.
 
-**Kaynak:** nyx 0.3.x → 0.19.0  
-**Nox sürümü (güncel doğrulama):** noxc **1.142.3** (2026-10-06)
+**Doğrulama:** Nyx **0.20.0**, noxc **1.142.23** (2026-10-07).  
+Minimum Nox: **≥ 1.142.23**. CI resmi `v1.142.23` paketini kurar (`x86_64_v2`, paket içi `qbe`).
 
-Nyx **0.19.0** için minimum Nox: **≥ 1.142.3** (`HttpRequest.peer_addr`, `Exception.line`, `nox.smtp` STARTTLS, ortak `nox.db.Statement`, TaskLocal, `--release` M:N).  
-Önerilen / CI pin: **1.142.3** (`x86-64-v3` + qbe; yayınlanan linux ikilisi hâlâ `cpu=native`).
-
-Runnable repro (tarihsel P1c/C2): `docs/repro-p1c-c2/` · `docs/NOX_REPRO_P1C_C2.md`
+`docs/repro-p1c-c2/` tarihseldir (1.18.1’de kapandı). Güncel bir hatanın repro’su değildir.
 
 ---
 
-## 1. Özet tablo (2026-10-06, noxc 1.142.3)
+## 1. Nox’ta hâlâ geçerli
 
-| # | Konu | Durum | Nox | Nyx etkisi |
-|---|---|---|---|---|
-| C1 | `list[dict[K,V]]` | **Düzeltildi** | 1.8.2 | `render_each` |
-| C2 | Callback `(T) -> dict` inline kardeş çağrı (paket) | **Düzeltildi** | **1.18.1** | `render_each_map` |
-| C3 | `() -> None` / fn list | **Çalışıyor** | ≤1.8.2 | JobRegistry / `on_shutdown` hooks |
-| C4 | Metod `T \| None` | **Düzeltildi** | ≤1.8.2 | `Record.get_opt` |
-| C5 | `"\r"` / `"\n"` escape | **Düzeltildi** | 1.8.2 | mailer CRLF |
-| P1 | Modül global — uygulama scripti | **Açıldı** | **1.10.0** | boot-once `Application` |
-| P1c | Paket-modül global + nested closure | **Düzeltildi** | **1.18.1** | (tarihsel) |
-| P1d | Nested def → fonksiyon-tipi capture çağrısı | **Düzeltildi** | **1.21.1** | `routes.post_with_override` |
-| P3 | Task/fiber-local | **Düzeltildi** | **1.24.0** | `nyx.runtime` `TaskLocal` |
-| P5 | Çıplak `except:` / `Exception` | **Açıldı** | **1.9 / 1.25** | dispatch `except Exception` |
-| P6 | Alias = paket `name` | **Düzeltildi** | **1.12.1** | tüketici alias serbest |
-| P7 | postgres / mysql | **Var** | **1.11.0** | `open_postgres` / `open_mysql` |
-| P7b | PG/MySQL prepare/bind | **Açıldı** | **1.13.0** | ham sürücüler |
-| P7c | ortak `Row` + `DbConnection.query` | **Açıldı** | **1.23.0** | `from nox.db import Row` |
-| P8 | Process’ler arası shared state | **Kısmi** | **1.15+ `nox.sharedmem`** | metrics lock / cable / jobs DB |
-| P9 | TLS / WebSocket istemci | **Var** | **1.14.0** | `nyx.tls` / `nyx.websocket.connect` |
-| P9b | Sunucu TLS + WS Upgrade | **Açıldı** | **1.22.0** | `serve_tls` / `serve_ws*` |
-| P10 | Decorator + `nox.reflect` | **Açıldı** | **1.21.0** | isteğe bağlı `@get`/`@post` |
-| P11 | `dict[int, class]` | **Açıldı** | **1.26.0** | preload map O(1) |
-| P12 | `--release` LLVM + M:N | **Açıldı** | **1.27–1.29** | `NYX_WORKERS` + SharedBuffer metrics |
-| P13 | ortak `nox.db.Statement` | **Açıldı** | **1.76.0** | import `nox.db`; SQL hâlâ `?` / `$1` |
-| P14 | SMTP STARTTLS | **Kısmi** | **1.75.0** | protokol var; Gmail/Outlook `TlsUnexpectedMessage` |
-| P15 | `HttpRequest.peer_addr` | **Açıldı** | **1.127.0** | rate-limit + `NYX_TRUSTED_PROXIES` allowlist |
-| P16 | yakalanmış `Exception.line` | **Açıldı** | **1.126.0** | development 500 `line`; `*Error` `__init__` yok |
+Bunlar dil, stdlib veya çalışma zamanı kısıtıdır. Nyx kodu bunlara göre yazılır.
+
+| Sınır | Nox | Nyx’te karşılığı |
+|---|---|---|
+| `TaskLocal.set/get` yalnızca çalışan bir fiber’da tutar. 1.122’den beri `TaskLocal[T]()` `main`’i fiber’a sarmaz; kök scriptte `get()` `None` döner | **1.122** | `nyx.runtime` kök yolu modül kutusunda tutar. Bağlantı fiber’ı `TaskLocal` kullanır; fiber’lar birbirinin oturumunu görmez |
+| `serve` / `serve_tls` / `serve_ws*` closure handler kabul eder. `serve_multicore*` derleme zamanında reddeder | **1.133**, 1.142.23’e kadar değişmedi | Üretim handler’ı çıplak fonksiyon adıdır; `Application` `_apps` listesindedir |
+| Varsayılan `serve*` IPv4 dinler. `listen_v6` IPv6 peer’ini `[addr]:port` yazar. `serve_multicore*` portu kendisi IPv4 dinler; fd üzerinden multicore yok. Windows’ta `listen_v6` `HttpError` | **1.142.10** | `NYX_IPV6=1` tek worker’da `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_IPV6_ONLY=1` dual-stack’i kapatır. `NYX_WORKERS>1` ile birlikte `ServerError`. Rate-limit anahtarı köşeli parantezin içidir (`::1`). Allowlist’e `[::1]` yazılmaz |
+| `--release` M:N altında kilitsiz modül-global `int++` ve bellek içi rate map yarışır | **1.29+** | `nyx.metrics` kilitli `SharedBuffer`. `NYX_WORKERS>1` iken rate store `db` |
+| macOS POSIX shm adı yaklaşık 31 karakter | platform | `nyx.metrics` kısa shm adı kullanır |
+| `nox.smtp.send` düz metin başlık üretir | **1.75** | HTML/multipart `to_eml` + `_send_dot_stuffed` ile gider |
 
 ---
 
-## 2. Nyx 0.19.0 (Nox 1.142 kilidi)
+## 2. Bilinçli olarak ayrı kalanlar
 
-1. Min / CI Nox **1.142.3** (kaynak derleme: `-Dcpu=x86_64_v3` + qbe 1.3)  
-2. `HttpRequest` 5. argüman `peer_addr`. Trust kapalıyken gerçek peer IP kovası; boş peer `"direct"`  
-3. `NYX_TRUSTED_PROXIES` doluysa XFF yalnızca listelenen bağlanan IP’lerden  
-4. `*Error(Exception): pass` — `e.line` development hata gövdesinde  
-5. `nyx.jwt` (exp/nbf/iat) durur; `nox.jwt` claim süresi kontrol etmez  
+Bunlar eksik API değildir. Kapatmak ya Nox tipi ister ya da mevcut yüzeyi zayıflatır.
 
-`serve_multicore` hâlâ closure handler kabul etmez; üretim yolu çıplak fonksiyon adı + `_apps` listesi.
+- **SQL diyalekti ayrı kalır.** `nox.db.DbConnection` (`close` / `execute` / `query` / `prepare`) sqlite, postgres ve mysql `Connection`ını karşılar. `last_insert_rowid` protokolde yoktur. Yer tutucu, tırnak, `RETURNING` ve transaction SQL’i diyalekte göre değişir, bu yüzden model `nyx.model` / `nyx.pg_model` / `nyx.mysql_model` olarak durur. `nyx.db.placeholder` `?` veya `$n` verir.
+- **`nox.orm` Nyx modeli değildir.** Satır döndüren mikro-CRUD. Doğrulama ve `Attributes` Nyx modelinde kalır.
+- **`nox.jwt` claim süresi kontrol etmez.** `nyx.jwt` exp / nbf / iat uygular.
+- **İş kuyruğu SQLite dosyasıdır.** Worker, uygulama Postgres veya MySQL olsa da `NYX_JOBS_DB_PATH` kuyruğunu kullanır. Kuyruk app sunucusuna bağlanmak zorunda kalmaz.
+- **Cable bellek hub’ı süreç içidir.** Worker’lar arası yayın `nyx.cable.open_store` (SQLite) ile yapılır.
+- **`{% for %}` `nox.template` içinde yok.** Koleksiyon `render_records` / `render_each` / `render_each_map`.
+- **Boş `trusted_proxies` + `NYX_TRUST_X_FORWARDED_FOR=1`.** Operatör kenarın XFF’ini doğruladığını kabul eder. Liste doluysa XFF yalnızca o IP’lerden okunur.
 
-Nox 1.122’den beri `TaskLocal[T]()` main’i fiber’a sarmaz. Fiber yokken `set`/`get` tutmaz. `nyx.runtime` bu kök yolu modül-yerel kutuda tutar; bağlantı fiber’ı TaskLocal’da kalır.
+## 3. MySQL
 
-Önceki 0.18 kilidi hâlâ geçerli: `nox.smtp` STARTTLS, ortak `Statement`.
-
-`SmtpClient.quit()` içindeki `try`, aynı fonksiyondaki `finally` ile noxc codegen'ini sonsuz açabiliyor (1.104’te görüldü). Nyx QUIT'i `_send_line` ile yazar ve her iki yolda `close()` çağırır.
-
----
-
-## 2c. Nyx 0.18.0 (Nox 1.104 kilidi)
-
-1. Min / CI Nox **1.104.0**  
-2. `nyx.mailer` → `nox.smtp` (`NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` + dot-stuffing)  
-3. `Statement` tek sınıf (`nox.db`); `model` / `pg_model` SQL ayrı  
-4. `nox.orm` Nyx modelinin yerine geçmez  
-
-`SmtpClient.quit()` içindeki `try`, aynı fonksiyondaki `finally` ile noxc 1.104 codegen'ini sonsuz açar. Nyx QUIT'i `_send_line` ile yazar ve her iki yolda `close()` çağırır.
-
-Önceki 0.17 kilidi hâlâ geçerli: multicore, SharedBuffer metrics, TaskLocal.
+`DATABASE_URL=mysql://...` ile `nyx.app.boot` bağlantıyı açar, `migrate_mysql` çalıştırır, `nyx.app.mysql()` döner. Oturum deposu `nyx.session_store_mysql`, kullanıcı hesabı `nyx.auth_engine_mysql`, satır API’si `nyx.mysql_model`. Migration dosyasındaki SQL MySQL diyalektinde yazılır; `execute` dosyada tek deyim çalıştırır.
 
 ---
 
-## 2b. Nyx 0.17.0 (Nox 1.29 kilidi)
+## 4. Artık geçerli değil
 
-1. Min Nox **≥ 1.29.0**; CI pin **1.29.11**  
-2. `nyx.server`: `workers` / `serve_mode` → `serve_multicore*` matrisi  
-3. `NYX_WORKERS` (+ `NOX_POOL_WORKERS` for `--release` pool)  
-4. `nyx.metrics`: kilitli `SharedBuffer` (M:N-safe)  
-5. `workers>1` + bellek rate limit → otomatik `rate_limit_store=db`  
-6. Template `main.nox`: multicore/TLS switch  
+Bunlar eski belgede açıktı. 1.142.23’te sınır olarak kullanılmamalı.
 
-Önceki 0.16 kilidi hâlâ geçerli: TaskLocal, `*Error(Exception)`, `dict[int, Record]`.
-
----
-
-## 3. Hâlâ açık
-
-- Tek dialect ORM yüzeyi (`Statement` ortak; SQL ve `Record`/`Attributes` ayrı. `nox.orm` mikro-CRUD)  
-- Gmail 465/587 ve Office365 587 SMTP TLS (`TlsUnexpectedMessage`; protokol API'si var)  
-- MySQL dialect-aware Application boot  
-
-## 4. Nox 1.27–1.29 notları
-
-- **1.27.0:** deneysel `noxc build --release` (LLVM); M:N work-stealing altyapısı  
-- **1.28.0:** `nox.thread.pool_run`; `serve_multicore` → paylaşılan havuz (`--release`)  
-- **1.28.1:** `pool_run` sibling worker’larda modül-global görünürlük düzeltmeleri  
-- **1.29.0:** şeffaf M:N; TaskLocal/class/list/dict `--release` transfer  
-- **1.29.1–1.29.11:** TLS fiber race, multicore accept/work-steal, ECONNRESET crash, JSON decode hızı, Task.detached  
-
-**Kritik:** `--release` altında modül-global `int++` / bellek rate map yarışır. Nyx metrics SharedBuffer + multicore’da db rate store kullanır.
-
-## 5. Nox 1.23–1.26 notları
-
-- **1.23.0:** `nox.db.Row` + `DbConnection.query`  
-- **1.24.0:** `TaskLocal[T]` (`get`/`set`/`clear`)  
-- **1.25.0:** `Exception` tabanı; unhandled `Sinif (satir N)`  
-- **1.26.0:** `dict[K, class]` (anahtar sınıf değil)  
-
-## 6. Nyx runtime string kopyası
-
-Modül-global `str` doğrudan `HttpResponse` body / `session.create` ile paylaşılınca ARC use-after-free (SIGSEGV) görüldü.  
-`session_json()` ve diğer string getter’lar `+ ""` ile kopya döner (TaskLocal sonrası da aynı kural).
+- `HttpRequest` peer taşımıyor — 1.127’de kapandı.
+- Yakalanmış `Exception` satır taşımıyor — 1.126’da kapandı. 1.142.23’te alt sınıf yalnızca `self.message` atayan bir `__init__` yazsa da `raise` satırı `e.line` olarak geldi. Nyx `*Error` sınıfları `pass` kalabilir; `__init__` yazmak satırı silmez.
+- Gmail 465/587 ve Office365 587 `TlsUnexpectedMessage` — 1.75’te görüldü. 1.142.23’te `smtp.gmail.com:465`, `smtp.gmail.com:587` (STARTTLS) ve `smtp.office365.com:587` (STARTTLS) EHLO, yükseltme ve QUIT ile tamamlandı. Kimlik doğrulama ve gerçek posta gönderilmedi.
+- Üç `Connection` tipi ortak protokole giremiyor — `DbConnection` bu dört metodu kapsar. Ayrı kalan şey SQL diyalektidir, yukarıda.
+- `SmtpClient.quit()` içindeki `try`, aynı fonksiyondaki `finally` ile codegen’i sonsuz açıyor — 1.104’te görüldü. 1.142.3’te `quit()` `finally` içinden çağrıldı; derleyici kilitlenmedi. Mailer hâlâ QUIT’i `_send_line` ile yazar; bu bir derleyici yasağı değildir.
+- Oturum string’ini `HttpResponse` ile paylaşınca ARC use-after-free — 1.142.3’te yeniden üretilmedi. `session_json()` hâlâ `+ ""` ile kopya döner. Ayrı bir hata olan `nox.tls` / `nox.websocket` `close()` sonrası use-after-free 1.110.4’te kapandı.
+- Yayınlanan `linux-x64` ikilisi `-Dcpu=native` olduğu için AVX-512’siz makinede SIGILL — **1.142.7**’den beri release `x86_64_v2` derler ve paket `qbe` içerir. CI kaynak derlemesi bırakıldı.
+- `list[dict]`, paket içi callback dict, modül-global + nested closure, `Exception` tabanı, `dict[int, class]`, ortak `Row` / `Statement`, sunucu TLS — kapanmış durumlar. Sürümleri `docs/NOX_REQUESTS.md` içinde.

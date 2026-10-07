@@ -38,6 +38,12 @@ spoof: dict[str, str] = {}
 spoof["X-Forwarded-For"] = "1.2.3.4"
 sp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", spoof, "10.0.0.2:5000"))
 nox.test.assert_eq_int(sp.status, 429, "xff ignored when peer is real")
+v6a: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "[::1]:4000"))
+v6b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "[::1]:9"))
+v4: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "127.0.0.1:9"))
+nox.test.assert_eq_int(v6a.status, 200, "ipv6 peer")
+nox.test.assert_eq_int(v6b.status, 429, "ipv6 same address")
+nox.test.assert_eq_int(v4.status, 200, "ipv4 does not share ipv6 bucket")
 
 cfg_p: Config = nyx.config.defaults("test")
 cfg_p.secret_key = "nyx-test-secret-change-me-32bytes!"

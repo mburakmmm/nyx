@@ -1,11 +1,12 @@
-# Nyx 0.19 — Deployment guide
+# Nyx 0.20 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.142.3**.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.142.23**.
 
 ## 1. Process model
 
 - Prefer **`noxc build --release main.nox`** then run the binary (LLVM M:N pool).
-- `NYX_WORKERS>1` → template uses `nox.http.serve_multicore*` (shared pool under `--release`).
+- `NYX_WORKERS>1` → template uses `nox.http.serve_multicore*` (shared pool under `--release`). IPv4 dinler.
+- `NYX_IPV6=1` tek worker: `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_WORKERS>1` ile birlikte süreç `ServerError` ile durur.
 - Set **`NOX_POOL_WORKERS`** to match (or size) the release pool when using multicore.
 - Boot **once** at module top-level; register cleanup with `nyx.app.on_shutdown`, then
   `nyx.app.shutdown(application)` in `finally` (see `templates/app/main.nox`).
@@ -21,7 +22,7 @@ Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22
 |---|---|
 | `NYX_ENV` | `production` |
 | `NYX_SECRET_KEY` | ≥32 chars, not a placeholder |
-| `NYX_DB_PATH` or `DATABASE_URL` | SQLite path/`sqlite:///…` **or** `postgres://…` |
+| `NYX_DB_PATH` or `DATABASE_URL` | SQLite path/`sqlite:///…`, `postgres://…`, or `mysql://…` |
 | `NYX_AUTO_MIGRATE` | `0` (run migrate in release step) |
 | `NYX_SECURE_COOKIES` | `1` (behind HTTPS) |
 | `NYX_JOBS_DB_PATH` | Separate SQLite file (default `db/jobs.sqlite`) |
@@ -30,7 +31,9 @@ Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22
 | `NYX_MAIL_SMTP_STARTTLS` | `1` = plain TCP then STARTTLS (typical 587). `0` or empty = immediate TLS |
 | `NYX_PORT` / `NYX_HOST` | Bind address |
 | `NYX_TLS_CERT` / `NYX_TLS_KEY` | Optional PEM paths for `serve_*tls` |
-| `NYX_WORKERS` | `1` default; `>1` enables `serve_multicore*` |
+| `NYX_WORKERS` | `1` default; `>1` enables `serve_multicore*` (IPv4) |
+| `NYX_IPV6` | `1` = `listen_v6` + `serve_fd*` (tek worker) |
+| `NYX_IPV6_ONLY` | `1` = dual-stack kapalı; `NYX_IPV6` de açılır |
 | `NOX_POOL_WORKERS` | Release M:N pool size (pair with `NYX_WORKERS`) |
 | `NYX_RATE_LIMIT_STORE` | Prefer `db` when multicore (auto if unset + `NYX_WORKERS>1`) |
 
@@ -56,8 +59,20 @@ noxc run main.nox
 ```
 
 In handlers: `nyx.pg_model.*` + `nyx.app.pg(application)`.  
-`application.db` remains a SQLite `Connection` placeholder when dialect is postgres
-(Nox `DbConnection` shares `execute`/`close` only — not `query`/`Row` on every path).
+`application.db` remains a SQLite `Connection` placeholder when dialect is postgres.  
+`nox.db.DbConnection` covers `close` / `execute` / `query` / `prepare`; SQL still differs (`$1`, `RETURNING`).
+
+### MySQL
+
+```sh
+export DATABASE_URL=mysql://user:pass@127.0.0.1:3306/myapp
+export NYX_JOBS_DB_PATH=db/jobs.sqlite
+./bin/nyx db migrate   # migrate_url / migrate_mysql
+noxc run main.nox
+```
+
+In handlers: `nyx.mysql_model.*` + `nyx.app.mysql(application)`.  
+Sessions use `nyx.session_store_mysql`; accounts use `nyx.auth_engine_mysql`. Placeholders are `?`. Jobs stay on the SQLite queue.
 
 ## 4. TLS / WebSocket / multicore
 
@@ -108,9 +123,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.19.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.20.0" }
 ```
 
-Requires **noxc ≥ 1.142.3** (CI pin **1.142.3**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır.
+Requires **noxc ≥ 1.142.23** (CI pin **1.142.23**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`).
 
-SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. Gmail 465/587 and Office365 587 can fail in `nox.tls` with `TlsUnexpectedMessage`; do not treat those hosts as supported.
+SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. On noxc 1.142.23, Gmail 465/587 and Office365 587 completed EHLO, STARTTLS where used, and QUIT. Authentication and a real message were not sent.

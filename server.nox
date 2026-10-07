@@ -13,6 +13,7 @@
 # LLVM --release: paylasilan M:N havuz + work-stealing (1.29+).
 
 import nox.fs
+import nox.http
 from nyx.config import Config
 
 class ServerError(Exception):
@@ -33,6 +34,20 @@ def workers(cfg: Config) -> int:
 
 def use_multicore(cfg: Config) -> bool:
     return workers(cfg) > 1
+
+def use_ipv6(cfg: Config) -> bool:
+    return cfg.ipv6
+
+# serve_multicore portu kendisi dinler ve bu dinleyici IPv4'tür.
+def ensure_listen_compatible(cfg: Config) -> None:
+    if cfg.ipv6 and use_multicore(cfg):
+        raise ServerError("NYX_IPV6 cannot be combined with NYX_WORKERS>1; serve_multicore listens on IPv4")
+
+def listen_fd(cfg: Config) -> int:
+    ensure_listen_compatible(cfg)
+    if cfg.ipv6:
+        return nox.http.listen_v6(cfg.port, cfg.ipv6_only)
+    return nox.http.listen(cfg.port)
 
 # Nox 1.29.2+: False → serve handler must not read req.headers (iterateHeaders skip).
 def materialize_request_headers(cfg: Config) -> bool:

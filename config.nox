@@ -60,7 +60,9 @@ class Config:
         session_enabled: bool,
         security_headers: bool,
         request_id: bool,
-        request_headers: bool
+        request_headers: bool,
+        ipv6: bool,
+        ipv6_only: bool
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -122,6 +124,9 @@ class Config:
         self.request_id = request_id
         # False: serve handler req.headers okumaz (Nox iterateHeaders skip).
         self.request_headers = request_headers
+        # Nox >= 1.142.10: True ise listen_v6 + serve_fd. serve_multicore IPv4 dinler.
+        self.ipv6 = ipv6
+        self.ipv6_only = ipv6_only
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -232,7 +237,9 @@ def defaults(env: str) -> Config:
         True,
         True,
         True,
-        True
+        True,
+        False,
+        False
     )
 
 def from_env() -> Config:
@@ -309,6 +316,10 @@ def from_env() -> Config:
     cfg.security_headers = _env_bool("NYX_SECURITY_HEADERS", cfg.security_headers)
     cfg.request_id = _env_bool("NYX_REQUEST_ID", cfg.request_id)
     cfg.request_headers = _env_bool("NYX_REQUEST_HEADERS", cfg.request_headers)
+    cfg.ipv6 = _env_bool("NYX_IPV6", cfg.ipv6)
+    cfg.ipv6_only = _env_bool("NYX_IPV6_ONLY", cfg.ipv6_only)
+    if cfg.ipv6_only:
+        cfg.ipv6 = True
     # CSRF requires a session bag; force session middleware on.
     if cfg.csrf_enabled and not cfg.session_enabled:
         cfg.session_enabled = True

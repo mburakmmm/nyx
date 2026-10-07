@@ -12,13 +12,11 @@
 # rows = stmt.query()
 # my = nyx.db.open_mysql("mysql://user:pass@localhost:3306/app")
 #
-# Application.db: SQLite Connection (nyx.model / jobs).
-# Application.pg: Postgres Connection listesi uzerinden nyx.app.pg()
-#   (Nox DbConnection protokolu execute+close paylasir).
-# Nox >= 1.76: prepare() her iki surucude ayni nox.db.Statement sinifini dondurur.
-# SQL yer tutuculari ayri kalir (? sqlite, $1 postgres). Row okuma surucuye gore.
-# PG/MySQL ham: open_postgres / open_mysql.
-# Postgres last_insert_rowid yok - INSERT ... RETURNING kullanin.
+# Application.db: SQLite (nyx.model / jobs).
+# Application.pg / Application.mysql: nyx.app.pg() / nyx.app.mysql().
+# Yer tutucu: nyx.db.placeholder(dialect, index).
+# Postgres last_insert_rowid yok - INSERT ... RETURNING.
+# MySQL last_insert_rowid var.
 
 import nox.sqlite
 import nox.postgres
@@ -107,6 +105,16 @@ def open_mysql(conn_url: str) -> MysqlConnection:
         return nox.mysql.open_url(conn_url)
     except MysqlError as e:
         raise DbError("mysql open failed: " + e.message)
+
+# sqlite / mysql: "?". postgres: "$1" (index 0-based).
+def placeholder(dialect: str, index: int) -> str:
+    if index < 0:
+        raise DbError("placeholder index must be >= 0")
+    if dialect == "sqlite" or dialect == "mysql":
+        return "?"
+    if dialect == "postgres":
+        return "$" + str(index + 1)
+    raise DbError("unknown dialect: " + dialect)
 
 # "sqlite" | "postgres" | "mysql" | ""
 def dialect_of_url(url: str) -> str:
@@ -365,7 +373,84 @@ def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
         raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
     return version
 
-# Dialect'e gore migrate - sqlite veya postgres URL.
+def _ensure_migrations_table_mysql(conn: MysqlConnection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(255) PRIMARY KEY NOT NULL)"
+    )
+
+def _already_applied_mysql(conn: MysqlConnection, version: str) -> bool:
+    stmt: Statement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
+    stmt.bind_str(0, version)
+    rows: list[Row] = stmt.query()
+    return len(rows) > 0
+
+def _record_applied_mysql(conn: MysqlConnection, version: str) -> None:
+    stmt: Statement = conn.prepare("INSERT INTO schema_migrations (version) VALUES (?)")
+    stmt.bind_str(0, version)
+    stmt.execute()
+
+# MySQL migration runner. SQL diyalekti migration dosyasinda mysql uyumlu olmali.
+# execute tek deyim calistirir; bir dosyada birden fazla deyim varsa ayri dosyaya bolun.
+def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
+    if not nox.fs.exists(dir_path):
+        raise DbError("migration dizini yok: " + dir_path)
+    if not nox.fs.is_dir(dir_path):
+        raise DbError("migration yolu dizin degil: " + dir_path)
+    _ensure_migrations_table_mysql(conn)
+    entries: list[str] = nox.fs.read_dir(dir_path)
+    sql_files: list[str] = []
+    i: int = 0
+    while i < len(entries):
+        name: str = entries[i]
+        if _is_up_migration(name):
+            sql_files.append(name)
+        i = i + 1
+    ordered: list[str] = _sort_names(sql_files)
+    applied: int = 0
+    j: int = 0
+    while j < len(ordered):
+        version: str = ordered[j]
+        if not _already_applied_mysql(conn, version):
+            full: str = nox.path.join(dir_path, version)
+            sql: str = nox.fs.read_to_string(full)
+            conn.execute("START TRANSACTION")
+            try:
+                conn.execute(sql)
+                _record_applied_mysql(conn, version)
+                conn.execute("COMMIT")
+            except MysqlError as e:
+                conn.execute("ROLLBACK")
+                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+            applied = applied + 1
+        j = j + 1
+    return applied
+
+def rollback_mysql(conn: MysqlConnection, dir_path: str) -> str:
+    _ensure_migrations_table_mysql(conn)
+    rows: list[Row] = conn.query(
+        "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+    )
+    if len(rows) == 0:
+        raise DbError("geri alinacak migration yok")
+    version: str = rows[0].get_str(0)
+    down_name: str = _down_name(version)
+    down_path: str = nox.path.join(dir_path, down_name)
+    if not nox.fs.exists(down_path):
+        raise DbError("down migration dosyasi yok: " + down_path)
+    sql: str = nox.fs.read_to_string(down_path)
+    conn.execute("START TRANSACTION")
+    try:
+        conn.execute(sql)
+        del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = ?")
+        del_stmt.bind_str(0, version)
+        del_stmt.execute()
+        conn.execute("COMMIT")
+    except MysqlError as e:
+        conn.execute("ROLLBACK")
+        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+    return version
+
+# Dialect'e gore migrate - sqlite, postgres veya mysql URL.
 def migrate_url(url: str, dir_path: str) -> int:
     dialect: str = dialect_of_url(url)
     if dialect == "postgres":
@@ -376,7 +461,12 @@ def migrate_url(url: str, dir_path: str) -> int:
             conn.close()
         return n
     if dialect == "mysql":
-        raise DbError("migrate_url does not support mysql yet")
+        my: MysqlConnection = open_mysql(url)
+        try:
+            n_my: int = migrate_mysql(my, dir_path)
+        finally:
+            my.close()
+        return n_my
     dbc: Connection = open(url)
     try:
         n2: int = migrate(dbc, dir_path)
@@ -394,7 +484,12 @@ def rollback_url(url: str, dir_path: str) -> str:
             conn.close()
         return v
     if dialect == "mysql":
-        raise DbError("rollback_url does not support mysql yet")
+        my: MysqlConnection = open_mysql(url)
+        try:
+            v_my: str = rollback_mysql(my, dir_path)
+        finally:
+            my.close()
+        return v_my
     dbc: Connection = open(url)
     try:
         v2: str = rollback(dbc, dir_path)

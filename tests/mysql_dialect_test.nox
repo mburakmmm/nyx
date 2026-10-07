@@ -1,0 +1,39 @@
+# MySQL dialect is wired without a live server: placeholder, boot error, module load.
+import nox.test
+import nox.strings
+import nyx.app
+import nyx.auth_engine_mysql
+import nyx.config
+import nyx.db
+import nyx.mysql_model
+import nyx.session_store_mysql
+from nyx.app import Application, AppError
+from nyx.config import Config
+
+nox.test.assert_eq_str(nyx.db.dialect_of_url("mysql://u@h/db"), "mysql", "mysql url")
+nox.test.assert_eq_str(nyx.db.placeholder("sqlite", 0), "?", "sqlite ph")
+nox.test.assert_eq_str(nyx.db.placeholder("mysql", 3), "?", "mysql ph")
+nox.test.assert_eq_str(nyx.db.placeholder("postgres", 0), "$1", "pg ph0")
+nox.test.assert_eq_str(nyx.db.placeholder("postgres", 2), "$3", "pg ph2")
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.db_path = "mysql://nyx:nyx@127.0.0.1:1/nyx_missing"
+cfg.auto_migrate = False
+cfg.csrf_enabled = False
+cfg.session_enabled = False
+cfg.log_requests = False
+cfg.metrics_enabled = False
+cfg.rate_limit_enabled = False
+
+def setup(application: Application) -> None:
+    skip: int = 0
+
+try:
+    nyx.app.boot(cfg, setup)
+    nox.test.assert_true(False, "mysql boot without server must fail")
+except AppError as e:
+    nox.test.assert_true(nox.strings.contains(e.message, "mysql open failed"), "wired open")
+    nox.test.assert_true(not nox.strings.contains(e.message, "does not wire"), "not the old stub")
+
+print("mysql_dialect_test ok")

@@ -6,6 +6,7 @@ import nyx.config
 import nyx.metrics
 import nyx.server
 from nyx.config import Config
+from nyx.server import ServerError
 
 # --- serve_mode matrix ---
 cfg: Config = nyx.config.defaults("test")
@@ -28,6 +29,19 @@ nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "multicore_ws_tls", "mc
 cfg.workers = 1
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "tls", "tls")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "ws_tls")
+nox.test.assert_true(not nyx.server.use_ipv6(cfg), "ipv6 default off")
+cfg.ipv6 = True
+nyx.server.ensure_listen_compatible(cfg)
+cfg.workers = 4
+ipv6_mc: bool = False
+try:
+    nyx.server.ensure_listen_compatible(cfg)
+    ipv6_mc = True
+except ServerError:
+    ipv6_mc = False
+nox.test.assert_true(not ipv6_mc, "ipv6 multicore rejected")
+cfg.workers = 1
+cfg.ipv6 = False
 
 # --- metrics SharedBuffer lock path ---
 nyx.metrics.reset()
@@ -69,5 +83,12 @@ if auto.workers > 1 and auto.rate_limit_store == "memory":
 nox.test.assert_eq_str(auto.rate_limit_store, "db", "multicore prefers db store")
 nox.os.set_var("NYX_WORKERS", "1")
 nox.os.set_var("NYX_RATE_LIMIT_STORE", "memory")
+nox.os.set_var("NYX_IPV6", "1")
+nox.os.set_var("NYX_IPV6_ONLY", "1")
+loaded_v6: Config = nyx.config.from_env()
+nox.test.assert_true(loaded_v6.ipv6, "NYX_IPV6")
+nox.test.assert_true(loaded_v6.ipv6_only, "NYX_IPV6_ONLY")
+nox.os.set_var("NYX_IPV6", "0")
+nox.os.set_var("NYX_IPV6_ONLY", "0")
 
 print("v17_mn_release_test ok")

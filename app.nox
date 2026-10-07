@@ -24,12 +24,14 @@ from nox.http import HttpRequest, HttpResponse
 from nox.router import Router, Context
 from nox.sqlite import Connection
 from nox.postgres import Connection as PgConnection
+from nox.mysql import Connection as MysqlConnection
 import nyx.config
 import nyx.db
 import nyx.runtime
 import nyx.session
 import nyx.session_store
 import nyx.session_store_pg
+import nyx.session_store_mysql
 import nyx.cookie
 import nyx.csrf
 import nyx.response
@@ -60,6 +62,7 @@ class Application:
         dialect: str,
         jobs: Connection,
         pg_list: list[PgConnection],
+        my_list: list[MysqlConnection],
         hooks: list[() -> None]
     ) -> None:
         self.config = cfg
@@ -68,6 +71,7 @@ class Application:
         self.dialect = dialect
         self.jobs_db = jobs
         self._pg = pg_list
+        self._my = my_list
         self._shutdown_hooks = hooks
         self._closed = False
 
@@ -87,6 +91,14 @@ def pg(application: Application) -> PgConnection:
     if len(application._pg) == 0:
         raise AppError("Application.pg is empty (dialect is not postgres)")
     return application._pg[0]
+
+def has_mysql(application: Application) -> bool:
+    return len(application._my) > 0
+
+def mysql(application: Application) -> MysqlConnection:
+    if len(application._my) == 0:
+        raise AppError("Application.mysql is empty (dialect is not mysql)")
+    return application._my[0]
 
 def _is_placeholder_secret(secret: str) -> bool:
     if nox.strings.contains(secret, "change-me"):
@@ -118,6 +130,11 @@ def shutdown(application: Application) -> None:
             application._pg[0].close()
         except:
             nox.log.error("nyx.app.shutdown: postgres close failed")
+    if len(application._my) > 0:
+        try:
+            application._my[0].close()
+        except:
+            nox.log.error("nyx.app.shutdown: mysql close failed")
     try:
         application.jobs_db.close()
     except:
@@ -135,6 +152,8 @@ def mount_health(application: Application) -> None:
         try:
             if application.dialect == "postgres":
                 application._pg[0].query("SELECT 1")
+            elif application.dialect == "mysql":
+                application._my[0].query("SELECT 1")
             else:
                 application.db.query("SELECT 1")
             application.jobs_db.query("SELECT 1")
@@ -167,12 +186,8 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     dialect: str = nyx.db.dialect_of_url(cfg.db_path)
     if dialect == "":
         dialect = "sqlite"
-    if dialect == "mysql":
-        raise AppError(
-            "Application boot does not wire mysql yet; use nyx.db.open_mysql " +
-            "and keep Application.db on sqlite (or use postgres dialect)"
-        )
     pg_list: list[PgConnection] = []
+    my_list: list[MysqlConnection] = []
     conn: Connection = nyx.db.open(":memory:")
     if dialect == "postgres":
         pg_list.append(nyx.db.open_postgres(cfg.db_path))
@@ -182,6 +197,20 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
                     nyx.db.migrate_postgres(pg_list[0], cfg.migrate_path)
                 except DbError:
                     raise AppError("postgres migration failed: " + cfg.migrate_path)
+            else:
+                if cfg.is_production():
+                    raise AppError("migration directory missing: " + cfg.migrate_path)
+    elif dialect == "mysql":
+        try:
+            my_list.append(nyx.db.open_mysql(cfg.db_path))
+        except DbError as e:
+            raise AppError("mysql open failed: " + e.message)
+        if cfg.auto_migrate:
+            if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
+                try:
+                    nyx.db.migrate_mysql(my_list[0], cfg.migrate_path)
+                except DbError as e_my:
+                    raise AppError("mysql migration failed: " + e_my.message)
             else:
                 if cfg.is_production():
                     raise AppError("migration directory missing: " + cfg.migrate_path)
@@ -200,10 +229,12 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
         raise AppError("unsupported db dialect: " + dialect)
     jobs: Connection = nyx.db.open(cfg.jobs_db_path)
     hooks: list[() -> None] = []
-    application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, hooks)
+    application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, my_list, hooks)
     if cfg.session_store == "db":
         if dialect == "postgres":
             nyx.session_store_pg.ensure_schema(pg_list[0])
+        elif dialect == "mysql":
+            nyx.session_store_mysql.ensure_schema(my_list[0])
         else:
             nyx.session_store.ensure_schema(application.db)
     nyx.job.ensure_schema(application.jobs_db)
@@ -224,6 +255,9 @@ def _install_framework_middleware(application: Application) -> None:
             if application.dialect == "postgres":
                 router.use_before(_session_pg_before(application))
                 router.use_after(_session_pg_after(application))
+            elif application.dialect == "mysql":
+                router.use_before(_session_my_before(application))
+                router.use_after(_session_my_after(application))
             else:
                 router.use_before(_session_db_before(application))
                 router.use_after(_session_db_after(application))
@@ -272,6 +306,16 @@ def _first_xff_ip(raw: str) -> str:
 def _peer_ip(peer_addr: str) -> str:
     if len(peer_addr) == 0:
         return ""
+    # Nox 1.142.10: IPv4 "a.b.c.d:port", IPv6 "[addr]:port".
+    if peer_addr[0] == "[":
+        end: int = nox.strings.index_of(peer_addr, "]")
+        if end > 1:
+            ip: str = ""
+            i: int = 1
+            while i < end:
+                ip = ip + peer_addr[i]
+                i = i + 1
+            return ip
     parts: list[str] = nox.strings.split(peer_addr, ":")
     if len(parts) == 0:
         return ""
@@ -582,6 +626,95 @@ def _session_pg_after(application: Application) -> (Context, HttpResponse) -> Ht
             nyx.runtime.set_session_sid(sid)
         else:
             nyx.session_store_pg.save_sid(pdb, sid, data, cfg.session_max_age, uid)
+        token: str = nyx.session_store.cookie_value_for_sid(cfg.secret_key, sid, cfg.session_max_age)
+        set_cookie: str = nyx.cookie.serialize(
+            cfg.session_cookie,
+            token,
+            "/",
+            cfg.session_max_age,
+            True,
+            "Lax",
+            cfg.secure_cookies
+        )
+        return nyx.response.with_header(resp, "Set-Cookie", set_cookie)
+    return handler
+
+def _session_my_before(application: Application) -> (Context) -> HttpResponse | None:
+    cfg: Config = application.config
+    def handler(ctx: Context) -> HttpResponse | None:
+        nyx.runtime.set_session_sid("")
+        raw: str | None = _header_get(ctx.request.headers, "Cookie")
+        if raw == None:
+            nyx.runtime.load_session("{}")
+            _ensure_session_seed(cfg)
+            return None
+        else:
+            raw_s: str = raw
+            try:
+                cookies: dict[str, str] = nyx.cookie.parse(raw_s)
+                val: str = cookies[cfg.session_cookie]
+                sid: str | None = nyx.session_store.sid_from_cookie_value_rotated(
+                    cfg.secret_key, cfg.secret_key_previous, val
+                )
+                if sid == None:
+                    nyx.runtime.load_session("{}")
+                    _ensure_session_seed(cfg)
+                    return None
+                else:
+                    sid_s: str = sid
+                    data: str | None = nyx.session_store_mysql.load_sid(mysql(application), sid_s)
+                    if data == None:
+                        nyx.runtime.load_session("{}")
+                        _ensure_session_seed(cfg)
+                        return None
+                    else:
+                        nyx.runtime.set_session_sid(sid_s)
+                        nyx.runtime.load_session(data)
+            except KeyError:
+                nyx.runtime.load_session("{}")
+                _ensure_session_seed(cfg)
+            except CookieError:
+                nyx.runtime.load_session("{}")
+                _ensure_session_seed(cfg)
+            return None
+    return handler
+
+def _session_my_after(application: Application) -> (Context, HttpResponse) -> HttpResponse:
+    cfg: Config = application.config
+    def handler(ctx: Context, resp: HttpResponse) -> HttpResponse:
+        if not nyx.runtime.is_session_dirty():
+            return resp
+        mdb: MysqlConnection = mysql(application)
+        if nyx.runtime.should_expire_session_cookie():
+            old: str = nyx.runtime.session_sid()
+            if len(old) > 0:
+                nyx.session_store_mysql.destroy_sid(mdb, old)
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_expire_session_cookie()
+            nyx.runtime.clear_session_rotate()
+            expired: str = nyx.cookie.serialize(
+                cfg.session_cookie,
+                "deleted",
+                "/",
+                0,
+                True,
+                "Lax",
+                cfg.secure_cookies
+            )
+            return nyx.response.with_header(resp, "Set-Cookie", expired)
+        data: str = nyx.runtime.session_json()
+        uid: int = nyx.session_store.user_id_from_session_json(data)
+        sid: str = nyx.runtime.session_sid()
+        if nyx.runtime.is_session_rotate() and len(sid) > 0:
+            nyx.session_store_mysql.destroy_sid(mdb, sid)
+            sid = ""
+            nyx.runtime.set_session_sid("")
+            nyx.runtime.clear_session_rotate()
+        if len(sid) == 0:
+            sid = nyx.session_store_mysql.create_sid(mdb, data, cfg.session_max_age, uid)
+            nyx.runtime.set_session_sid(sid)
+        else:
+            nyx.session_store_mysql.save_sid(mdb, sid, data, cfg.session_max_age, uid)
         token: str = nyx.session_store.cookie_value_for_sid(cfg.secret_key, sid, cfg.session_max_age)
         set_cookie: str = nyx.cookie.serialize(
             cfg.session_cookie,

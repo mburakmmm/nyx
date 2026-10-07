@@ -1,13 +1,13 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.19+ Nox 1.142 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **1.142.3**.
+# Nyx 0.20+ Nox 1.142.23 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **1.142.23**.
 
 ## Kapandı (Nox 1.75–1.76) — smtp / Statement
 
 | İstek / fırsat | Nox | Nyx |
 |---|---|---|
-| `nox.smtp` STARTTLS (`connect` + `starttls`) | **1.75.0** | `NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` korunur. Gmail 465/587 ve Office365 587 `nox.tls` içinde `TlsUnexpectedMessage` ile düşebilir — API bağlı, bu sunucular iddia edilmez |
+| `nox.smtp` STARTTLS (`connect` + `starttls`) | **1.75.0** | `NYX_MAIL_SMTP_STARTTLS`; HTML `to_eml` korunur. 1.142.23’te Gmail 465/587 ve Office365 587 el sıkışması (EHLO + STARTTLS + QUIT) tamamlandı; auth ve gerçek posta gönderilmedi |
 | `and`/`or` kısa devre | **1.76.0** | mevcut kod olduğu gibi |
 | Ortak `nox.db.Statement` | **1.76.0** | sqlite/postgres `Statement` importları `nox.db`. SQL (`?` / `$1`) ve `nyx.model` / `pg_model` ayrı. `nox.orm` mikro-CRUD; Nyx modeli değil |
 
@@ -33,8 +33,8 @@
 
 | İstek | Nox | Nyx |
 |---|---|---|
-| `HttpRequest.peer_addr` (`"ip:port"`, ctor 5. argüman) | **1.127.0** | rate-limit anahtarı. Trust kapalı: peer IP. Boş peer: `"direct"`. `NYX_TRUSTED_PROXIES` doluysa XFF yalnızca o IP’lerden |
-| `Exception.line` (raise anı) | **1.126.0** | `*Error` `__init__` yazmaz; development 500 `line` alanı. Production genel 500 |
+| `HttpRequest.peer_addr` (`"ip:port"` veya `"[addr]:port"`, ctor 5. argüman) | **1.127.0** / **1.142.10** | rate-limit anahtarı. Trust kapalı: peer IP. Boş peer: `"direct"`. `NYX_TRUSTED_PROXIES` doluysa XFF yalnızca o IP’lerden. IPv6 anahtarı köşeli parantezin içidir |
+| `Exception.line` (raise anı) | **1.126.0** | development 500 `line` alanı. Production genel 500. 1.142.23’te alt sınıf `__init__` yazsa da raise satırı doluyor |
 
 `nyx.jwt` durur: exp/nbf/iat kontrolü var. `nox.jwt` (1.126) yalnızca HS256, claim süresi yok.
 
@@ -61,5 +61,12 @@
 | Nested fn-typed capture | 1.21.1 |
 | on_shutdown + nested Router | 1.18.1+ |
 
+## Kapandı (Nox 1.142.7–1.142.23)
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| linux-x64 release `-Dcpu=x86_64_v2`, paket içi `qbe` | **1.142.7** | CI resmi kurulum betiği. Kaynak derlemesi yok |
+| `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
+
 ## İzleme
-`noxc upgrade` (≥1.142.3) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.
+`noxc upgrade` (≥1.142.23) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.

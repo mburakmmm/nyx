@@ -1,0 +1,135 @@
+# nyx.auth_engine_mysql - Devise-core on MySQL (Application.mysql).
+
+import nox.time
+import nox.uuid
+import nox.strings
+from nox.mysql import Connection as MysqlConnection, MysqlError
+from nox.db import Statement
+from nox.db import Row
+import nyx.password
+import nyx.auth_engine
+from nyx.auth_engine import AuthEngineError
+
+def ensure_schema(db: MysqlConnection) -> None:
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS users (" +
+        "id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, " +
+        "email VARCHAR(255) NOT NULL, " +
+        "password_digest VARCHAR(255) NOT NULL, " +
+        "failed_attempts INTEGER NOT NULL DEFAULT 0, " +
+        "locked_at_ms BIGINT NOT NULL DEFAULT 0, " +
+        "reset_token VARCHAR(255) NOT NULL DEFAULT '', " +
+        "reset_sent_at_ms BIGINT NOT NULL DEFAULT 0, " +
+        "UNIQUE KEY users_email (email), " +
+        "KEY idx_users_reset_token (reset_token)" +
+        ")"
+    )
+
+def find_by_email(db: MysqlConnection, email: str) -> Row | None:
+    stmt: Statement = db.prepare(
+        "SELECT id, email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms " +
+        "FROM users WHERE email = ?"
+    )
+    stmt.bind_str(0, nyx.auth_engine.normalize_email(email))
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return None
+    return rows[0]
+
+def register(db: MysqlConnection, email: str, password: str) -> int:
+    em: str = nyx.auth_engine.normalize_email(email)
+    if len(em) == 0 or not nox.strings.contains(em, "@"):
+        raise AuthEngineError("invalid email")
+    if len(password) < 8:
+        raise AuthEngineError("password too short (min 8)")
+    digest: str = nyx.password.hash(password)
+    stmt: Statement = db.prepare(
+        "INSERT INTO users (email, password_digest, failed_attempts, locked_at_ms, reset_token, reset_sent_at_ms) " +
+        "VALUES (?, ?, 0, 0, '', 0)"
+    )
+    stmt.bind_str(0, em)
+    stmt.bind_str(1, digest)
+    try:
+        stmt.execute()
+    except MysqlError:
+        raise AuthEngineError("could not register")
+    return db.last_insert_rowid()
+
+def _bump_failure(db: MysqlConnection, user_id: int) -> None:
+    now: int = nox.time.now_ms()
+    max_a: int = nyx.auth_engine.max_failed_attempts()
+    stmt: Statement = db.prepare(
+        "UPDATE users SET failed_attempts = failed_attempts + 1, " +
+        "locked_at_ms = CASE WHEN failed_attempts + 1 >= ? THEN ? ELSE locked_at_ms END " +
+        "WHERE id = ?"
+    )
+    stmt.bind_int(0, max_a)
+    stmt.bind_int(1, now)
+    stmt.bind_int(2, user_id)
+    stmt.execute()
+
+def _clear_failure(db: MysqlConnection, user_id: int) -> None:
+    stmt: Statement = db.prepare(
+        "UPDATE users SET failed_attempts = 0, locked_at_ms = 0 WHERE id = ?"
+    )
+    stmt.bind_int(0, user_id)
+    stmt.execute()
+
+def authenticate(db: MysqlConnection, email: str, password: str) -> int:
+    rec: Row | None = find_by_email(db, email)
+    if rec == None:
+        nyx.password.verify(nyx.auth_engine.timing_dummy_digest(), password)
+        raise AuthEngineError("invalid credentials")
+    else:
+        locked_at: int = rec.get_int(4)
+        if nyx.auth_engine.is_locked_at(locked_at):
+            nyx.password.verify(nyx.auth_engine.timing_dummy_digest(), password)
+            raise AuthEngineError("invalid credentials")
+        digest: str = rec.get_str(2)
+        user_id: int = rec.get_int(0)
+        if not nyx.password.verify(digest, password):
+            _bump_failure(db, user_id)
+            raise AuthEngineError("invalid credentials")
+        _clear_failure(db, user_id)
+        return user_id
+
+def request_password_reset(db: MysqlConnection, email: str) -> str:
+    rec: Row | None = find_by_email(db, email)
+    if rec == None:
+        return ""
+    else:
+        raw: str = nox.uuid.uuid4()
+        stmt: Statement = db.prepare(
+            "UPDATE users SET reset_token = ?, reset_sent_at_ms = ? WHERE id = ?"
+        )
+        stmt.bind_str(0, nyx.auth_engine.hash_reset_token(raw))
+        stmt.bind_int(1, nox.time.now_ms())
+        stmt.bind_int(2, rec.get_int(0))
+        stmt.execute()
+        return raw
+
+def reset_password(db: MysqlConnection, token: str, new_password: str) -> int:
+    if len(token) == 0:
+        raise AuthEngineError("invalid reset token")
+    if len(new_password) < 8:
+        raise AuthEngineError("password too short (min 8)")
+    hashed: str = nyx.auth_engine.hash_reset_token(token)
+    stmt: Statement = db.prepare(
+        "SELECT id, reset_sent_at_ms FROM users WHERE reset_token = ?"
+    )
+    stmt.bind_str(0, hashed)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        raise AuthEngineError("invalid reset token")
+    user_id: int = rows[0].get_int(0)
+    sent: int = rows[0].get_int(1)
+    if sent <= 0 or nox.time.now_ms() - sent > 3600000:
+        raise AuthEngineError("reset token expired")
+    upd: Statement = db.prepare(
+        "UPDATE users SET password_digest = ?, reset_token = '', reset_sent_at_ms = 0, " +
+        "failed_attempts = 0, locked_at_ms = 0 WHERE id = ?"
+    )
+    upd.bind_str(0, nyx.password.hash(new_password))
+    upd.bind_int(1, user_id)
+    upd.execute()
+    return user_id

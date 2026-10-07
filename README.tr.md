@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.19.0 · **Lisans:** MIT · **Nox ≥ 1.142.3** (CI **1.142.3**)  
+**Sürüm:** 0.20.0 · **Lisans:** MIT · **Nox ≥ 1.142.23** (CI **1.142.23**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.19.0"
+      "ref": "v0.20.0"
     }
   ]
 }
@@ -158,6 +158,15 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (1.0 değil)
+- **Nox ≥ 1.142.23** (CI resmi paket: linux-x64 `x86_64_v2`, paket içi `qbe`)
+- `NYX_IPV6=1` tek worker’da `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_IPV6_ONLY=1` dual-stack’i kapatır. `NYX_WORKERS>1` ile IPv6 `ServerError`
+- Rate-limit anahtarı `[addr]:port` biçiminde köşeli parantezin içidir
+- Yalnızca `message` atayan bir alt sınıf `__init__`i, `raise` anında `Exception.line` alıyor (1.142.23’te yeniden denendi)
+- `nox.db.DbConnection` sqlite, postgres ve mysql bağlantısını `close` / `execute` / `query` / `prepare` için kabul ediyor. Model modülleri SQL diyalekti yüzünden ayrı (`?` / `$n`, `RETURNING`, tırnak). `last_insert_rowid` protokolde yok
+- Gmail 465/587 ve Office365 587, 1.142.23’te EHLO, gereken yerde STARTTLS ve QUIT ile tamamlandı. Kimlik doğrulama ve gerçek posta gönderilmedi
+- `DATABASE_URL=mysql://...` boot, migrate, oturum ve auth için `nyx.mysql_model`, `nyx.session_store_mysql` ve `nyx.auth_engine_mysql` kullanır
+
 ### 0.19.0 — Nox 1.142 pin (1.0 değil)
 - **Nox ≥ 1.142.3** (CI **1.142.3**, `x86-64-v3` + qbe)
 - `HttpRequest.peer_addr` (Nox 1.127) trust kapalıyken rate-limit anahtarı. Boş peer (`dispatch_from_parts`, testler) `"direct"` kovasında kalır
@@ -281,16 +290,16 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.142.3** (CI **1.142.3**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- **Nox ≥ 1.142.23** (CI **1.142.23**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
-- App ORM: SQLite veya Postgres; jobs kuyruğu SQLite
+- App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite
 - İstek durumu `TaskLocal` (`nyx.runtime`)
 - Gelen TLS: `NYX_TLS_*` veya reverse proxy; cable = SSE/long-poll + opsiyonel `serve_ws*`
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
-**Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`.  
-**Hâlâ Nox’a bağlı:** STARTTLS protokolü var; Gmail/Outlook TLS el sıkışması düşebilir. `nox.orm` Nyx modeli değil.
+**Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`, Gmail/Office365 SMTP el sıkışması (1.142.23, auth ve gerçek posta gönderilmedi).  
+**Hâlâ Nox’a bağlı:** `nox.orm` Nyx modeli değil. `serve_multicore*` closure kabul etmez.
 
 ---
 

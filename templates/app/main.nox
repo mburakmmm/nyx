@@ -1,5 +1,5 @@
 # {{APP_NAME}} - nyx application entry
-# Requires Nox >= 1.142.3: TaskLocal, peer_addr, Exception.line, M:N --release, nox.smtp, nox.db.Statement.
+# Requires Nox >= 1.142.23: listen_v6, peer_addr, Exception.line, M:N --release, nox.smtp, nox.db.Statement.
 # Dev:  noxc fetch && NYX_ENV=development noxc run main.nox
 # Prod: noxc build --release main.nox && NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main
 
@@ -51,7 +51,14 @@ def handle(req: HttpRequest) -> HttpResponse:
 mode: str = nyx.server.serve_mode(cfg, False)
 print("{{APP_NAME}} listening on :" + str(cfg.port) + " mode=" + mode)
 try:
-    if mode == "multicore_tls":
+    if nyx.server.use_ipv6(cfg):
+        fd: int = nyx.server.listen_fd(cfg)
+        if mode == "tls":
+            nyx.server.require_tls_files(cfg)
+            nox.http.serve_fd_tls(fd, handle, cfg.tls_cert_path, cfg.tls_key_path)
+        else:
+            nox.http.serve_fd(fd, handle)
+    elif mode == "multicore_tls":
         nyx.server.require_tls_files(cfg)
         nox.http.serve_multicore_tls(
             cfg.port, handle, nyx.server.workers(cfg), cfg.tls_cert_path, cfg.tls_key_path

@@ -150,9 +150,10 @@ def _smtp_open(host: str, port: int, use_tls: bool) -> SmtpClient:
 
 # nox.smtp: use_tls=true aninda TLS (465). STARTTLS icin once duz TCP.
 # HTML/multipart to_eml korunur; nox.smtp.send duz metin baslik uretir.
-# quit() icindeki try, ayni fonksiyondaki finally ile 1.104 codegen'i sonsuz acar;
-# QUIT satiri ve close burada yazilir.
-# Gmail 465/587 ve Office365 587, nox.tls icinde TlsUnexpectedMessage ile dusebilir.
+# QUIT ve close burada yazilir. 1.104'te quit()'i finally icinden cagirmak
+# codegen'i sonsuz aciyordu; 1.142.3'te bu yeniden uretilmedi.
+# 1.142.23'te Gmail 465/587 ve Office365 587 el sikismasi (EHLO + STARTTLS + QUIT)
+# TlsUnexpectedMessage vermeden tamamlandi. Auth ve gercek posta gonderilmedi.
 def _deliver_smtp(cfg: Config, mail: Mail) -> None:
     if len(cfg.mail_smtp_host) == 0:
         raise MailerError("mail_smtp_host yapilandirilmamis")
@@ -216,7 +217,7 @@ def mail_from_template(
     body: str = render_template(template_path, context)
     return new_mail(to, from_addr, subject, body)
 
-# STARTTLS protokolu nox.smtp icinde var. Gmail/Outlook TLS el sikismasi
-# nox.tls'te TlsUnexpectedMessage ile dusebilir; bu fonksiyon protokolu bildirir.
+# STARTTLS protokolu nox.smtp icinde var. 1.142.23'te Gmail ve Office365
+# el sikismasi tamamlandi; bu fonksiyon protokolu bildirir.
 def smtp_starttls_supported() -> bool:
     return True

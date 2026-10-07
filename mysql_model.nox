@@ -1,0 +1,222 @@
+# nyx.mysql_model - MySQL ORM helpers (prepare/bind + last_insert_rowid).
+#
+#   application = nyx.app.boot(cfg, setup)  # DATABASE_URL=mysql://...
+#   id = nyx.mysql_model.create_attrs(nyx.app.mysql(application), "posts", attrs)
+#   row = nyx.mysql_model.find(nyx.app.mysql(application), "posts", id)
+#
+# Yer tutucu '?'. Kimlikler backtick. SQLite nyx.model, Postgres nyx.pg_model.
+
+import nox.strings
+from nox.mysql import Connection as MysqlConnection, MysqlError
+from nox.db import Statement
+from nox.db import Row
+import nyx.model
+from nyx.model import ModelError, Attributes
+
+class Record:
+    def __init__(self: Record, row: Row) -> None:
+        self.row = row
+
+    def _col_index(self: Record, name: str) -> int:
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                return i
+            i = i + 1
+        raise ModelError("sutun yok: " + name)
+
+    def get(self: Record, name: str) -> str:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return ""
+        return self.row.get_str(i)
+
+    def get_or(self: Record, name: str, fallback: str) -> str:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return fallback
+        return self.row.get_str(i)
+
+    def get_int(self: Record, name: str) -> int:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            raise ModelError("sutun NULL: " + name)
+        return self.row.get_int(i)
+
+    def get_int_or(self: Record, name: str, fallback: int) -> int:
+        i: int = self._col_index(name)
+        if self.row.is_null(i):
+            return fallback
+        return self.row.get_int(i)
+
+    def has(self: Record, name: str) -> bool:
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                return True
+            i = i + 1
+        return False
+
+def _check_ident(name: str) -> None:
+    if len(name) == 0:
+        raise ModelError("bos kimlik")
+    i: int = 0
+    while i < len(name):
+        b: int = nox.strings.byte_at(name, i)
+        ok: bool = False
+        if b >= 48 and b <= 57:
+            ok = i > 0
+        if b >= 65 and b <= 90:
+            ok = True
+        if b >= 97 and b <= 122:
+            ok = True
+        if b == 95:
+            ok = True
+        if not ok:
+            raise ModelError("gecersiz kimlik: " + name)
+        i = i + 1
+
+def _quote_ident(name: str) -> str:
+    _check_ident(name)
+    return "`" + name + "`"
+
+def _rows_to_records(rows: list[Row]) -> list[Record]:
+    out: list[Record] = []
+    i: int = 0
+    while i < len(rows):
+        out.append(Record(rows[i]))
+        i = i + 1
+    return out
+
+def find(db: MysqlConnection, table: str, id: int) -> Record | None:
+    _check_ident(table)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE `id` = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, id)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return None
+    return Record(rows[0])
+
+def all(db: MysqlConnection, table: str) -> list[Record]:
+    _check_ident(table)
+    sql: str = "SELECT * FROM " + _quote_ident(table)
+    rows: list[Row] = db.query(sql)
+    return _rows_to_records(rows)
+
+def where(db: MysqlConnection, table: str, col: str, value: str) -> list[Record]:
+    _check_ident(table)
+    _check_ident(col)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE " + _quote_ident(col) + " = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_str(0, value)
+    return _rows_to_records(stmt.query())
+
+def where_int(db: MysqlConnection, table: str, col: str, value: int) -> list[Record]:
+    _check_ident(table)
+    _check_ident(col)
+    sql: str = "SELECT * FROM " + _quote_ident(table) + " WHERE " + _quote_ident(col) + " = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, value)
+    return _rows_to_records(stmt.query())
+
+def destroy(db: MysqlConnection, table: str, id: int) -> None:
+    _check_ident(table)
+    sql: str = "DELETE FROM " + _quote_ident(table) + " WHERE `id` = ?"
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_int(0, id)
+    stmt.execute()
+
+def _bind_typed(stmt: Statement, attrs: Attributes) -> None:
+    n: int = len(attrs.keys)
+    if len(attrs.kinds) != n or len(attrs.str_vals) != n or len(attrs.int_vals) != n or len(attrs.bool_vals) != n:
+        raise ModelError("corrupt Attributes: length mismatch")
+    j: int = 0
+    while j < len(attrs.keys):
+        kind: str = attrs.kinds[j]
+        if kind == "null":
+            stmt.bind_null(j)
+        elif kind == "int":
+            stmt.bind_int(j, attrs.int_vals[j])
+        elif kind == "bool":
+            if attrs.bool_vals[j]:
+                stmt.bind_int(j, 1)
+            else:
+                stmt.bind_int(j, 0)
+        elif kind == "str":
+            stmt.bind_str(j, attrs.str_vals[j])
+        else:
+            raise ModelError("bilinmeyen attribute tipi: " + kind)
+        j = j + 1
+
+def create_attrs(db: MysqlConnection, table: str, attrs: Attributes) -> int:
+    _check_ident(table)
+    n: int = len(attrs.keys)
+    if len(attrs.kinds) != n or len(attrs.str_vals) != n or len(attrs.int_vals) != n or len(attrs.bool_vals) != n:
+        raise ModelError("corrupt Attributes: length mismatch")
+    if len(attrs.keys) == 0:
+        raise ModelError("bos attrs")
+    cols: str = ""
+    placeholders: str = ""
+    i: int = 0
+    while i < len(attrs.keys):
+        if i > 0:
+            cols = cols + ", "
+            placeholders = placeholders + ", "
+        cols = cols + _quote_ident(attrs.keys[i])
+        placeholders = placeholders + "?"
+        i = i + 1
+    sql: str = "INSERT INTO " + _quote_ident(table) + " (" + cols + ") VALUES (" + placeholders + ")"
+    stmt: Statement = db.prepare(sql)
+    _bind_typed(stmt, attrs)
+    try:
+        stmt.execute()
+    except MysqlError as e:
+        raise ModelError("mysql create failed: " + e.message)
+    return db.last_insert_rowid()
+
+def update_attrs(db: MysqlConnection, table: str, id: int, attrs: Attributes) -> None:
+    _check_ident(table)
+    n: int = len(attrs.keys)
+    if len(attrs.kinds) != n or len(attrs.str_vals) != n or len(attrs.int_vals) != n or len(attrs.bool_vals) != n:
+        raise ModelError("corrupt Attributes: length mismatch")
+    if len(attrs.keys) == 0:
+        raise ModelError("bos attrs")
+    sets: str = ""
+    i: int = 0
+    while i < len(attrs.keys):
+        if i > 0:
+            sets = sets + ", "
+        sets = sets + _quote_ident(attrs.keys[i]) + " = ?"
+        i = i + 1
+    sql: str = "UPDATE " + _quote_ident(table) + " SET " + sets + " WHERE `id` = ?"
+    stmt: Statement = db.prepare(sql)
+    _bind_typed(stmt, attrs)
+    stmt.bind_int(len(attrs.keys), id)
+    try:
+        stmt.execute()
+    except MysqlError as e:
+        raise ModelError("mysql update failed: " + e.message)
+
+def create_attrs_valid(db: MysqlConnection, table: str, attrs: Attributes, required_fields: list[str]) -> int:
+    errors: list[str] = nyx.model.validate_attrs_required(attrs, required_fields)
+    if len(errors) > 0:
+        raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
+    return create_attrs(db, table, attrs)
+
+def transaction(db: MysqlConnection, fn: (MysqlConnection) -> None) -> None:
+    db.execute("START TRANSACTION")
+    try:
+        fn(db)
+        db.execute("COMMIT")
+    except ModelError as e:
+        db.execute("ROLLBACK")
+        raise ModelError(e.message)
+    except MysqlError as e:
+        db.execute("ROLLBACK")
+        raise ModelError(e.message)
+    except:
+        db.execute("ROLLBACK")
+        raise ModelError("transaction failed")
