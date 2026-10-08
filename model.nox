@@ -383,7 +383,7 @@ def create_attrs_valid(db: Connection, table: str, attrs: Attributes, required_f
 # (baglanirken 'vals[i]' ("") YOK SAYILIP 'Statement.bind_null' kullanilir),
 # aksi halde 'vals[i]' (her zaman metin - sayilar da metin olarak) baglanir.
 def _json_keys_vals(attrs_json: str) -> Attrs:
-    v: JsonValue = nox.json.decode(attrs_json)
+    v: JsonValue = nox.json.parse(attrs_json)
     if not nox.json.is_object(v):
         raise ModelError("attrs bir JSON nesnesi olmali")
     keys: list[str] = []
@@ -403,7 +403,7 @@ def _json_keys_vals(attrs_json: str) -> Attrs:
             vals.append(nox.json.as_string(val))
             nulls.append(False)
         elif nox.json.is_number(val):
-            vals.append(nox.json.encode(val))
+            vals.append(nox.json.dump(val))
             nulls.append(False)
         elif nox.json.is_bool(val):
             if nox.json.as_bool(val):
@@ -590,7 +590,7 @@ def _find_field(v: JsonValue, name: str) -> JsonValue | None:
 # doner (bossa gecerli).
 def validate_required(attrs_json: str, fields: list[str]) -> list[str]:
     errors: list[str] = []
-    v: JsonValue = nox.json.decode(attrs_json)
+    v: JsonValue = nox.json.parse(attrs_json)
     if not nox.json.is_object(v):
         errors.append("attrs bir JSON nesnesi olmali")
         return errors

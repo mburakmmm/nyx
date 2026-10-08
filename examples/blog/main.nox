@@ -1,5 +1,5 @@
 # Nyx blog example — boot-once + typed attrs + AppContext
-# Requires Nox >= 1.142.23 (CI pin 1.142.23)
+# Requires Nox >= 1.170.0 (CI pin 1.170.0)
 # Dev:  cd examples/blog && noxc fetch && NYX_ENV=development noxc run main.nox
 # Prod: noxc build --release main.nox && NYX_WORKERS=4 NOX_POOL_WORKERS=4 ./main
 

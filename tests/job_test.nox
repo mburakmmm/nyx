@@ -8,7 +8,7 @@ from nyx.job import JobRegistry, JobError
 from nox.sqlite import Connection
 
 def welcome_handler(payload_json: str) -> None:
-    v: JsonValue = nox.json.decode(payload_json)
+    v: JsonValue = nox.json.parse(payload_json)
     nox.test.assert_true(nox.json.object_len(v) >= 0, "payload gecerli json")
 
 def failing_handler(payload_json: str) -> None:

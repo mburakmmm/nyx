@@ -30,7 +30,7 @@ def _find_object_field(v: JsonValue, name: str) -> JsonValue | None:
     return None
 
 def _with_exp(payload_json: str, exp_unix: int) -> str:
-    v: JsonValue = nox.json.decode(payload_json)
+    v: JsonValue = nox.json.parse(payload_json)
     if not nox.json.is_object(v):
         raise JwtError("payload bir JSON nesnesi olmali")
     out: str = "{\"exp\":" + str(exp_unix)
@@ -39,7 +39,7 @@ def _with_exp(payload_json: str, exp_unix: int) -> str:
     while i < n:
         key: str = nox.json.object_key(v, i)
         if key != "exp":
-            out = out + "," + nox.json.encode_string(key) + ":" + nox.json.encode(nox.json.object_value(v, i))
+            out = out + "," + nox.json.dump_string(key) + ":" + nox.json.dump(nox.json.object_value(v, i))
         i = i + 1
     return out + "}"
 
@@ -106,7 +106,7 @@ def decode(secret: str, token: str) -> str:
     if not nox.crypto.constant_time_eq(sig, expected):
         raise JwtError("gecersiz imza")
     header_json: str = nyx.base64.decode_url(h_b64)
-    header: JsonValue = nox.json.decode(header_json)
+    header: JsonValue = nox.json.parse(header_json)
     alg_v: JsonValue | None = _find_object_field(header, "alg")
     if alg_v == None:
         raise JwtError("alg eksik")
@@ -117,7 +117,7 @@ def decode(secret: str, token: str) -> str:
             if nox.json.as_string(alg_v) != "HS256":
                 raise JwtError("yalnizca HS256 desteklenir")
     payload_json: str = nyx.base64.decode_url(p_b64)
-    payload: JsonValue = nox.json.decode(payload_json)
+    payload: JsonValue = nox.json.parse(payload_json)
     if not nox.json.is_object(payload):
         raise JwtError("payload nesne olmali")
     _check_time_claims(payload)

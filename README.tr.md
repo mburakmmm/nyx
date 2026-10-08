@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.20.0 · **Lisans:** MIT · **Nox ≥ 1.142.23** (CI **1.142.23**)  
+**Sürüm:** 0.21.0 · **Lisans:** MIT · **Nox ≥ 1.170.0** (CI **1.170.0**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.20.0"
+      "ref": "v0.21.0"
     }
   ]
 }
@@ -158,6 +158,10 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.21.0 — Nox 1.170 json adları (1.0 değil)
+- `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox 1.171 (`main`, henüz GitHub release değil) `decode` / `encode*` adlarını kaldırdı
+- CI yayımlanmış **1.170.0** paketini kurar. 1.143’ten beri varsayılan backend LLVM’dir; `--release` bu ada, `--backend qbe` QBE’ye gider
+
 ### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (1.0 değil)
 - **Nox ≥ 1.142.23** (CI resmi paket: linux-x64 `x86_64_v2`, paket içi `qbe`)
 - `NYX_IPV6=1` tek worker’da `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_IPV6_ONLY=1` dual-stack’i kapatır. `NYX_WORKERS>1` ile IPv6 `ServerError`
@@ -290,7 +294,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.142.23** (CI **1.142.23**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.db.Row` / `Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- **Nox ≥ 1.170.0** (CI **1.170.0**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `Statement`, TLS/WS, LLVM varsayılan backend, `nox.smtp` STARTTLS
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite

@@ -118,12 +118,12 @@ def _deliver_file(mail: Mail) -> None:
 
 def _mail_json(cfg: Config, mail: Mail) -> str:
     out: str = "{"
-    out = out + "\"to\":" + nox.json.encode_string(mail.to) + ","
-    out = out + "\"from\":" + nox.json.encode_string(mail.from_addr) + ","
-    out = out + "\"subject\":" + nox.json.encode_string(mail.subject) + ","
-    out = out + "\"text\":" + nox.json.encode_string(mail.body)
+    out = out + "\"to\":" + nox.json.dump_string(mail.to) + ","
+    out = out + "\"from\":" + nox.json.dump_string(mail.from_addr) + ","
+    out = out + "\"subject\":" + nox.json.dump_string(mail.subject) + ","
+    out = out + "\"text\":" + nox.json.dump_string(mail.body)
     if len(mail.html_body) > 0:
-        out = out + ",\"html\":" + nox.json.encode_string(mail.html_body)
+        out = out + ",\"html\":" + nox.json.dump_string(mail.html_body)
     out = out + "}"
     return out
 

@@ -42,7 +42,7 @@ def build_router() -> Router:
         errors: list[str] = nox.validate.validate_json_str(ctx.request.body, schema)
         if len(errors) > 0:
             return nyx.response.json(400, "{\"error\":\"validation\"}")
-        body: JsonValue = nox.json.decode(ctx.request.body)
+        body: JsonValue = nox.json.parse(ctx.request.body)
         user: str = ""
         password: str = ""
         i: int = 0

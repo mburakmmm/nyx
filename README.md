@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.20.0 · **License:** MIT · **Requires Nox ≥ 1.142.23** (CI **1.142.23**)  
+**Version:** 0.21.0 · **License:** MIT · **Requires Nox ≥ 1.170.0** (CI **1.170.0**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.20.0"
+      "ref": "v0.21.0"
     }
   ]
 }
@@ -164,6 +164,10 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.21.0 — Nox 1.170 json names (not 1.0)
+- `nox.json` calls are `parse` / `dump` / `dump_string`. Nox 1.171 (on `main`, not yet a GitHub release) removed `decode` / `encode*`
+- CI installs published **1.170.0** (linux-x64 `x86_64_v2`, bundled `qbe`). Default backend since 1.143 is LLVM; `--release` is that alias, `--backend qbe` selects QBE
 
 ### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (not 1.0)
 - Requires **Nox ≥ 1.142.23** (CI installs the official **1.142.23** tarball: linux-x64 `x86_64_v2`, `qbe` in the package)
@@ -332,7 +336,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.142.23** (CI **1.142.23**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `dict[int, class]`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, `--release` M:N, `nox.smtp` STARTTLS
+- Requires **Nox ≥ 1.170.0** (CI **1.170.0**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, LLVM default backend, `nox.smtp` STARTTLS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)

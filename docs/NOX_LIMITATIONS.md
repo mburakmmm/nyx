@@ -2,8 +2,8 @@
 
 Bu dosya **şu an geçerli** sınırları listeler. Kapanmış codegen hataları ve sürüm notları burada yok; onlar `docs/NOX_REQUESTS.md` ve README sürüm notlarında.
 
-**Doğrulama:** Nyx **0.20.0**, noxc **1.142.23** (2026-10-07).  
-Minimum Nox: **≥ 1.142.23**. CI resmi `v1.142.23` paketini kurar (`x86_64_v2`, paket içi `qbe`).
+**Doğrulama:** Nyx **0.21.0**, noxc **1.170.0** (2026-10-08).  
+Minimum Nox: **≥ 1.170.0**. CI resmi `v1.170.0` paketini kurar (`x86_64_v2`, paket içi `qbe`). `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox **1.171** (`main`) `decode` / `encode*` adlarını kaldırdı.
 
 `docs/repro-p1c-c2/` tarihseldir (1.18.1’de kapandı). Güncel bir hatanın repro’su değildir.
 
@@ -16,7 +16,7 @@ Bunlar dil, stdlib veya çalışma zamanı kısıtıdır. Nyx kodu bunlara göre
 | Sınır | Nox | Nyx’te karşılığı |
 |---|---|---|
 | `TaskLocal.set/get` yalnızca çalışan bir fiber’da tutar. 1.122’den beri `TaskLocal[T]()` `main`’i fiber’a sarmaz; kök scriptte `get()` `None` döner | **1.122** | `nyx.runtime` kök yolu modül kutusunda tutar. Bağlantı fiber’ı `TaskLocal` kullanır; fiber’lar birbirinin oturumunu görmez |
-| `serve` / `serve_tls` / `serve_ws*` closure handler kabul eder. `serve_multicore*` derleme zamanında reddeder | **1.133**, 1.142.23’e kadar değişmedi | Üretim handler’ı çıplak fonksiyon adıdır; `Application` `_apps` listesindedir |
+| `serve` / `serve_tls` / `serve_ws*` closure handler kabul eder. `serve_multicore*` derleme zamanında reddeder | **1.133**, 1.171.2’ye kadar değişmedi | Üretim handler’ı çıplak fonksiyon adıdır; `Application` `_apps` listesindedir |
 | Varsayılan `serve*` IPv4 dinler. `listen_v6` IPv6 peer’ini `[addr]:port` yazar. `serve_multicore*` portu kendisi IPv4 dinler; fd üzerinden multicore yok. Windows’ta `listen_v6` `HttpError` | **1.142.10** | `NYX_IPV6=1` tek worker’da `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_IPV6_ONLY=1` dual-stack’i kapatır. `NYX_WORKERS>1` ile birlikte `ServerError`. Rate-limit anahtarı köşeli parantezin içidir (`::1`). Allowlist’e `[::1]` yazılmaz |
 | `--release` M:N altında kilitsiz modül-global `int++` ve bellek içi rate map yarışır | **1.29+** | `nyx.metrics` kilitli `SharedBuffer`. `NYX_WORKERS>1` iken rate store `db` |
 | macOS POSIX shm adı yaklaşık 31 karakter | platform | `nyx.metrics` kısa shm adı kullanır |

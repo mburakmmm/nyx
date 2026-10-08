@@ -100,11 +100,11 @@ def store_limited(root: str, filename: str, content_str: str, max_bytes: int, co
     nox.fs.write_string(full, content_str)
     checksum: str = nox.crypto.sha256(content_str)
     meta: str = (
-        "{\"key\":" + nox.json.encode_string(key) +
-        ",\"filename\":" + nox.json.encode_string(safe_name) +
-        ",\"checksum\":" + nox.json.encode_string(checksum) +
+        "{\"key\":" + nox.json.dump_string(key) +
+        ",\"filename\":" + nox.json.dump_string(safe_name) +
+        ",\"checksum\":" + nox.json.dump_string(checksum) +
         ",\"size\":" + str(len(content_str)) +
-        ",\"content_type\":" + nox.json.encode_string(content_type) +
+        ",\"content_type\":" + nox.json.dump_string(content_type) +
         ",\"created_at_ms\":" + str(nox.time.now_ms()) + "}"
     )
     nox.fs.write_string(_meta_path(full), meta)
@@ -147,7 +147,7 @@ def verify_checksum(root: str, key: str) -> bool:
     content: str = read(root, key)
     actual: str = nox.crypto.sha256(content)
     meta: str = metadata_json(root, key)
-    v: JsonValue = nox.json.decode(meta)
+    v: JsonValue = nox.json.parse(meta)
     i: int = 0
     n: int = nox.json.object_len(v)
     while i < n:

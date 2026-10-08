@@ -1,6 +1,6 @@
-# Nyx 0.20 — Deployment guide
+# Nyx 0.21 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.28/1.29 ile `--release` M:N multicore mümkün. Pin: **noxc 1.142.23**.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.143 ile varsayılan backend LLVM (M:N). `--release` bu adın takma adı, `--backend qbe` QBE seçer. Pin: **noxc 1.170.0**.
 
 ## 1. Process model
 
@@ -123,9 +123,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.20.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.21.0" }
 ```
 
-Requires **noxc ≥ 1.142.23** (CI pin **1.142.23**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`).
+Requires **noxc ≥ 1.170.0** (CI pin **1.170.0**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`).
 
 SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. On noxc 1.142.23, Gmail 465/587 and Office365 587 completed EHLO, STARTTLS where used, and QUIT. Authentication and a real message were not sent.

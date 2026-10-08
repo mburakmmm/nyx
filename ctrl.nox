@@ -142,7 +142,7 @@ def unprocessable_json(errors: list[str]) -> HttpResponse:
     while i < len(errors):
         if i > 0:
             body = body + ","
-        body = body + nox.json.encode_string(errors[i])
+        body = body + nox.json.dump_string(errors[i])
         i = i + 1
     body = body + "]}"
     return json(422, body)
@@ -175,12 +175,12 @@ def server_error_detail_for(
     method: str = ctx.request.method
     if _wants_json(ctx):
         body: str = "{"
-        body = body + "\"error\":" + nox.json.encode_string(kind) + ","
-        body = body + "\"message\":" + nox.json.encode_string(message) + ","
+        body = body + "\"error\":" + nox.json.dump_string(kind) + ","
+        body = body + "\"message\":" + nox.json.dump_string(message) + ","
         body = body + "\"line\":" + str(line) + ","
-        body = body + "\"request_id\":" + nox.json.encode_string(rid) + ","
-        body = body + "\"method\":" + nox.json.encode_string(method) + ","
-        body = body + "\"target\":" + nox.json.encode_string(target)
+        body = body + "\"request_id\":" + nox.json.dump_string(rid) + ","
+        body = body + "\"method\":" + nox.json.dump_string(method) + ","
+        body = body + "\"target\":" + nox.json.dump_string(target)
         body = body + "}"
         return json(500, body)
     html_body: str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"

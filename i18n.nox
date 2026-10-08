@@ -46,7 +46,7 @@ def load(dir_path: str, locale: str) -> None:
     if not nox.fs.exists(file_path):
         raise I18nError("locale dosyasi yok: " + file_path)
     raw: str = nox.fs.read_to_string(file_path)
-    v: JsonValue = nox.json.decode(raw)
+    v: JsonValue = nox.json.parse(raw)
     if not nox.json.is_object(v):
         raise I18nError("locale JSON bir nesne olmali: " + file_path)
     i: int = 0
@@ -83,7 +83,7 @@ def _lookup(locale: str, key: str) -> str | None:
     raw: str = _bundle_raw(locale)
     if len(raw) == 0:
         return None
-    v: JsonValue = nox.json.decode(raw)
+    v: JsonValue = nox.json.parse(raw)
     i: int = 0
     n: int = nox.json.object_len(v)
     while i < n:

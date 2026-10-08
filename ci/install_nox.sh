@@ -4,10 +4,10 @@
 # rebuild is no longer required to avoid SIGILL.
 set -euo pipefail
 
-NOX_TAG="v1.142.23"
+NOX_TAG="v1.170.0"
 PREFIX="${NOX_INSTALL_DIR:-$HOME/.nox-lang}"
 
-curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/v1.142.23/install.sh \
+curl -fsSL https://raw.githubusercontent.com/mburakmmm/nox-lang/v1.170.0/install.sh \
   | NOX_VERSION="$NOX_TAG" NOX_INSTALL_DIR="$PREFIX" bash
 
 "$PREFIX/bin/noxc" --version

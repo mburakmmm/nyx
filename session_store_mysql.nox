@@ -31,7 +31,7 @@ def _now_ms() -> int:
 def create_sid(db: MysqlConnection, data_json: str, max_age_sec: int, user_id: int) -> str:
     if max_age_sec <= 0:
         raise SessionStoreError("max_age_sec must be positive")
-    nox.json.decode(data_json)
+    nox.json.parse(data_json)
     sid: str = nox.uuid.uuid4()
     now: int = _now_ms()
     exp: int = now + (max_age_sec * 1000)
@@ -68,7 +68,7 @@ def load_sid(db: MysqlConnection, sid: str) -> str | None:
     return rows[0].get_str(0)
 
 def save_sid(db: MysqlConnection, sid: str, data_json: str, max_age_sec: int, user_id: int) -> None:
-    nox.json.decode(data_json)
+    nox.json.parse(data_json)
     now: int = _now_ms()
     exp: int = now + (max_age_sec * 1000)
     stmt: Statement = db.prepare(

@@ -48,13 +48,13 @@ def _header_get(headers: dict[str, str], name: str) -> str | None:
     return None
 
 # 'msg' her zaman bu modulun SABIT dizeleri OLSA da ("missing_authorization"
-# gibi, kullanici girdisi ICERMEZ), 'nox.json.encode_string' KULLANMAK
+# gibi, kullanici girdisi ICERMEZ), 'nox.json.dump_string' KULLANMAK
 # gelecekte BASKA bir cagiran DEGISKEN/kullanici-kontrollu bir mesaj
 # GECIRIRSE (ör. hata ayrintisi) bozuk/enjekte edilebilir JSON URETILMESINI
 # BASTAN ONLER - elle '"\"" + msg + "\""' birlestirmesi TIRNAK/backslash
 # icerebilecek bir 'msg' icin GECERSIZ JSON uretirdi.
 def _unauthorized(msg: str) -> HttpResponse:
-    return nyx.response.json(401, "{\"error\":" + nox.json.encode_string(msg) + "}")
+    return nyx.response.json(401, "{\"error\":" + nox.json.dump_string(msg) + "}")
 
 def _drop_prefix(s: str, n: int) -> str:
     out: str = ""
@@ -91,7 +91,7 @@ def path_is_exempt_any(target: str, exempt_paths: list[str]) -> bool:
 # onu, yoksa (veya metin degilse/JSON gecersizse) bos string doner.
 def _json_field_str(json_str: str, field: str) -> str:
     try:
-        v: JsonValue = nox.json.decode(json_str)
+        v: JsonValue = nox.json.parse(json_str)
         if not nox.json.is_object(v):
             return ""
         i: int = 0

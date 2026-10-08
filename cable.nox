@@ -171,7 +171,7 @@ def sse_response_for(hub: Hub, channel: str, since_id: int) -> HttpResponse:
 def _message_json(m: Message) -> str:
     return (
         "{\"id\":" + str(m.id) +
-        ",\"event\":" + nox.json.encode_string(m.event) +
+        ",\"event\":" + nox.json.dump_string(m.event) +
         ",\"data\":" + m.data_json +
         ",\"ts_ms\":" + str(m.ts_ms) + "}"
     )
@@ -181,7 +181,7 @@ def _message_json(m: Message) -> str:
 # 'stream_poll' cagrisinda 'since_id' olarak kullanir.
 def stream_poll(hub: Hub, channel: str, since_id: int) -> str:
     events: list[Message] = _messages_since(hub, channel, since_id)
-    out: str = "{\"channel\":" + nox.json.encode_string(channel) + ",\"events\":["
+    out: str = "{\"channel\":" + nox.json.dump_string(channel) + ",\"events\":["
     i: int = 0
     while i < len(events):
         if i > 0:
@@ -282,7 +282,7 @@ def store_sse_response_for(store: Store, channel: str, since_id: int) -> HttpRes
 
 def store_stream_poll(store: Store, channel: str, since_id: int) -> str:
     events: list[Message] = _store_messages_since(store, channel, since_id)
-    out: str = "{\"channel\":" + nox.json.encode_string(channel) + ",\"events\":["
+    out: str = "{\"channel\":" + nox.json.dump_string(channel) + ",\"events\":["
     i: int = 0
     while i < len(events):
         if i > 0:
@@ -366,15 +366,15 @@ def issue_ws_ticket(secret: str, sid: str, channel: str, max_age_sec: int) -> st
         raise CableError("empty channel")
     nonce: str = nox.uuid.uuid4()
     body: str = (
-        "{\"sid\":" + nox.json.encode_string(sid) +
-        ",\"channel\":" + nox.json.encode_string(channel) +
-        ",\"nonce\":" + nox.json.encode_string(nonce) + "}"
+        "{\"sid\":" + nox.json.dump_string(sid) +
+        ",\"channel\":" + nox.json.dump_string(channel) +
+        ",\"nonce\":" + nox.json.dump_string(nonce) + "}"
     )
     return nyx.session.create(secret, body, max_age_sec)
 
 def _claims_from_ticket_json(raw: str) -> WsTicketClaims | None:
     try:
-        v: JsonValue = nox.json.decode(raw)
+        v: JsonValue = nox.json.parse(raw)
         sid: str = ""
         channel: str = ""
         nonce: str = ""
@@ -463,7 +463,7 @@ def consume_ws_nonce_pg(db: PgConnection, nonce: str, max_age_sec: int) -> bool:
 def _extract_ticket_frame(first: str) -> str:
     ticket: str = ""
     try:
-        v: JsonValue = nox.json.decode(first)
+        v: JsonValue = nox.json.parse(first)
         i: int = 0
         n: int = nox.json.object_len(v)
         while i < n:

@@ -39,7 +39,7 @@ def _object_without(v: JsonValue, skip: str) -> str:
             if not first:
                 out = out + ","
             first = False
-            out = out + nox.json.encode_string(key) + ":" + nox.json.encode(nox.json.object_value(v, i))
+            out = out + nox.json.dump_string(key) + ":" + nox.json.dump(nox.json.object_value(v, i))
         i = i + 1
     return out + "}"
 
@@ -47,7 +47,7 @@ def _root(session_json: str) -> JsonValue:
     raw: str = session_json
     if len(raw) == 0:
         raw = "{}"
-    v: JsonValue = nox.json.decode(raw)
+    v: JsonValue = nox.json.parse(raw)
     if not nox.json.is_object(v):
         raise FlashError("session JSON nesne olmali")
     return v
@@ -63,23 +63,23 @@ def _flash_with(key: str, message: str, existing: JsonValue) -> str:
             if not first:
                 out = out + ","
             first = False
-            out = out + nox.json.encode_string(k) + ":" + nox.json.encode(nox.json.object_value(existing, i))
+            out = out + nox.json.dump_string(k) + ":" + nox.json.dump(nox.json.object_value(existing, i))
         i = i + 1
     if not first:
         out = out + ","
-    return out + nox.json.encode_string(key) + ":" + nox.json.encode_string(message) + "}"
+    return out + nox.json.dump_string(key) + ":" + nox.json.dump_string(message) + "}"
 
 def set(session_json: str, key: str, message: str) -> str:
     root: JsonValue = _root(session_json)
     flash_v: JsonValue | None = _find(root, "flash")
     flash_json: str = ""
     if flash_v == None:
-        flash_json = "{" + nox.json.encode_string(key) + ":" + nox.json.encode_string(message) + "}"
+        flash_json = "{" + nox.json.dump_string(key) + ":" + nox.json.dump_string(message) + "}"
     else:
         if nox.json.is_object(flash_v):
             flash_json = _flash_with(key, message, flash_v)
         else:
-            flash_json = "{" + nox.json.encode_string(key) + ":" + nox.json.encode_string(message) + "}"
+            flash_json = "{" + nox.json.dump_string(key) + ":" + nox.json.dump_string(message) + "}"
     base: str = _object_without(root, "flash")
     if base == "{}":
         return "{\"flash\":" + flash_json + "}"
@@ -105,7 +105,7 @@ def clear(session_json: str, key: str) -> str:
     root: JsonValue = _root(session_json)
     flash_v: JsonValue | None = _find(root, "flash")
     if flash_v == None:
-        return nox.json.encode(root)
+        return nox.json.dump(root)
     else:
         if not nox.json.is_object(flash_v):
             return _object_without(root, "flash")

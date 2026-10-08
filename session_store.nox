@@ -40,7 +40,7 @@ def _now_ms() -> int:
 def create_sid(db: Connection, data_json: str, max_age_sec: int, user_id: int) -> str:
     if max_age_sec <= 0:
         raise SessionStoreError("max_age_sec must be positive")
-    nox.json.decode(data_json)
+    nox.json.parse(data_json)
     sid: str = nox.uuid.uuid4()
     now: int = _now_ms()
     exp: int = now + (max_age_sec * 1000)
@@ -74,7 +74,7 @@ def load_sid(db: Connection, sid: str) -> str | None:
     return rows[0].get_str(0)
 
 def save_sid(db: Connection, sid: str, data_json: str, max_age_sec: int, user_id: int) -> None:
-    nox.json.decode(data_json)
+    nox.json.parse(data_json)
     now: int = _now_ms()
     exp: int = now + (max_age_sec * 1000)
     stmt: Statement = db.prepare(
@@ -106,7 +106,7 @@ def purge_expired(db: Connection) -> int:
 
 # Cookie envelope: signed JSON {"sid":"..."}.
 def cookie_value_for_sid(secret: str, sid: str, max_age_sec: int) -> str:
-    body: str = "{\"sid\":" + nox.json.encode_string(sid) + "}"
+    body: str = "{\"sid\":" + nox.json.dump_string(sid) + "}"
     return nyx.session.create(secret, body, max_age_sec)
 
 def sid_from_cookie_value(secret: str, cookie_value: str) -> str | None:
@@ -116,7 +116,7 @@ def sid_from_cookie_value(secret: str, cookie_value: str) -> str | None:
     else:
         raw_s: str = raw
         try:
-            v: JsonValue = nox.json.decode(raw_s)
+            v: JsonValue = nox.json.parse(raw_s)
             i: int = 0
             n: int = nox.json.object_len(v)
             while i < n:
@@ -137,7 +137,7 @@ def sid_from_cookie_value_rotated(secret: str, previous: str, cookie_value: str)
 
 def user_id_from_session_json(data_json: str) -> int:
     try:
-        v: JsonValue = nox.json.decode(data_json)
+        v: JsonValue = nox.json.parse(data_json)
         i: int = 0
         n: int = nox.json.object_len(v)
         while i < n:

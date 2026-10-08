@@ -1,7 +1,7 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.20+ Nox 1.142.23 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **1.142.23**.
+# Nyx 0.21+ Nox 1.170 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **1.170.0**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırır).
 
 ## Kapandı (Nox 1.75–1.76) — smtp / Statement
 
@@ -69,4 +69,4 @@
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥1.142.23) → full `tests/*.nox` → blog dogfood → PG CI smoke → `--release` multicore smoke.
+`noxc upgrade` (≥1.170.0) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

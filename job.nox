@@ -68,7 +68,7 @@ def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) ->
         raise JobError("job_name bos olamaz")
     # payload_json'un GECERLI bir JSON olup olmadigini dogrula - hatali
     # veriler kuyruga sessizce girmesin (gecersizse JsonError firlar).
-    nox.json.decode(payload_json)
+    nox.json.parse(payload_json)
     now: int = nox.time.now_ms()
     stmt: Statement = db.prepare(
         "INSERT INTO jobs (job_name, payload, status, run_at_ms, attempts, last_error, created_at_ms, updated_at_ms) " +
@@ -85,9 +85,9 @@ def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) ->
 def _job_json(id: int, job_name: str, payload_json: str, status: str, attempts: int, run_at_ms: int) -> str:
     return (
         "{\"id\":" + str(id) +
-        ",\"job_name\":" + nox.json.encode_string(job_name) +
+        ",\"job_name\":" + nox.json.dump_string(job_name) +
         ",\"payload\":" + payload_json +
-        ",\"status\":" + nox.json.encode_string(status) +
+        ",\"status\":" + nox.json.dump_string(status) +
         ",\"attempts\":" + str(attempts) +
         ",\"run_at_ms\":" + str(run_at_ms) + "}"
     )
@@ -238,11 +238,11 @@ class JobRegistry:
         raise JobError("kayitli handler yok: " + name)
 
 def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> bool:
-    v: JsonValue = nox.json.decode(job_json)
+    v: JsonValue = nox.json.parse(job_json)
     id: int = int(nox.json.as_number(_field(v, "id")))
     job_name: str = nox.json.as_string(_field(v, "job_name"))
     payload_v: JsonValue = _field(v, "payload")
-    payload_json: str = nox.json.encode(payload_v)
+    payload_json: str = nox.json.dump(payload_v)
     if not registry.has(job_name):
         fail(db, id, "kayitli handler yok: " + job_name)
         return True

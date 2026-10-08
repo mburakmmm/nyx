@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.20.0** (1.0 değil) · Nox **≥ 1.142.23** (CI **1.142.23**)  
+**Durum:** Nyx **0.21.0** (1.0 değil) · Nox **≥ 1.170.0** (CI **1.170.0**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -48,6 +48,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.18.0** | Nox 1.104: nox.smtp STARTTLS (Gmail/Outlook TLS sınırı), ortak nox.db.Statement |
 | **0.19.0** | Nox 1.142: peer_addr rate-limit + trusted proxy allowlist, Exception.line |
 | **0.20.0** | Nox 1.142.23: MySQL boot/migrate/model/session/auth, `NYX_IPV6`, IPv6 peer ayrıştırma |
+| **0.21.0** | Nox 1.170: `nox.json` `parse`/`dump`/`dump_string` (1.171 `decode`/`encode*` kaldırır) |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

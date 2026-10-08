@@ -32,9 +32,9 @@ def create(secret: str, data_json: str, max_age_sec: int) -> str:
     if max_age_sec <= 0:
         raise SessionError("max_age_sec pozitif olmali")
     # data_json gömülü JSON olmalı (nesne/dizi/string literal metni).
-    body: JsonValue = nox.json.decode(data_json)
+    body: JsonValue = nox.json.parse(data_json)
     exp: int = _now_unix() + max_age_sec
-    envelope: str = "{\"exp\":" + str(exp) + ",\"d\":" + nox.json.encode(body) + "}"
+    envelope: str = "{\"exp\":" + str(exp) + ",\"d\":" + nox.json.dump(body) + "}"
     payload_b64: str = nyx.base64.encode_url(envelope)
     sig: str = _sign(secret, payload_b64)
     return payload_b64 + "." + sig
@@ -54,7 +54,7 @@ def load(secret: str, cookie_value: str) -> str | None:
         return None
     try:
         envelope_json: str = nyx.base64.decode_url(payload_b64)
-        env: JsonValue = nox.json.decode(envelope_json)
+        env: JsonValue = nox.json.parse(envelope_json)
         if not nox.json.is_object(env):
             return None
         exp_v: JsonValue | None = None
@@ -80,7 +80,7 @@ def load(secret: str, cookie_value: str) -> str | None:
                     exp_i: int = int(nox.json.as_number(exp_v))
                     if _now_unix() >= exp_i:
                         return None
-                    return nox.json.encode(data_v)
+                    return nox.json.dump(data_v)
     except JsonError:
         return None
     except Base64Error:

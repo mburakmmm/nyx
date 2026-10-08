@@ -401,7 +401,7 @@ def _ensure_session_seed(cfg: Config) -> None:
     sess: str = nyx.runtime.session_json()
     if len(sess) == 0 or sess == "{}":
         seed: str = nox.uuid.uuid4()
-        nyx.runtime.set_session("{\"_nyx\":" + nox.json.encode_string(seed) + "}")
+        nyx.runtime.set_session("{\"_nyx\":" + nox.json.dump_string(seed) + "}")
 
 def _load_session_from_cookie(cfg: Config, raw: str) -> None:
     try:
@@ -741,12 +741,12 @@ def _log_after(cfg: Config) -> (Context, HttpResponse) -> HttpResponse:
         elapsed: int = nox.time.now_ms() - nyx.runtime.started_ms()
         if cfg.log_json:
             line: str = "{"
-            line = line + "\"request_id\":" + nox.json.encode_string(nyx.runtime.request_id()) + ","
-            line = line + "\"method\":" + nox.json.encode_string(ctx.request.method) + ","
-            line = line + "\"path\":" + nox.json.encode_string(ctx.request.target) + ","
+            line = line + "\"request_id\":" + nox.json.dump_string(nyx.runtime.request_id()) + ","
+            line = line + "\"method\":" + nox.json.dump_string(ctx.request.method) + ","
+            line = line + "\"path\":" + nox.json.dump_string(ctx.request.target) + ","
             line = line + "\"status\":" + str(resp.status) + ","
             line = line + "\"ms\":" + str(elapsed) + ","
-            line = line + "\"user_id\":" + nox.json.encode_string(nyx.runtime.current_user_id())
+            line = line + "\"user_id\":" + nox.json.dump_string(nyx.runtime.current_user_id())
             line = line + "}"
             nox.log.info(line)
         else:

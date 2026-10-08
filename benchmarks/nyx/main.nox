@@ -23,7 +23,7 @@ def ping(ctx: Context) -> HttpResponse:
     return nyx.response.json(200, "{\"pong\":true}")
 
 def echo(ctx: Context) -> HttpResponse:
-    body: JsonValue = nox.json.decode(ctx.request.body)
+    body: JsonValue = nox.json.parse(ctx.request.body)
     msg: str = ""
     i: int = 0
     while i < nox.json.object_len(body):
