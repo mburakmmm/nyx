@@ -11,8 +11,9 @@
 # processed: int = nyx.job.work(db, registry, 10)
 #
 # Nox >= 1.25: JobError(Exception); dispatch 'except Exception' ile yakalanabilir.
-# work() icinde bilinen hatalar ayri, kalanlar 'except Exception' / 'except:' ile
-# fail() isaretlenir. 'finally' stuck-running korumasini saglar.
+# Nox >= 2.0: bilinen handler hatalari tek 'except (A, B) as e' govdesinde
+# fail() olur. Kalanlar 'except:' ile fail() isaretlenir. 'finally' stuck-running
+# korumasini saglar.
 
 import nox.sqlite
 import nox.json
@@ -254,28 +255,7 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
             handler(payload_json)
             complete(db, id)
             finished = True
-        except ModelError as e:
-            fail(db, id, e.message)
-            finished = True
-        except MailerError as e:
-            fail(db, id, e.message)
-            finished = True
-        except SqliteError as e:
-            fail(db, id, e.message)
-            finished = True
-        except DbError as e:
-            fail(db, id, e.message)
-            finished = True
-        except JsonError as e:
-            fail(db, id, e.message)
-            finished = True
-        except HttpError as e:
-            fail(db, id, e.message)
-            finished = True
-        except ValueError as e:
-            fail(db, id, e.message)
-            finished = True
-        except JobError as e:
+        except (ModelError, MailerError, SqliteError, DbError, JsonError, HttpError, ValueError, JobError) as e:
             fail(db, id, e.message)
             finished = True
         except:

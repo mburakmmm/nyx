@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.21.0 · **Lisans:** MIT · **Nox ≥ 1.170.0** (CI **1.170.0**)  
+**Sürüm:** 0.22.0 · **Lisans:** MIT · **Nox ≥ 2.0.7** (CI **2.0.7**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.21.0"
+      "ref": "v0.22.0"
     }
   ]
 }
@@ -158,8 +158,16 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 
 ## Sürüm notları
 
+### 0.22.0 — Nox 2.0.7 (1.0 değil)
+- **Nox ≥ 2.0.7** (CI resmi **2.0.7** paketi: linux-x64, paket içi `qbe`). 2.0.0-rc.4, modül düzeyindeki `application = nyx.app.boot(cfg, setup)` desenindeki bayat yerel / SIGSEGV ve blog derleme hatasını kapattı (1.170’den 2.0.0-rc.3’e kadar açıktı)
+- `nox.json` adları `parse` / `dump` / `dump_string` olarak kalır. 1.171 `decode` / `encode*` adlarını kaldırdı; 2.0 bu kaldırmayı korur
+- 2.0.1’den beri stdlib istisna metinleri İngilizcedir. SMTP hatası `smtp: TLS upgrade failed: …` / `unexpected SMTP code` olarak gelir. Sahte SMTP testi, 220 STARTTLS yanıtından sonra `CertificateHostMismatch` bekler
+- İş kuyruğu bilinen handler hatalarını `except (ModelError, MailerError, …) as e` ile yakalar (Nox 2.0). Mesaj yine `fail()` içine gider
+- Router sorguyu ayırıp `Context.query` doldurur. Nyx `dispatch` öncesinde yolu keser: log path-only kalır, `nyx.params` form `+` → boşluk kuralını `runtime.request_target` üzerinden uygular. `nox.url.query_decode` `+` karakterini olduğu gibi bırakır
+- SQL `bind_*` indeksleri sıfır tabanlı kalır. Aralık dışı indeks sürücü hatası yükseltir (2.0.0-rc.2)
+
 ### 0.21.0 — Nox 1.170 json adları (1.0 değil)
-- `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox 1.171 (`main`, henüz GitHub release değil) `decode` / `encode*` adlarını kaldırdı
+- `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox 1.171 `decode` / `encode*` adlarını kaldırdı
 - CI yayımlanmış **1.170.0** paketini kurar. 1.143’ten beri varsayılan backend LLVM’dir; `--release` bu ada, `--backend qbe` QBE’ye gider
 
 ### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (1.0 değil)
@@ -294,7 +302,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 1.170.0** (CI **1.170.0**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `Statement`, TLS/WS, LLVM varsayılan backend, `nox.smtp` STARTTLS
+- **Nox ≥ 2.0.7** (CI **2.0.7**): modül düzeyinde boot, İngilizce stdlib hataları, `Context.query`, TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `Statement`, TLS/WS, LLVM varsayılan backend, `nox.smtp` STARTTLS
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite

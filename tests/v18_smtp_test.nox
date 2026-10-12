@@ -54,8 +54,11 @@ except MailerError as err:
     failed = True
     err_msg = err.message
 nox.test.assert_true(failed, "STARTTLS teslimati TLS yukseltmesinde dustu")
-nox.test.assert_true(nox.strings.contains(err_msg, "TLS yukseltme"), "hata TLS yukseltmesi: " + err_msg)
-nox.test.assert_true(nox.strings.contains(err_msg, "beklenmeyen SMTP kodu") == False, "STARTTLS oncesi kod hatasi yok: " + err_msg)
+# Nox >= 2.0.1: stdlib istisna metinleri Ingilizce.
+# Sahte sunucu STARTTLS 220 doner; dusus sertifika host uyusmazligindadir.
+nox.test.assert_true(nox.strings.contains(err_msg, "TLS upgrade failed"), "hata TLS yukseltmesi: " + err_msg)
+nox.test.assert_true(nox.strings.contains(err_msg, "CertificateHostMismatch"), "sertifika host uyusmazligi: " + err_msg)
+nox.test.assert_true(nox.strings.contains(err_msg, "unexpected SMTP code") == False, "STARTTLS oncesi kod hatasi yok: " + err_msg)
 
 file_cfg: Config = nyx.config.defaults("test")
 file_cfg.mail_delivery = "file"

@@ -2,8 +2,8 @@
 
 Bu dosya **şu an geçerli** sınırları listeler. Kapanmış codegen hataları ve sürüm notları burada yok; onlar `docs/NOX_REQUESTS.md` ve README sürüm notlarında.
 
-**Doğrulama:** Nyx **0.21.0**, noxc **1.170.0** (2026-10-08).  
-Minimum Nox: **≥ 1.170.0**. CI resmi `v1.170.0` paketini kurar (`x86_64_v2`, paket içi `qbe`). `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox **1.171** (`main`) `decode` / `encode*` adlarını kaldırdı.
+**Doğrulama:** Nyx **0.22.0**, noxc **2.0.7** (2026-10-12).  
+Minimum Nox: **≥ 2.0.7**. CI resmi `v2.0.7` paketini kurar (linux-x64, paket içi `qbe`). `nox.json` çağrıları `parse` / `dump` / `dump_string`. Nox **1.171** `decode` / `encode*` adlarını kaldırdı; **2.0** bu kaldırmayı korur. **2.0.1** stdlib istisna metinlerini İngilizce yaptı. **2.0.0-rc.4** modül düzeyindeki `boot(cfg, setup)` bayat yerelini kapattı.
 
 `docs/repro-p1c-c2/` tarihseldir (1.18.1’de kapandı). Güncel bir hatanın repro’su değildir.
 
@@ -21,6 +21,7 @@ Bunlar dil, stdlib veya çalışma zamanı kısıtıdır. Nyx kodu bunlara göre
 | `--release` M:N altında kilitsiz modül-global `int++` ve bellek içi rate map yarışır | **1.29+** | `nyx.metrics` kilitli `SharedBuffer`. `NYX_WORKERS>1` iken rate store `db` |
 | macOS POSIX shm adı yaklaşık 31 karakter | platform | `nyx.metrics` kısa shm adı kullanır |
 | `nox.smtp.send` düz metin başlık üretir | **1.75** | HTML/multipart `to_eml` + `_send_dot_stuffed` ile gider |
+| Stdlib `SmtpError.message` İngilizcedir (`TLS upgrade failed`, `unexpected SMTP code`) | **2.0.1** | `MailerError` metni `smtp: ` + stdlib iletisi. Test `CertificateHostMismatch` bekler |
 
 ---
 
@@ -33,7 +34,8 @@ Bunlar eksik API değildir. Kapatmak ya Nox tipi ister ya da mevcut yüzeyi zay�
 - **`nox.jwt` claim süresi kontrol etmez.** `nyx.jwt` exp / nbf / iat uygular.
 - **İş kuyruğu SQLite dosyasıdır.** Worker, uygulama Postgres veya MySQL olsa da `NYX_JOBS_DB_PATH` kuyruğunu kullanır. Kuyruk app sunucusuna bağlanmak zorunda kalmaz.
 - **Cable bellek hub’ı süreç içidir.** Worker’lar arası yayın `nyx.cable.open_store` (SQLite) ile yapılır.
-- **`{% for %}` `nox.template` içinde yok.** Koleksiyon `render_records` / `render_each` / `render_each_map`.
+- **`{% for %}` `nox.template` içinde yok.** Koleksiyon `render_records` / `render_each` / `render_each_map`. 2.0 şablonuna döngü eklemedi.
+- **`Context.query` Nyx parametresi değildir.** Nox 2.0 router sorguyu yoldan ayırır ve `nox.url.query_decode` ile doldurur; `+` boşluk olmaz. Nyx `dispatch` yolu önceden keser, log path-only kalır, `nyx.params` orijinal target üzerinde form `+` kuralını uygular.
 - **Boş `trusted_proxies` + `NYX_TRUST_X_FORWARDED_FOR=1`.** Operatör kenarın XFF’ini doğruladığını kabul eder. Liste doluysa XFF yalnızca o IP’lerden okunur.
 
 ## 3. MySQL
@@ -54,3 +56,4 @@ Bunlar eski belgede açıktı. 1.142.23’te sınır olarak kullanılmamalı.
 - Oturum string’ini `HttpResponse` ile paylaşınca ARC use-after-free — 1.142.3’te yeniden üretilmedi. `session_json()` hâlâ `+ ""` ile kopya döner. Ayrı bir hata olan `nox.tls` / `nox.websocket` `close()` sonrası use-after-free 1.110.4’te kapandı.
 - Yayınlanan `linux-x64` ikilisi `-Dcpu=native` olduğu için AVX-512’siz makinede SIGILL — **1.142.7**’den beri release `x86_64_v2` derler ve paket `qbe` içerir. CI kaynak derlemesi bırakıldı.
 - `list[dict]`, paket içi callback dict, modül-global + nested closure, `Exception` tabanı, `dict[int, class]`, ortak `Row` / `Statement`, sunucu TLS — kapanmış durumlar. Sürümleri `docs/NOX_REQUESTS.md` içinde.
+- Modül düzeyinde `application = nyx.app.boot(cfg, setup)` 1.170’den 2.0.0-rc.3’e kadar bayat yerel yüzünden SIGSEGV veya derleme hatasıydı. **2.0.0-rc.4** kapattı. Nyx 0.22 bu deseni 2.0.7 üzerinde kullanır.

@@ -12,6 +12,8 @@
 #            HTTP API saglayicilariyla uyumlu).
 #   "smtp" - nox.smtp: varsayilan aninda TLS (465). NYX_MAIL_SMTP_STARTTLS=1
 #            duz TCP sonra STARTTLS (tipik 587). HTML to_eml korunur.
+#            Nox >= 2.0.1 stdlib SmtpError metinleri Ingilizcedir
+#            ("TLS upgrade failed", "unexpected SMTP code").
 # Ikisi de GERCEK G/C yapar - mock yoktur.
 
 import nox.fs
@@ -154,6 +156,7 @@ def _smtp_open(host: str, port: int, use_tls: bool) -> SmtpClient:
 # codegen'i sonsuz aciyordu; 1.142.3'te bu yeniden uretilmedi.
 # 1.142.23'te Gmail 465/587 ve Office365 587 el sikismasi (EHLO + STARTTLS + QUIT)
 # TlsUnexpectedMessage vermeden tamamlandi. Auth ve gercek posta gonderilmedi.
+# 2.0.1'den beri SmtpError.message Ingilizcedir; MailerError bu metni "smtp: " ile tasir.
 def _deliver_smtp(cfg: Config, mail: Mail) -> None:
     if len(cfg.mail_smtp_host) == 0:
         raise MailerError("mail_smtp_host yapilandirilmamis")

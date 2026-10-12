@@ -773,6 +773,10 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     if want_tl:
         nyx.runtime.begin(rid, started, cfg.locale)
         nyx.runtime.set_request_target(req.target)
+    # Nox 2.0 router sorguyu kendisi ayirir ve Context.query doldurur.
+    # nox.url.query_decode '+' karakterini bosluk yapmaz. Nyx yolu burada
+    # keser: handler logu path-only kalir, nyx.params orijinal target'i
+    # (form '+' = bosluk) runtime.request_target uzerinden okur.
     path: str = nyx.params.path_only(req.target)
     routed: HttpRequest = HttpRequest(req.method, path, req.body, req.headers, req.peer_addr)
     empty_params: dict[str, str] = {}

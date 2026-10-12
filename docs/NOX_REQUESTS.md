@@ -1,7 +1,17 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.21+ Nox 1.170 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **1.170.0**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırır).
+# Nyx 0.22+ Nox 2.0.7 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **2.0.7**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+
+## Kapandı (Nox 2.0.0–2.0.7)
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| Modül düzeyinde `boot(cfg, setup)` bayat yerel / SIGSEGV | **2.0.0-rc.4** | Blog ve testler üst düzey `application = nyx.app.boot` kullanır |
+| Stdlib istisna metinleri İngilizce | **2.0.1** | SMTP testi `TLS upgrade failed` + `CertificateHostMismatch` |
+| `except (A, B) as e` | **2.0** | `nyx.job` bilinen handler hataları tek gövdede `fail()` |
+| Router sorguyu ayırır, `Context.query` | **2.0.0-rc.2** | Nyx yolu kendisi keser; form `+` kuralı `nyx.params` içinde kalır |
+| Aralık dışı `bind_*` sürücü hatası, indeks 0 tabanlı | **2.0.0-rc.2** | Nyx zaten `bind_*(0, …)` kullanır |
 
 ## Kapandı (Nox 1.75–1.76) — smtp / Statement
 
@@ -69,4 +79,4 @@
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥1.170.0) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.
+`noxc upgrade` (≥2.0.7) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

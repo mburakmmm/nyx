@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.21.0 · **License:** MIT · **Requires Nox ≥ 1.170.0** (CI **1.170.0**)  
+**Version:** 0.22.0 · **License:** MIT · **Requires Nox ≥ 2.0.7** (CI **2.0.7**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.21.0"
+      "ref": "v0.22.0"
     }
   ]
 }
@@ -165,8 +165,16 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 
 ## Changelog
 
+### 0.22.0 — Nox 2.0.7 (not 1.0)
+- Requires **Nox ≥ 2.0.7** (CI installs the official **2.0.7** package: linux-x64, bundled `qbe`). 2.0.0-rc.4 fixed module-level `application = nyx.app.boot(cfg, setup)` (stale local / SIGSEGV and the blog compile failure present from 1.170 through 2.0.0-rc.3)
+- `nox.json` names stay `parse` / `dump` / `dump_string`. 1.171 removed `decode` / `encode*`; 2.0 keeps that removal
+- Stdlib exception text is English since 2.0.1. SMTP failures surface as `smtp: TLS upgrade failed: …` / `unexpected SMTP code`. The fake-SMTP test expects `CertificateHostMismatch` after a 220 STARTTLS reply
+- Job handler errors use `except (ModelError, MailerError, …) as e` (Nox 2.0). The message still goes to `fail()`
+- The router now strips the query and fills `Context.query`. Nyx still cuts the path before `dispatch` so logs stay path-only and `nyx.params` keeps form `+` → space via `runtime.request_target`. `nox.url.query_decode` leaves `+` literal
+- SQL `bind_*` indexes stay zero-based. An out-of-range index raises the driver error (2.0.0-rc.2)
+
 ### 0.21.0 — Nox 1.170 json names (not 1.0)
-- `nox.json` calls are `parse` / `dump` / `dump_string`. Nox 1.171 (on `main`, not yet a GitHub release) removed `decode` / `encode*`
+- `nox.json` calls are `parse` / `dump` / `dump_string`. Nox 1.171 removed `decode` / `encode*`
 - CI installs published **1.170.0** (linux-x64 `x86_64_v2`, bundled `qbe`). Default backend since 1.143 is LLVM; `--release` is that alias, `--backend qbe` selects QBE
 
 ### 0.20.0 — Nox 1.142.23, MySQL, IPv6 (not 1.0)
@@ -336,7 +344,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 1.170.0** (CI **1.170.0**): TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, LLVM default backend, `nox.smtp` STARTTLS
+- Requires **Nox ≥ 2.0.7** (CI **2.0.7**): module-level boot, English stdlib errors, `Context.query`, TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, LLVM default backend, `nox.smtp` STARTTLS
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
