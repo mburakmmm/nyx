@@ -167,22 +167,27 @@ def validate_email(params: dict[str, str], key: str) -> list[str]:
         errors.append("required param missing: " + key)
     return errors
 
-def _header_ci(headers: dict[str, str], name: str) -> str:
+# HTTP/1 header names vary in case. HTTP/2 (Nox >= 2.0.127) delivers Title-Case
+# (X-Csrf-Token, not X-CSRF-Token). Scan every key.
+def header(headers: dict[str, str], name: str) -> str | None:
     try:
         return headers[name]
     except KeyError:
-        a: int = 0
-    lower: str = nox.strings.lower(name)
-    try:
-        return headers[lower]
-    except KeyError:
-        b: int = 0
-    if lower == "content-type":
-        try:
-            return headers["Content-Type"]
-        except KeyError:
-            c: int = 0
-    return ""
+        miss: int = 0
+    want: str = nox.strings.lower(name)
+    keys: list[str] = headers.keys()
+    i: int = 0
+    while i < len(keys):
+        if nox.strings.lower(keys[i]) == want:
+            return headers[keys[i]]
+        i = i + 1
+    return None
+
+def _header_ci(headers: dict[str, str], name: str) -> str:
+    got: str | None = header(headers, name)
+    if got == None:
+        return ""
+    return got
 
 def from_request(req: HttpRequest) -> dict[str, str]:
     target: str = req.target

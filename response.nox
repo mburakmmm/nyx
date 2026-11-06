@@ -21,6 +21,29 @@ def redirect(location: str, status: int) -> HttpResponse:
     headers["Location"] = location
     return HttpResponse(status, "", headers)
 
+# Same header twice (Set-Cookie, Link, Vary). Nox 2.0.120 writes each
+# newline-separated piece as its own header line.
+def add_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
+    out: dict[str, str] = {}
+    keys: list[str] = resp.headers.keys()
+    i: int = 0
+    while i < len(keys):
+        k: str = keys[i]
+        out[k] = resp.headers[k]
+        i = i + 1
+    previous: str = ""
+    found: bool = False
+    try:
+        previous = out[key]
+        found = True
+    except KeyError:
+        found = False
+    if found and len(previous) > 0:
+        out[key] = previous + "\n" + value
+    else:
+        out[key] = value
+    return HttpResponse(resp.status, resp.body, out)
+
 def with_header(resp: HttpResponse, key: str, value: str) -> HttpResponse:
     out: dict[str, str] = {}
     keys: list[str] = resp.headers.keys()

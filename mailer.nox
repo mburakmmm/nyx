@@ -24,7 +24,7 @@ import nox.http
 import nox.json
 import nox.strings
 import nox.template
-from nox.http import HttpResponse, HttpError
+from nox.http import HttpResponse, HttpError, HttpTimeoutError
 from nox.smtp import SmtpClient, SmtpError
 from nyx.config import Config
 import nox.smtp
@@ -116,7 +116,7 @@ def _deliver_file(mail: Mail) -> None:
     _ensure_dir(dir_path)
     filename: str = str(nox.time.now_ms()) + "_" + nox.uuid.uuid4() + ".eml"
     full: str = nox.path.join(dir_path, filename)
-    nox.fs.write_string(full, to_eml(mail))
+    nox.fs.write_string_atomic(full, to_eml(mail))
 
 def _mail_json(cfg: Config, mail: Mail) -> str:
     out: str = "{"
@@ -138,9 +138,11 @@ def _deliver_http(cfg: Config, mail: Mail) -> None:
         headers["Authorization"] = "Bearer " + cfg.mail_api_key
     body: str = _mail_json(cfg, mail)
     try:
-        resp: HttpResponse = nox.http.post(cfg.mail_api_url, body, headers)
+        resp: HttpResponse = nox.http.request("POST", cfg.mail_api_url, body, headers, cfg.http_timeout_ms)
         if resp.status < 200 or resp.status >= 300:
             raise MailerError("mail API hata dondu: " + str(resp.status) + " " + resp.body)
+    except HttpTimeoutError:
+        raise MailerError("mail API zaman asimi: " + cfg.mail_api_url)
     except HttpError:
         raise MailerError("mail API istegi basarisiz: " + cfg.mail_api_url)
 

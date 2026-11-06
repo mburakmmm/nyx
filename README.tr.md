@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.22.0 · **Lisans:** MIT · **Nox ≥ 2.0.7** (CI **2.0.7**)  
+**Sürüm:** 0.24.0 · **Lisans:** MIT · **Nox ≥ 2.0.188** (CI **2.0.188**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.22.0"
+      "ref": "v0.24.0"
     }
   ]
 }
@@ -153,10 +153,29 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 | `NYX_CSRF` / `NYX_CSRF_API_EXEMPT` / `NYX_CSP` / `NYX_LOCALE` | güvenlik & i18n (`CSRF_API_EXEMPT` = `/api/` CSRF muafiyeti opt-in) |
 | `NYX_MAIL_SMTP_PORT` | SMTP portu (varsayılan `465`, anında TLS) |
 | `NYX_MAIL_SMTP_STARTTLS` | `1` = düz TCP sonra STARTTLS (tipik `587`); `0` veya boş = anında TLS |
+| `NYX_HTTP_TIMEOUT_MS` | Posta API’si ve `nyx.storage.store_http` istemci süresi (varsayılan `10000`; `0` kapatır). DNS ve TCP de bu süreye girer |
+| `NYX_MAX_BODY_BYTES` / `NYX_MAX_HEADER_BYTES` / `NYX_READ_TIMEOUT_MS` / `NYX_MAX_CONNECTIONS` / `NYX_DRAIN_TIMEOUT_MS` | `0` Nox varsayılanını korur (10 MiB, 16 KiB, 30s, 4096, 10s) |
+| `NYX_HTTP2` | Varsayılan açık. `0` HTTP/1.1. Başlık araması büyük/küçük harf duyarsız |
+| `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Giden havuz (varsayılan `32` / `90000`). Idle `0` havuzu kapatır |
 
 ---
 
 ## Sürüm notları
+
+### 0.24.0 — Nox 2.0.188 (1.0 değil)
+- **Nox ≥ 2.0.188** (CI resmi **2.0.188** paketi: linux-x64, paket içi `qbe`)
+- `nyx.app.boot`, `nyx.server.apply` çağırır: `configure`, `set_http2`, `client_pool`. Limitte `0` stdlib varsayılanını korur. HTTP/2, `NYX_HTTP2=0` olmadıkça açıktır. POSIX’te SIGTERM/SIGINT `serve*`’ı döndürür; `finally` içinde `nyx.app.shutdown` çalışır
+- Başlık araması büyük/küçük harf duyarsızdır (`nyx.params.header`). HTTP/2 adları Title-Case gelir
+- İkinci `Set-Cookie`, `nyx.response.add_header` ile eklenir (`\n`, sunucu ayrı satır yazar)
+- `dispatch`, `req.conn` değerini kopyalar. `nyx.cable.live_sse` soket açıkken akar; `conn == 0` tek SSE gövdesi döner. Akış başladıktan sonra middleware başlık ekleyemez. Güvenlik başlıkları `open_sse`’ye `nyx.security.header_dict` ile verilir. Oturum çerezi akıştan önce var olmalıdır
+- `nyx.storage.path_for`, `nox.path.safe_join` kullanır (bileşen sınırı, symlink kontrolü). `fetch` `download_to_file` ile indirir. `store_http_file` dosyayı akar
+- `noxc run --release main.nox`: bayrak yoldan öncedir. Yoldan sonraki bayrak program argv’sine gider
+
+### 0.23.0 — Nox 2.0.68 (1.0 değil)
+- **Nox ≥ 2.0.68** (CI resmi **2.0.68** paketi: linux-x64, paket içi `qbe`)
+- Posta API’si ve `nyx.storage.store_http`, `nox.http.request` çağırır. Süre `NYX_HTTP_TIMEOUT_MS` (varsayılan 10 sn, `0` kapatır). `HttpTimeoutError` ayrı posta/depolama hatasıdır. `store_http` `POST`, `PUT` ve `PATCH` kabul eder; `store_http_post` POST sarmalayıcısıdır
+- Yerel depolama gövdesi, `.meta.json` yan dosyası ve dosya postası `.eml` `nox.fs.write_string_atomic` ile yazılır
+- `normalize_email` `nox.strings.lower` olarak kalır (Nox 2.0.56’dan beri Unicode). ASCII adresler değişmez. `nox.unicode.lower_tr` hesap anahtarı değildir (`I` → `ı` olur)
 
 ### 0.22.0 — Nox 2.0.7 (1.0 değil)
 - **Nox ≥ 2.0.7** (CI resmi **2.0.7** paketi: linux-x64, paket içi `qbe`). 2.0.0-rc.4, modül düzeyindeki `application = nyx.app.boot(cfg, setup)` desenindeki bayat yerel / SIGSEGV ve blog derleme hatasını kapattı (1.170’den 2.0.0-rc.3’e kadar açıktı)
@@ -302,16 +321,16 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 2.0.7** (CI **2.0.7**): modül düzeyinde boot, İngilizce stdlib hataları, `Context.query`, TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `Statement`, TLS/WS, LLVM varsayılan backend, `nox.smtp` STARTTLS
+- **Nox ≥ 2.0.188** (CI **2.0.188**): HTTP/2, `configure`/`shutdown`, canlı SSE, `safe_join`, transfer indirme/yükleme, istemci havuzu; 0.23 yüzeyi (zaman aşımı, atomik yazım, Unicode `lower`) bunun altında kalır
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite
 - İstek durumu `TaskLocal` (`nyx.runtime`)
-- Gelen TLS: `NYX_TLS_*` veya reverse proxy; cable = SSE/long-poll + opsiyonel `serve_ws*`
+- Gelen TLS: `NYX_TLS_*` veya reverse proxy. Cable: tek kare SSE, canlı `live_sse` (çerez ve güvenlik başlığı akıştan önce), opsiyonel `serve_ws*`
 - Şablonda `{% for %}` yok → `render_records` / `render_each`
 
 **Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`, Gmail/Office365 SMTP el sıkışması (1.142.23, auth ve gerçek posta gönderilmedi).  
-**Hâlâ Nox’a bağlı:** `nox.orm` Nyx modeli değil. `serve_multicore*` closure kabul etmez.
+**Hâlâ Nox’a bağlı:** kanıtlı liste [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `nox.orm` Nyx modeli değil. `serve_multicore*` closure kabul etmez ve IPv4 dinler. Şablonda `{% for %}` yok. `nox.jwt` süre bakmaz.
 
 ---
 

@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.22.0 · **License:** MIT · **Requires Nox ≥ 2.0.7** (CI **2.0.7**)  
+**Version:** 0.24.0 · **License:** MIT · **Requires Nox ≥ 2.0.188** (CI **2.0.188**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.22.0"
+      "ref": "v0.24.0"
     }
   ]
 }
@@ -160,10 +160,29 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 | `NYX_REQUEST_HEADERS` | `0` → `handle_bare` / `EMPTY_HEADERS` (Nox header-skip) |
 | `NYX_MAIL_SMTP_PORT` | SMTP port (default `465`, immediate TLS) |
 | `NYX_MAIL_SMTP_STARTTLS` | `1` = plain TCP then STARTTLS (typical `587`); `0` or empty = immediate TLS |
+| `NYX_HTTP_TIMEOUT_MS` | Client deadline for mail API and `nyx.storage.store_http` (default `10000`; `0` disables). Includes DNS and TCP connect |
+| `NYX_MAX_BODY_BYTES` / `NYX_MAX_HEADER_BYTES` / `NYX_READ_TIMEOUT_MS` / `NYX_MAX_CONNECTIONS` / `NYX_DRAIN_TIMEOUT_MS` | `0` keeps the Nox default (10 MiB, 16 KiB, 30s, 4096, 10s) |
+| `NYX_HTTP2` | Default on. `0` forces HTTP/1.1. Header lookup is case-insensitive (`X-Csrf-Token`, `Last-Event-Id`) |
+| `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Outbound pool (default `32` / `90000`). Idle `0` disables it |
 
 ---
 
 ## Changelog
+
+### 0.24.0 — Nox 2.0.188 (not 1.0)
+- Requires **Nox ≥ 2.0.188** (CI installs the official **2.0.188** package: linux-x64, bundled `qbe`)
+- `nyx.app.boot` calls `nyx.server.apply`: `nox.http.configure`, `set_http2`, `client_pool`. `0` on a limit keeps the stdlib default. HTTP/2 is on unless `NYX_HTTP2=0`. POSIX SIGTERM/SIGINT returns from `serve*` so `finally` can run `nyx.app.shutdown`
+- Header lookup is case-insensitive (`nyx.params.header`). HTTP/2 delivers Title-Case names
+- A second `Set-Cookie` is appended with `nyx.response.add_header` (`\n`, written as separate header lines)
+- `dispatch` copies `req.conn`. `nyx.cable.live_sse` streams while the socket is open; `conn == 0` returns one buffered SSE body. After the stream starts, later middleware cannot add headers. Pass `nyx.security.header_dict` into `open_sse`. The session cookie must already exist
+- `nyx.storage.path_for` uses `nox.path.safe_join` (component boundary, symlink checked). `fetch` downloads with `download_to_file`. `store_http_file` streams an upload
+- `noxc run --release main.nox`: the flag goes before the path. A flag after the path is program argv
+
+### 0.23.0 — Nox 2.0.68 (not 1.0)
+- Requires **Nox ≥ 2.0.68** (CI installs the official **2.0.68** package: linux-x64, bundled `qbe`)
+- Mail API and `nyx.storage.store_http` call `nox.http.request` with `NYX_HTTP_TIMEOUT_MS` (default 10s, `0` disables). `HttpTimeoutError` is a distinct mail/storage error. `store_http` accepts `POST`, `PUT`, and `PATCH`; `store_http_post` is the POST wrapper
+- Local storage blobs, their `.meta.json` sidecars, and file-delivery `.eml` files use `nox.fs.write_string_atomic`
+- `normalize_email` stays `nox.strings.lower` (Unicode casefold since Nox 2.0.56). ASCII addresses are unchanged. `nox.unicode.lower_tr` is not the account key (`I` would become `ı`)
 
 ### 0.22.0 — Nox 2.0.7 (not 1.0)
 - Requires **Nox ≥ 2.0.7** (CI installs the official **2.0.7** package: linux-x64, bundled `qbe`). 2.0.0-rc.4 fixed module-level `application = nyx.app.boot(cfg, setup)` (stale local / SIGSEGV and the blog compile failure present from 1.170 through 2.0.0-rc.3)
@@ -344,7 +363,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 2.0.7** (CI **2.0.7**): module-level boot, English stdlib errors, `Context.query`, TaskLocal, `Exception.line`, `HttpRequest.peer_addr`, `listen_v6`, `nox.json` `parse`/`dump`, `nox.db.Row` / `nox.db.Statement`, TLS/WS, LLVM default backend, `nox.smtp` STARTTLS
+- Requires **Nox ≥ 2.0.188** (CI **2.0.188**): HTTP/2, `configure`/`shutdown`, live SSE, `safe_join`, transfer download/upload, client pool, plus the 0.23 surface (timeout, atomic writes, Unicode `lower`)
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
@@ -352,14 +371,14 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - DB sessions: SQLite → `application.db`; Postgres → `application.pg` (`nyx.session_store_pg`)
 - Jobs queue: SQLite at `NYX_JOBS_DB_PATH` (separate from app PG)
 - TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587)
-- Cable: SSE/long-poll + optional server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
+- Cable: one-shot SSE, live `nyx.cable.live_sse` (cookie and security headers before the stream), plus server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
 - Rate limit: a real `peer_addr` is the client key. `NYX_TRUST_X_FORWARDED_FOR=1` uses the first XFF hop; with `NYX_TRUSTED_PROXIES` set, only those connecting IPs may supply XFF. Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
 - No `{% for %}` → `render_records` / `render_each` / `render_each_map`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
-- **Request state** uses `TaskLocal` (Nox ≥ 1.24) — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md)
+- **Request state** uses `TaskLocal` on a connection fiber. The root script keeps a module box — [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md)
 
 **Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, multicore/`--release` for higher concurrency.  
-**Still Nox-bound:** peer IP / caught-exception line — [docs/NOX_REQUESTS.md](docs/NOX_REQUESTS.md).
+**Still Nox-bound:** measured list in [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `serve_multicore*` rejects closures and listens on IPv4. Templates have no `{% for %}`. `nox.jwt` does not check `exp`.
 
 ---
 

@@ -62,7 +62,16 @@ class Config:
         request_id: bool,
         request_headers: bool,
         ipv6: bool,
-        ipv6_only: bool
+        ipv6_only: bool,
+        timeout_ms: int,
+        max_body_bytes: int,
+        max_header_bytes: int,
+        read_timeout_ms: int,
+        max_connections: int,
+        drain_timeout_ms: int,
+        http2: bool,
+        http_pool_idle: int,
+        http_pool_idle_ms: int
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -127,6 +136,20 @@ class Config:
         # Nox >= 1.142.10: True ise listen_v6 + serve_fd. serve_multicore IPv4 dinler.
         self.ipv6 = ipv6
         self.ipv6_only = ipv6_only
+        # Nox >= 2.0.31: nox.http.request timeout. 0 disables the client deadline.
+        # Nox >= 2.0.91: the deadline includes DNS and TCP connect.
+        self.http_timeout_ms = timeout_ms
+        # Nox >= 2.0.118: 0 keeps the stdlib default (10 MiB, 16 KiB, 30s, 4096, 10s).
+        self.max_body_bytes = max_body_bytes
+        self.max_header_bytes = max_header_bytes
+        self.read_timeout_ms = read_timeout_ms
+        self.max_connections = max_connections
+        self.drain_timeout_ms = drain_timeout_ms
+        # Nox >= 2.0.127: False calls set_http2(False) before serve.
+        self.http2 = http2
+        # Nox >= 2.0.126: 0 disables the outbound connection pool.
+        self.http_pool_idle = http_pool_idle
+        self.http_pool_idle_ms = http_pool_idle_ms
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -148,6 +171,20 @@ def _env_int(name: str, default: int) -> int:
     if len(raw) == 0:
         return default
     return int(raw)
+
+# Client deadline for nox.http.request. 10000 ms unless NYX_HTTP_TIMEOUT_MS is set.
+# 0 disables the deadline. Negative values clamp to 0.
+def read_http_timeout_ms() -> int:
+    timeout_ms: int = _env_int("NYX_HTTP_TIMEOUT_MS", 10000)
+    if timeout_ms < 0:
+        return 0
+    return timeout_ms
+
+def _nonneg(name: str, default: int) -> int:
+    value: int = _env_int(name, default)
+    if value < 0:
+        return 0
+    return value
 
 def _env_bool(name: str, default: bool) -> bool:
     raw: str = _env_or(name, "")
@@ -239,7 +276,16 @@ def defaults(env: str) -> Config:
         True,
         True,
         False,
-        False
+        False,
+        10000,
+        0,
+        0,
+        0,
+        0,
+        0,
+        True,
+        32,
+        90000
     )
 
 def from_env() -> Config:
@@ -316,6 +362,18 @@ def from_env() -> Config:
     cfg.security_headers = _env_bool("NYX_SECURITY_HEADERS", cfg.security_headers)
     cfg.request_id = _env_bool("NYX_REQUEST_ID", cfg.request_id)
     cfg.request_headers = _env_bool("NYX_REQUEST_HEADERS", cfg.request_headers)
+    timeout_ms: int = _env_int("NYX_HTTP_TIMEOUT_MS", cfg.http_timeout_ms)
+    if timeout_ms < 0:
+        timeout_ms = 0
+    cfg.http_timeout_ms = timeout_ms
+    cfg.max_body_bytes = _nonneg("NYX_MAX_BODY_BYTES", cfg.max_body_bytes)
+    cfg.max_header_bytes = _nonneg("NYX_MAX_HEADER_BYTES", cfg.max_header_bytes)
+    cfg.read_timeout_ms = _nonneg("NYX_READ_TIMEOUT_MS", cfg.read_timeout_ms)
+    cfg.max_connections = _nonneg("NYX_MAX_CONNECTIONS", cfg.max_connections)
+    cfg.drain_timeout_ms = _nonneg("NYX_DRAIN_TIMEOUT_MS", cfg.drain_timeout_ms)
+    cfg.http2 = _env_bool("NYX_HTTP2", cfg.http2)
+    cfg.http_pool_idle = _nonneg("NYX_HTTP_POOL_IDLE", cfg.http_pool_idle)
+    cfg.http_pool_idle_ms = _nonneg("NYX_HTTP_POOL_IDLE_MS", cfg.http_pool_idle_ms)
     cfg.ipv6 = _env_bool("NYX_IPV6", cfg.ipv6)
     cfg.ipv6_only = _env_bool("NYX_IPV6_ONLY", cfg.ipv6_only)
     if cfg.ipv6_only:

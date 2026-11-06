@@ -74,6 +74,20 @@ def serve_mode(cfg: Config, want_ws: bool) -> str:
         return "ws"
     return "plain"
 
+# Nox 2.0.118–2.0.127: call once before serve*. 0 keeps a stdlib default.
+# SIGTERM/SIGINT already drains serve*; the entry finally block then
+# calls nyx.app.shutdown.
+def apply(cfg: Config) -> None:
+    nox.http.configure(
+        cfg.max_body_bytes,
+        cfg.max_header_bytes,
+        cfg.read_timeout_ms,
+        cfg.max_connections,
+        cfg.drain_timeout_ms
+    )
+    nox.http.set_http2(cfg.http2)
+    nox.http.client_pool(cfg.http_pool_idle, cfg.http_pool_idle_ms)
+
 def require_tls_files(cfg: Config) -> None:
     if len(cfg.tls_cert_path) == 0:
         raise ServerError("set NYX_TLS_CERT and NYX_TLS_KEY for serve_tls / serve_ws_tls")

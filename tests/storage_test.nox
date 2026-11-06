@@ -96,4 +96,34 @@ except StorageError:
     threw_empty_key = True
 nox.test.assert_true(threw_empty_key, "bos anahtar path_for icin StorageError firlatir")
 
+bad_method: bool = False
+try:
+    nyx.storage.store_http("GET", "http://127.0.0.1/x", "body", "text/plain")
+except StorageError:
+    bad_method = True
+nox.test.assert_true(bad_method, "GET store_http reddedilir")
+
+import nox.process
+from nox.process import Command, Output
+
+link_root: str = "/tmp/nyx_storage_link_root"
+outside: str = "/tmp/nyx_storage_link_out"
+if not nox.fs.exists(link_root):
+    nox.fs.create_dir(link_root)
+if not nox.fs.exists(outside):
+    nox.fs.create_dir(outside)
+nox.fs.write_string(outside + "/secret.txt", "nope")
+ln: Command = Command("ln")
+ln.arg("-sfn")
+ln.arg(outside)
+ln.arg(link_root + "/link")
+ln_out: Output = ln.run()
+nox.test.assert_eq_int(ln_out.status, 0, "symlink fixture")
+escaped: bool = False
+try:
+    nyx.storage.path_for(link_root, "link/secret.txt")
+except StorageError:
+    escaped = True
+nox.test.assert_true(escaped, "symlink out of root is rejected")
+
 print("storage_test ok")

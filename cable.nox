@@ -21,7 +21,7 @@ import nox.time
 import nox.fs
 import nox.path
 import nox.sqlite
-from nox.http import HttpResponse
+from nox.http import HttpRequest, HttpResponse, ResponseStream
 from nox.sqlite import Connection as SqliteConnection
 from nox.postgres import Connection as PgConnection, PostgresError
 from nox.db import Statement
@@ -31,6 +31,7 @@ import nox.uuid
 import nyx.session_store
 import nyx.session_store_pg
 import nyx.session
+import nyx.params
 from nox.db import Row as SqliteRow
 
 class CableError(Exception):
@@ -167,6 +168,91 @@ def sse_response(events: list[Message]) -> HttpResponse:
 
 def sse_response_for(hub: Hub, channel: str, since_id: int) -> HttpResponse:
     return sse_response(_messages_since(hub, channel, since_id))
+
+# Last-Event-ID is case-insensitive (HTTP/2 sends Last-Event-Id).
+def since_id(req: HttpRequest, fallback: int) -> int:
+    raw: str | None = nyx.params.header(req.headers, "Last-Event-ID")
+    if raw == None:
+        return fallback
+    if len(raw) == 0:
+        return fallback
+    try:
+        return int(raw)
+    except ValueError:
+        return fallback
+
+# Headers go out immediately. extra wins on key clash, so a caller can pass
+# nyx.security.header_dict(cfg). After-middleware cannot add headers once the
+# stream has started: serve ignores the HttpResponse returned by end().
+def open_sse(req: HttpRequest, extra: dict[str, str]) -> ResponseStream:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    headers["Cache-Control"] = "no-cache"
+    headers["X-Accel-Buffering"] = "no"
+    keys: list[str] = extra.keys()
+    i: int = 0
+    while i < len(keys):
+        headers[keys[i]] = extra[keys[i]]
+        i = i + 1
+    return req.stream(200, headers)
+
+def _write_messages(stream: ResponseStream, events: list[Message]) -> bool:
+    i: int = 0
+    while i < len(events):
+        e: Message = events[i]
+        if not stream.event(e.data_json, e.event, str(e.id)):
+            return False
+        i = i + 1
+    return True
+
+def _advance(cursor: int, events: list[Message]) -> int:
+    i: int = 0
+    out: int = cursor
+    while i < len(events):
+        if events[i].id > out:
+            out = events[i].id
+        i = i + 1
+    return out
+
+# conn == 0 (tests, dispatch_from_parts): one snapshot, same bytes as sse_response_for.
+# A real connection stays open, polls, and uses stream.sleep_ms so other fibers run.
+def live_sse(req: HttpRequest, hub: Hub, channel: str, since_id_value: int, wait_ms: int, extra: dict[str, str]) -> HttpResponse:
+    if req.conn == 0:
+        return sse_response_for(hub, channel, since_id_value)
+    pause: int = wait_ms
+    if pause < 0:
+        pause = 0
+    stream: ResponseStream = open_sse(req, extra)
+    cursor: int = since_id_value
+    while stream.is_open():
+        events: list[Message] = _messages_since(hub, channel, cursor)
+        if not _write_messages(stream, events):
+            return stream.end()
+        cursor = _advance(cursor, events)
+        if len(events) == 0:
+            if not stream.comment(""):
+                return stream.end()
+        stream.sleep_ms(pause)
+    return stream.end()
+
+def store_live_sse(req: HttpRequest, store: Store, channel: str, since_id_value: int, wait_ms: int, extra: dict[str, str]) -> HttpResponse:
+    if req.conn == 0:
+        return store_sse_response_for(store, channel, since_id_value)
+    pause: int = wait_ms
+    if pause < 0:
+        pause = 0
+    stream: ResponseStream = open_sse(req, extra)
+    cursor: int = since_id_value
+    while stream.is_open():
+        events: list[Message] = _store_messages_since(store, channel, cursor)
+        if not _write_messages(stream, events):
+            return stream.end()
+        cursor = _advance(cursor, events)
+        if len(events) == 0:
+            if not stream.comment(""):
+                return stream.end()
+        stream.sleep_ms(pause)
+    return stream.end()
 
 def _message_json(m: Message) -> str:
     return (
@@ -326,6 +412,11 @@ def channel_sse_response(ch: Channel, since_id: int) -> HttpResponse:
     if ch.backend == "store":
         return store_sse_response_for(ch.store, ch.name, since_id)
     return sse_response_for(ch.hub, ch.name, since_id)
+
+def channel_live_sse(ch: Channel, req: HttpRequest, since_id_value: int, wait_ms: int, extra: dict[str, str]) -> HttpResponse:
+    if ch.backend == "store":
+        return store_live_sse(req, ch.store, ch.name, since_id_value, wait_ms, extra)
+    return live_sse(req, ch.hub, ch.name, since_id_value, wait_ms, extra)
 
 # Sunucu WS: her gelen metin frame'ini aynen geri gonder (smoke / ping).
 def ws_echo(conn: WebSocketServerConn) -> None:

@@ -1,0 +1,18 @@
+import nox.strings
+import nox.test
+import nox.unicode
+import nyx.auth_engine
+
+ascii_mail: str = nyx.auth_engine.normalize_email("  Alice@Example.COM ")
+nox.test.assert_eq_str(ascii_mail, "alice@example.com", "ascii email lower+trim")
+
+raw: str = "İsmail@Example.COM"
+folded: str = nyx.auth_engine.normalize_email(raw)
+nox.test.assert_eq_str(folded, nox.strings.lower(raw), "non-ascii uses unicode lower")
+nox.test.assert_true(folded != raw, "non-ascii local-part is casefolded")
+
+ascii_i: str = nyx.auth_engine.normalize_email("I@X.COM")
+nox.test.assert_eq_str(ascii_i, "i@x.com", "ascii I stays dotted i")
+nox.test.assert_true(ascii_i != nox.unicode.lower_tr("I@X.COM"), "lower_tr is not the account key")
+
+print("v23_email_case_test ok")

@@ -81,24 +81,10 @@ def check(secret: str, tok: str) -> bool:
         return False
 
 def _header_get(headers: dict[str, str], name: str) -> str:
-    try:
-        return headers[name]
-    except KeyError:
-        a: int = 0
-    try:
-        return headers[nox.strings.lower(name)]
-    except KeyError:
-        b: int = 0
-    if nox.strings.lower(name) == "x-csrf-token":
-        try:
-            return headers["X-CSRF-Token"]
-        except KeyError:
-            c: int = 0
-        try:
-            return headers["x-csrf-token"]
-        except KeyError:
-            d: int = 0
-    return ""
+    got: str | None = nyx.params.header(headers, name)
+    if got == None:
+        return ""
+    return got
 
 def _unsafe_method(method: str) -> bool:
     return method == "POST" or method == "PUT" or method == "PATCH" or method == "DELETE"

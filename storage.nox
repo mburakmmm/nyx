@@ -15,7 +15,11 @@ import nox.time
 import nox.json
 import nox.strings
 import nox.http
-from nox.http import HttpResponse, HttpError
+import nox.transfer
+import nyx.config
+from nox.http import HttpResponse, HttpError, HttpTimeoutError
+from nox.path import PathError
+from nox.fs import FsError
 
 class StorageError(Exception):
     pass
@@ -39,15 +43,6 @@ def _sanitize_filename(filename: str) -> str:
 def _meta_path(content_path: str) -> str:
     return content_path + ".meta.json"
 
-def _drop_last_n(s: str, n: int) -> str:
-    out: str = ""
-    limit: int = len(s) - n
-    i: int = 0
-    while i < limit:
-        out = out + s[i]
-        i = i + 1
-    return out
-
 # 'key' (cagiran tarafindan verilen, GUVENILMEYEN olabilecek opak depolama
 # anahtari) icinde yol gezinme ('..'), mutlak yol veya backslash icerip
 # icermedigini denetler - hicbiri 'store()'un URETTIGI (uuid4 + "/" +
@@ -63,19 +58,17 @@ def _validate_key(key: str) -> None:
     if nox.path.is_absolute(key):
         raise StorageError("gecersiz depolama anahtari (mutlak yol olamaz): " + key)
 
-# 'full' (root+key birlestirilmis yol) HALA 'root' altinda mi diye ikinci
-# bir savunma hatti (defense-in-depth) olarak dogrular - '_validate_key'
-# '..'/mutlak yolu ZATEN reddettiginden bu normalde tetiklenmez, ama
-# 'nox.path.join' GELECEKTE farkli davranirsa (ör. sembolik link cozme)
-# BILE 'root' disina cikisi yakalar.
-def _ensure_under_root(root: str, full: str) -> None:
-    root_norm: str = root
-    if len(root_norm) > 0 and nox.strings.ends_with(root_norm, "/"):
-        root_norm = _drop_last_n(root_norm, 1)
-    if full == root_norm:
-        return
-    if not nox.strings.starts_with(full, root_norm + "/"):
-        raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + full)
+def _write_meta(key: str, safe_name: str, content_str: str, content_type: str, full: str) -> None:
+    checksum: str = nox.crypto.sha256(content_str)
+    meta: str = (
+        "{\"key\":" + nox.json.dump_string(key) +
+        ",\"filename\":" + nox.json.dump_string(safe_name) +
+        ",\"checksum\":" + nox.json.dump_string(checksum) +
+        ",\"size\":" + str(len(content_str)) +
+        ",\"content_type\":" + nox.json.dump_string(content_type) +
+        ",\"created_at_ms\":" + str(nox.time.now_ms()) + "}"
+    )
+    nox.fs.write_string_atomic(_meta_path(full), meta)
 
 # 'content_str'i 'root' altinda RASTGELE (uuid4) bir alt dizine yazar ve
 # opak bir 'key' ("<uuid>/<dosya_adi>") doner. Yaninda sha256 checksum +
@@ -94,40 +87,104 @@ def store_limited(root: str, filename: str, content_str: str, max_bytes: int, co
     if len(safe_name) == 0:
         raise StorageError("gecersiz dosya adi: " + filename)
     key: str = nox.uuid.uuid4() + "/" + safe_name
-    full: str = nox.path.join(root, key)
-    dir_part: str = nox.path.dirname(full)
-    _ensure_dir(dir_part)
-    nox.fs.write_string(full, content_str)
-    checksum: str = nox.crypto.sha256(content_str)
-    meta: str = (
-        "{\"key\":" + nox.json.dump_string(key) +
-        ",\"filename\":" + nox.json.dump_string(safe_name) +
-        ",\"checksum\":" + nox.json.dump_string(checksum) +
-        ",\"size\":" + str(len(content_str)) +
-        ",\"content_type\":" + nox.json.dump_string(content_type) +
-        ",\"created_at_ms\":" + str(nox.time.now_ms()) + "}"
-    )
-    nox.fs.write_string(_meta_path(full), meta)
+    full: str = _prepare_new(root, key)
+    nox.fs.write_string_atomic(full, content_str)
+    _write_meta(key, safe_name, content_str, content_type, full)
     return key
 
-# Upload via HTTP POST to a gateway/presigned endpoint that accepts POST.
-# (Nox http client exposes get/post; use a signing gateway for S3 PUT.)
-def store_http_post(url: str, content_str: str, content_type: str) -> None:
+# POST, PUT, or PATCH. Timeout is NYX_HTTP_TIMEOUT_MS (default 10000, 0 disables).
+# Nox >= 2.0.31: nox.http.request. Body is sent only for these three methods.
+def store_http(method: str, url: str, content_str: str, content_type: str) -> None:
+    verb: str = nox.strings.upper(method)
+    if verb != "POST" and verb != "PUT" and verb != "PATCH":
+        raise StorageError("desteklenmeyen HTTP metodu: " + method)
     headers: dict[str, str] = {}
     if len(content_type) > 0:
         headers["Content-Type"] = content_type
+    timeout_ms: int = nyx.config.read_http_timeout_ms()
     try:
-        resp: HttpResponse = nox.http.post(url, content_str, headers)
+        resp: HttpResponse = nox.http.request(verb, url, content_str, headers, timeout_ms)
         if resp.status < 200 or resp.status >= 300:
             raise StorageError("HTTP upload failed: HTTP " + str(resp.status))
+    except HttpTimeoutError:
+        raise StorageError("HTTP upload timed out: " + verb + " " + url)
     except HttpError as e:
         raise StorageError("HTTP upload failed: " + e.message)
 
+def store_http_post(url: str, content_str: str, content_type: str) -> None:
+    store_http("POST", url, content_str, content_type)
+
+# Large body: file is streamed with Content-Length. POST and PATCH are not retried.
+# PUT may be retried by the stdlib client only on the buffered request() path;
+# upload_file uses stream_upload and does not retry a partial upload.
+def store_http_file(method: str, url: str, path: str, content_type: str) -> int:
+    verb: str = nox.strings.upper(method)
+    if verb != "POST" and verb != "PUT" and verb != "PATCH":
+        raise StorageError("desteklenmeyen HTTP metodu: " + method)
+    if not nox.fs.exists(path):
+        raise StorageError("yuklenecek dosya yok: " + path)
+    headers: dict[str, str] = {}
+    if len(content_type) > 0:
+        headers["Content-Type"] = content_type
+    timeout_ms: int = nyx.config.read_http_timeout_ms()
+    try:
+        resp: HttpResponse = nox.transfer.upload_file(verb, url, path, headers, timeout_ms)
+        if resp.status < 200 or resp.status >= 300:
+            raise StorageError("HTTP upload failed: HTTP " + str(resp.status))
+        return resp.status
+    except HttpTimeoutError:
+        raise StorageError("HTTP upload timed out: " + verb + " " + url)
+    except HttpError as e:
+        raise StorageError("HTTP upload failed: " + e.message)
+    except FsError as e:
+        raise StorageError("HTTP upload failed: " + e.message)
+
+# GET the URL onto disk under root. Non-2xx does not leave a blob.
+# Checksum is a second read of the saved file.
+def fetch(root: str, filename: str, url: str) -> str:
+    if len(url) == 0:
+        raise StorageError("indirme adresi bos olamaz")
+    if len(filename) == 0:
+        raise StorageError("dosya adi bos olamaz")
+    safe_name: str = _sanitize_filename(filename)
+    if len(safe_name) == 0:
+        raise StorageError("gecersiz dosya adi: " + filename)
+    key: str = nox.uuid.uuid4() + "/" + safe_name
+    full: str = _prepare_new(root, key)
+    headers: dict[str, str] = {}
+    timeout_ms: int = nyx.config.read_http_timeout_ms()
+    status: int = 0
+    try:
+        status = nox.transfer.download_to_file(url, full, headers, timeout_ms)
+    except HttpTimeoutError:
+        raise StorageError("HTTP download timed out: " + url)
+    except HttpError as e:
+        raise StorageError("HTTP download failed: " + e.message)
+    except FsError as e:
+        raise StorageError("HTTP download failed: " + e.message)
+    if status < 200 or status >= 300:
+        raise StorageError("HTTP download failed: HTTP " + str(status))
+    body: str = nox.fs.read_to_string(full)
+    _write_meta(key, safe_name, body, "", full)
+    return key
+
+def _prepare_new(root: str, key: str) -> str:
+    _ensure_dir(root)
+    parent: str = nox.path.dirname(key)
+    if len(parent) > 0 and parent != ".":
+        _ensure_dir(nox.path.join(root, parent))
+    return path_for(root, key)
+
 def path_for(root: str, key: str) -> str:
     _validate_key(key)
-    full: str = nox.path.join(root, key)
-    _ensure_under_root(root, full)
-    return full
+    if not nox.fs.exists(root):
+        raise StorageError("depolama koku yok: " + root)
+    try:
+        return nox.path.safe_join(root, key)
+    except PathError as e:
+        if nox.strings.contains(e.message, "path escapes root"):
+            raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
+        raise StorageError("depolama anahtari yok: " + key)
 
 def read(root: str, key: str) -> str:
     full: str = path_for(root, key)

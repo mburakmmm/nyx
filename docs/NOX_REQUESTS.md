@@ -1,7 +1,35 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.22+ Nox 2.0.7 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **2.0.7**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+# Nyx 0.24+ Nox 2.0.188 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **2.0.188**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+
+## Kapandı (Nox 2.0.69–2.0.188)
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| `download_to_file` / `upload_file` | **2.0.69** (gzip+chunked düzeltmesi **2.0.81**) | `nyx.storage.fetch`, `store_http_file` |
+| İstemci süresi DNS + TCP | **2.0.91** | `NYX_HTTP_TIMEOUT_MS` |
+| Atomik yazımda ENOSPC temizliği | **2.0.92** | `write_string_atomic` (0.23’ten beri) |
+| `configure` + `shutdown` + sinyal | **2.0.118** | `nyx.server.apply`. Şablon `finally` → `nyx.app.shutdown` |
+| Çoklu `Set-Cookie` (`\n`) | **2.0.120** | `nyx.response.add_header` |
+| Canlı SSE / `req.stream` | **2.0.124** | `dispatch` `conn` kopyalar. `nyx.cable.live_sse` |
+| Giden bağlantı havuzu | **2.0.126** | `NYX_HTTP_POOL_IDLE`, `NYX_HTTP_POOL_IDLE_MS` |
+| HTTP/2 + Title-Case başlık | **2.0.127** | `NYX_HTTP2`. `nyx.params.header` |
+| HTTP/2 WebSocket | **2.0.129** | Mevcut `serve_ws*` |
+| Şablonda UTF-8 yer tutucu | **2.0.136** | Pin. `{% for %}` hâlâ yok |
+| `noxc run` bayrağı yoldan önce | **2.0.176** | `noxc run --release main.nox` |
+| `safe_join` bileşen sınırı | **2.0.179** | `nyx.storage.path_for` |
+
+Hâlâ açık olanlar ve kanıtları `docs/NOX_LIMITATIONS.md` içindedir: multicore closure, IPv4 multicore, şablon döngüsü, `nox.jwt` claim süresi, kök `TaskLocal`, liste ataması kopyası, `AtomicInt`/`AtomicBool` dışı paylaşım, form `+`.
+
+## Kapandı (Nox 2.0.31–2.0.68)
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| `nox.http.request` + `HttpTimeoutError` | **2.0.31** | `NYX_HTTP_TIMEOUT_MS`. Posta API ve `store_http` (`POST`/`PUT`/`PATCH`) |
+| `nox.fs.write_string_atomic` | **2.0.42** | Yerel storage gövdesi, `.meta.json`, dosya postası `.eml` |
+| `nox.strings.lower` Unicode | **2.0.56** | `normalize_email` aynı işlev. `lower_tr` hesap anahtarı değil |
+| `nox.unicode.lower_tr` | **2.0.64** | İstenirse çağrılır; varsayılan hesap anahtarı olmaz |
 
 ## Kapandı (Nox 2.0.0–2.0.7)
 
@@ -79,4 +107,4 @@
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥2.0.7) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.
+`noxc upgrade` (≥2.0.188) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

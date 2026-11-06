@@ -1,0 +1,74 @@
+import nox.fs
+import nox.http
+import nox.os
+import nox.path
+import nox.strings
+import nox.test
+from nox.http import HttpRequest, HttpResponse
+from nox.path import PathError
+import nyx.cable
+import nyx.config
+import nyx.params
+import nyx.response
+import nyx.server
+from nyx.cable import Hub
+from nyx.config import Config
+
+headers: dict[str, str] = {}
+headers["X-Csrf-Token"] = "title-case"
+headers["Last-Event-Id"] = "7"
+got: str | None = nyx.params.header(headers, "X-CSRF-Token")
+nox.test.assert_true(got != None, "title-case csrf header is visible")
+if got != None:
+    nox.test.assert_eq_str(got, "title-case", "csrf value")
+cookie_headers: dict[str, str] = {}
+cookie_headers["Cookie"] = "nyx_session=abc"
+cookie_got: str | None = nyx.params.header(cookie_headers, "cookie")
+shown: str = ""
+if cookie_got != None:
+    shown = cookie_got
+nox.test.assert_eq_str(shown, "nyx_session=abc", "Cookie matches cookie")
+
+base: HttpResponse = nyx.response.text(200, "ok")
+first: HttpResponse = nyx.response.add_header(base, "Set-Cookie", "a=1; Path=/")
+second: HttpResponse = nyx.response.add_header(first, "Set-Cookie", "b=2; Path=/")
+nox.test.assert_eq_str(second.headers["Set-Cookie"], "a=1; Path=/\nb=2; Path=/", "two set-cookie lines")
+nox.test.assert_eq_str(nox.http.multi(["a=1; Path=/", "b=2; Path=/"]), second.headers["Set-Cookie"], "matches stdlib multi")
+
+cfg: Config = nyx.config.defaults("development")
+nox.test.assert_true(cfg.http2, "http2 default on")
+nox.test.assert_eq_int(cfg.http_pool_idle, 32, "pool idle default")
+nox.test.assert_eq_int(cfg.http_pool_idle_ms, 90000, "pool idle ms default")
+nox.test.assert_eq_int(cfg.max_body_bytes, 0, "body 0 keeps stdlib default")
+nyx.server.apply(cfg)
+nox.os.set_var("NYX_HTTP2", "0")
+nox.os.set_var("NYX_MAX_BODY_BYTES", "1024")
+nox.os.set_var("NYX_HTTP_POOL_IDLE", "0")
+tuned: Config = nyx.config.from_env()
+nox.test.assert_true(not tuned.http2, "NYX_HTTP2=0")
+nox.test.assert_eq_int(tuned.max_body_bytes, 1024, "body limit")
+nox.test.assert_eq_int(tuned.http_pool_idle, 0, "pool off")
+nyx.server.apply(tuned)
+
+root: str = "/tmp/nyx_v24_safe"
+if not nox.fs.exists(root):
+    nox.fs.create_dir(root)
+escaped: bool = False
+try:
+    joined: str = nox.path.safe_join(root, "../nyx_v24_safe_evil")
+    nox.test.assert_true(len(joined) == 0, "unreachable")
+except PathError:
+    escaped = True
+nox.test.assert_true(escaped, "safe_join rejects ..")
+
+hub: Hub = Hub()
+nyx.cable.broadcast(hub, "room", "message", "{\"text\":\"selam\"}")
+req: HttpRequest = HttpRequest("GET", "/cable", "", headers, "", 0)
+extra: dict[str, str] = {}
+snap: HttpResponse = nyx.cable.live_sse(req, hub, "room", 0, 1000, extra)
+nox.test.assert_eq_int(snap.status, 200, "snapshot status")
+nox.test.assert_true(nox.strings.contains(snap.body, "event: message"), "snapshot event")
+nox.test.assert_true(nox.strings.contains(snap.body, "selam"), "snapshot data")
+nox.test.assert_eq_int(nyx.cable.since_id(req, 0), 7, "Last-Event-Id")
+
+print("v24_surface_test ok")

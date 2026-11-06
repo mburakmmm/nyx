@@ -11,41 +11,13 @@ import nyx.session
 import nyx.cookie
 import nyx.response
 import nyx.runtime
+import nyx.params
 from nyx.jwt import JwtError
 from nyx.cookie import CookieError
 from nox.json import JsonError
 
 def _header_get(headers: dict[str, str], name: str) -> str | None:
-    # HTTP başlıkları büyük/küçük harf duyarsız - yaygın biçimleri dene.
-    try:
-        return headers[name]
-    except KeyError:
-        x: int = 0
-    lower: str = nox.strings.lower(name)
-    try:
-        return headers[lower]
-    except KeyError:
-        y: int = 0
-    # Title-Case (Authorization)
-    if name == "Authorization" or lower == "authorization":
-        try:
-            return headers["Authorization"]
-        except KeyError:
-            z: int = 0
-        try:
-            return headers["authorization"]
-        except KeyError:
-            w: int = 0
-    if name == "Cookie" or lower == "cookie":
-        try:
-            return headers["Cookie"]
-        except KeyError:
-            a: int = 0
-        try:
-            return headers["cookie"]
-        except KeyError:
-            b: int = 0
-    return None
+    return nyx.params.header(headers, name)
 
 # 'msg' her zaman bu modulun SABIT dizeleri OLSA da ("missing_authorization"
 # gibi, kullanici girdisi ICERMEZ), 'nox.json.dump_string' KULLANMAK

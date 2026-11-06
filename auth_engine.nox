@@ -24,6 +24,8 @@ def max_failed_attempts() -> int:
 def lock_duration_ms() -> int:
     return 15 * 60 * 1000
 
+# Nox >= 2.0.56: nox.strings.lower Unicode esler. ASCII adresler ayni kalir.
+# nox.unicode.lower_tr hesap anahtari degildir (ASCII I -> ı olur).
 def normalize_email(email: str) -> str:
     return nox.strings.lower(nox.strings.trim(email))
 
