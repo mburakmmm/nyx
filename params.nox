@@ -5,7 +5,8 @@
 # f: dict[str, str] = nyx.params.form(req.body)
 # all: dict[str, str] = nyx.params.from_request(req)
 #
-# Nox >= 1.11: percent/query decode 'nox.url' uzerinden (form '+' = bosluk).
+# Nox >= 2.1.2: nox.url.query_decode '+' karakterini bosluk yapar; gercek arti %2B.
+# decode() tek deger icindir ve percent_decode kullanir, o yuzden '+' burada %20 olur.
 
 import nox.strings
 import nox.url
@@ -33,9 +34,8 @@ def decode(s: str) -> str:
         raise ParamsError(e.message)
 
 def _form_query_decode(raw: str) -> dict[str, str]:
-    normalized: str = nox.strings.replace(raw, "+", "%20")
     try:
-        return nox.url.query_decode(normalized)
+        return nox.url.query_decode(raw)
     except UrlError as e:
         raise ParamsError(e.message)
 

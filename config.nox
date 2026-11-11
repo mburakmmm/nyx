@@ -71,7 +71,8 @@ class Config:
         drain_timeout_ms: int,
         http2: bool,
         http_pool_idle: int,
-        http_pool_idle_ms: int
+        http_pool_idle_ms: int,
+        pg_query_timeout_ms: int
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -133,7 +134,7 @@ class Config:
         self.request_id = request_id
         # False: serve handler req.headers okumaz (Nox iterateHeaders skip).
         self.request_headers = request_headers
-        # Nox >= 1.142.10: True ise listen_v6 + serve_fd. serve_multicore IPv4 dinler.
+        # Nox >= 2.1.32: ipv6 + workers>1 uses configure(ip_family=1|2).
         self.ipv6 = ipv6
         self.ipv6_only = ipv6_only
         # Nox >= 2.0.31: nox.http.request timeout. 0 disables the client deadline.
@@ -150,6 +151,8 @@ class Config:
         # Nox >= 2.0.126: 0 disables the outbound connection pool.
         self.http_pool_idle = http_pool_idle
         self.http_pool_idle_ms = http_pool_idle_ms
+        # Nox >= 2.1.17: client-side Postgres cancel. 0 leaves the server default.
+        self.pg_query_timeout_ms = pg_query_timeout_ms
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -285,7 +288,8 @@ def defaults(env: str) -> Config:
         0,
         True,
         32,
-        90000
+        90000,
+        0
     )
 
 def from_env() -> Config:
@@ -374,6 +378,7 @@ def from_env() -> Config:
     cfg.http2 = _env_bool("NYX_HTTP2", cfg.http2)
     cfg.http_pool_idle = _nonneg("NYX_HTTP_POOL_IDLE", cfg.http_pool_idle)
     cfg.http_pool_idle_ms = _nonneg("NYX_HTTP_POOL_IDLE_MS", cfg.http_pool_idle_ms)
+    cfg.pg_query_timeout_ms = _nonneg("NYX_PG_QUERY_TIMEOUT_MS", cfg.pg_query_timeout_ms)
     cfg.ipv6 = _env_bool("NYX_IPV6", cfg.ipv6)
     cfg.ipv6_only = _env_bool("NYX_IPV6_ONLY", cfg.ipv6_only)
     if cfg.ipv6_only:

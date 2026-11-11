@@ -25,13 +25,36 @@ def render_unescaped(path: str, context: dict[str, str]) -> str:
     tmpl: str = nox.fs.read_to_string(path)
     return nox.template.render_unescaped(tmpl, context)
 
+# Nox >= 2.1.7: {% for %} / {% if %} / {% else %}. `render` bu etiketleri yorumlamaz.
+# scalars {{ ad }} ve if icin, lists `{% for x in ad %}` icin (oge alanlari {{ x.alan }}).
+def render_blocks(
+    path: str,
+    scalars: dict[str, str],
+    lists: dict[str, list[dict[str, str]]]
+) -> str:
+    if not nox.fs.exists(path):
+        raise ViewError("sablon yok: " + path)
+    tmpl: str = nox.fs.read_to_string(path)
+    return nox.template.render_blocks(tmpl, scalars, lists)
+
+def render_blocks_unescaped(
+    path: str,
+    scalars: dict[str, str],
+    lists: dict[str, list[dict[str, str]]]
+) -> str:
+    if not nox.fs.exists(path):
+        raise ViewError("sablon yok: " + path)
+    tmpl: str = nox.fs.read_to_string(path)
+    return nox.template.render_blocks_unescaped(tmpl, scalars, lists)
+
 def partial(path: str, context: dict[str, str]) -> str:
     return render(path, context)
 
 def partial_unescaped(path: str, context: dict[str, str]) -> str:
     return render_unescaped(path, context)
 
-# Nox template'te '{% for %}' yok. Her Record icin 'field_keys' alanlarini
+# Eski partial dongusu. Yeni sablonlar render_blocks kullanir.
+# Her Record icin 'field_keys' alanlarini
 # context'e yazip partial render eder.
 def render_records(partial_path: str, rows: list[Record], field_keys: list[str]) -> str:
     out: str = ""

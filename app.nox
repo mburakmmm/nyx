@@ -193,6 +193,8 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     conn: Connection = nyx.db.open(":memory:")
     if dialect == "postgres":
         pg_list.append(nyx.db.open_postgres(cfg.db_path))
+        if cfg.pg_query_timeout_ms > 0:
+            pg_list[0].set_query_timeout(cfg.pg_query_timeout_ms)
         if cfg.auto_migrate:
             if nox.fs.exists(cfg.migrate_path) and nox.fs.is_dir(cfg.migrate_path):
                 try:
@@ -749,7 +751,7 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config
     rid: str = ""
     if cfg.request_id:
-        rid = nox.uuid.uuid4()
+        rid = nox.uuid.uuid7()
     started: int = 0
     if cfg.request_id or cfg.log_requests:
         started = nox.time.now_ms()

@@ -1,8 +1,11 @@
 # nyx.server - Nox >= 1.22 serve matrisi; Nox >= 1.28/1.29 multicore + --release.
 #
 # 'nox.http.serve*' handler/ws_handle parametreleri DERLEME ZAMANI bare
-# fonksiyon adi olmalidir; bu modul serve'i sarmalamaz — mod secimi,
-# worker sayisi ve TLS dogrulamasi saglar.
+# fonksiyon adi olmalidir. Nox >= 2.1.20: serve_multicore* ayrica
+# parametresiz bir UST DUZEY fabrika kabul eder; fabrika her worker'da
+# bir kez calisir ve (HttpRequest) -> HttpResponse closure'i doner.
+# Ana runtime'da kurulmus bir closure degeri hâlâ reddedilir.
+# Bu modul serve'i sarmalamaz — mod secimi, worker sayisi ve TLS dogrulamasi saglar.
 #
 # Production (onerilen):
 #   noxc build --release main.nox
@@ -38,13 +41,15 @@ def use_multicore(cfg: Config) -> bool:
 def use_ipv6(cfg: Config) -> bool:
     return cfg.ipv6
 
-# serve_multicore portu kendisi dinler ve bu dinleyici IPv4'tür.
-def ensure_listen_compatible(cfg: Config) -> None:
-    if cfg.ipv6 and use_multicore(cfg):
-        raise ServerError("NYX_IPV6 cannot be combined with NYX_WORKERS>1; serve_multicore listens on IPv4")
+# Nox >= 2.1.32: 0 IPv4, 1 dual-stack, 2 IPv6-only. Windows ignores ip_family.
+def ip_family(cfg: Config) -> int:
+    if not cfg.ipv6:
+        return 0
+    if cfg.ipv6_only:
+        return 2
+    return 1
 
 def listen_fd(cfg: Config) -> int:
-    ensure_listen_compatible(cfg)
     if cfg.ipv6:
         return nox.http.listen_v6(cfg.port, cfg.ipv6_only)
     return nox.http.listen(cfg.port)
@@ -83,7 +88,8 @@ def apply(cfg: Config) -> None:
         cfg.max_header_bytes,
         cfg.read_timeout_ms,
         cfg.max_connections,
-        cfg.drain_timeout_ms
+        cfg.drain_timeout_ms,
+        ip_family(cfg)
     )
     nox.http.set_http2(cfg.http2)
     nox.http.client_pool(cfg.http_pool_idle, cfg.http_pool_idle_ms)

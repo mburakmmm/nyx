@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.24.0 · **License:** MIT · **Requires Nox ≥ 2.0.188** (CI **2.0.188**)  
+**Version:** 0.25.0 · **License:** MIT · **Requires Nox ≥ 2.1.51** (CI **2.1.51**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.24.0"
+      "ref": "v0.25.0"
     }
   ]
 }
@@ -120,7 +120,7 @@ JSON-string `create` / `update` remain for compatibility; new code should use `A
 
 ### Views without template loops
 
-Nox templates have no `{% for %}`. Prefer field-key partials or `list[dict]` contexts (Nox ≥ 1.8.2):
+`nyx.view.render` still does not run `{% for %}`. Block templates use `render_blocks` (`{% for %}` / `{% if %}`, Nox ≥ 2.1.7). Field partials remain:
 
 ```nox
 fields: list[str] = []
@@ -164,10 +164,20 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 | `NYX_MAX_BODY_BYTES` / `NYX_MAX_HEADER_BYTES` / `NYX_READ_TIMEOUT_MS` / `NYX_MAX_CONNECTIONS` / `NYX_DRAIN_TIMEOUT_MS` | `0` keeps the Nox default (10 MiB, 16 KiB, 30s, 4096, 10s) |
 | `NYX_HTTP2` | Default on. `0` forces HTTP/1.1. Header lookup is case-insensitive (`X-Csrf-Token`, `Last-Event-Id`) |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Outbound pool (default `32` / `90000`). Idle `0` disables it |
+| `NYX_PG_QUERY_TIMEOUT_MS` | Postgres client query cancel (`0` off) |
 
 ---
 
 ## Changelog
+
+### 0.25.0 — Nox 2.1.51 (not 1.0)
+- Requires **Nox ≥ 2.1.51** (CI installs the official **2.1.51** package). Draft `v2.1.52` is not the pin
+- `NYX_IPV6` with `NYX_WORKERS>1` is valid. `nyx.server.apply` passes `ip_family` (`1` dual-stack, `2` IPv6-only). Windows ignores that setting
+- `nyx.view.render_blocks` / `nyx.ctrl.render_blocks` run `{% for %}` and `{% if %}`. `render` leaves those tags as text
+- Form query strings go through `nox.url.query_decode`, which now treats `+` as space
+- Request ids are UUIDv7. Session and storage ids stay UUIDv4
+- `NYX_PG_QUERY_TIMEOUT_MS` calls `Connection.set_query_timeout` before migrate. `0` leaves it unset
+- A closure value is still rejected by `serve_multicore*`. A top-level factory is accepted; Nyx keeps a bare handler name
 
 ### 0.24.0 — Nox 2.0.188 (not 1.0)
 - Requires **Nox ≥ 2.0.188** (CI installs the official **2.0.188** package: linux-x64, bundled `qbe`)
@@ -363,7 +373,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 2.0.188** (CI **2.0.188**): HTTP/2, `configure`/`shutdown`, live SSE, `safe_join`, transfer download/upload, client pool, plus the 0.23 surface (timeout, atomic writes, Unicode `lower`)
+- Requires **Nox ≥ 2.1.51** (CI **2.1.51**): IPv6 multicore, `render_blocks`, form `+` in `query_decode`, plus the 0.24 HTTP/2 and live SSE surface
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)
@@ -373,12 +383,12 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 - TLS: `NYX_TLS_CERT`+`NYX_TLS_KEY` or reverse proxy; mail SMTP = immediate TLS (465) or `NYX_MAIL_SMTP_STARTTLS=1` (587)
 - Cable: one-shot SSE, live `nyx.cable.live_sse` (cookie and security headers before the stream), plus server WS helpers (`ws_echo` / `ws_broadcast_loop` / signed channel-bound `ws_auth_*` / `ws_auth_*_pg`)
 - Rate limit: a real `peer_addr` is the client key. `NYX_TRUST_X_FORWARDED_FOR=1` uses the first XFF hop; with `NYX_TRUSTED_PROXIES` set, only those connecting IPs may supply XFF. Multicore defaults to `NYX_RATE_LIMIT_STORE=db`
-- No `{% for %}` → `render_records` / `render_each` / `render_each_map`
+- `{% for %}` / `{% if %}` → `render_blocks`. `render` does not run those tags. Partials: `render_records` / `render_each`
 - Prefer `Attributes` / `SafeHtml` helpers over hand-built JSON / raw HTML strings
 - **Request state** uses `TaskLocal` on a connection fiber. The root script keeps a module box — [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md)
 
 **Fit:** reverse-proxy or native TLS, SQLite or Postgres app DB, jobs on SQLite, multicore/`--release` for higher concurrency.  
-**Still Nox-bound:** measured list in [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `serve_multicore*` rejects closures and listens on IPv4. Templates have no `{% for %}`. `nox.jwt` does not check `exp`.
+**Still Nox-bound:** measured list in [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `serve_multicore*` rejects a closure value (a top-level factory is allowed). `render` does not execute `{% for %}`. `nox.jwt.verify` does not check `exp`; `verify_now` does. List assignment copies.
 
 ---
 

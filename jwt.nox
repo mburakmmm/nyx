@@ -1,4 +1,7 @@
 # nyx.jwt - HS256 JWT (RFC 7519 alt kümesi).
+# Hesap tokeni budur: encode exp zorunlu tutar, decode exp/nbf/iat uygular.
+# nox.jwt.verify imzadan baska claim bakmaz. Sure icin nox.jwt.verify_now
+# (Nox >= 2.1.7) kullanilir; o token nyx.jwt.encode ile ayni bayt olmayabilir.
 #
 # import nyx.jwt
 #

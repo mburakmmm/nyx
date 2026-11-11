@@ -1,5 +1,5 @@
 # {{APP_NAME}} - nyx application entry
-# Requires Nox >= 2.0.188: parse/dump json, listen_v6, HTTP/2 headers, configure/shutdown, live SSE.
+# Requires Nox >= 2.1.51: HTTP/2, live SSE, IPv6 multicore (ip_family), render_blocks.
 # Dev:  noxc fetch && NYX_ENV=development noxc run main.nox
 # Prod: noxc build --release main.nox && NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main
 

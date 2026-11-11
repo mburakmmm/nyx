@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.24.0** (1.0 değil) · Nox **≥ 2.0.188** (CI **2.0.188**)  
+**Durum:** Nyx **0.25.0** (1.0 değil) · Nox **≥ 2.1.51** (CI **2.1.51**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -52,6 +52,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.22.0** | Nox 2.0.7: modül düzeyinde boot, İngilizce stdlib hataları, `except (A, B)`, router `Context.query` (Nyx form `+` kuralını korur) |
 | **0.23.0** | Nox 2.0.68: HTTP zaman aşımı + PUT/PATCH, atomik dosya yazımı, Unicode e-posta lower (`lower_tr` anahtar değil) |
 | **0.24.0** | Nox 2.0.188: `configure`/HTTP/2/havuz, Title-Case başlık, çoklu `Set-Cookie`, canlı SSE, `safe_join`, transfer indirme/yükleme |
+| **0.25.0** | Nox 2.1.51: IPv6 multicore, `render_blocks`, form `+` stdlib’de, istek kimliği UUIDv7, Postgres sorgu zaman aşımı |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

@@ -1,7 +1,21 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.24+ Nox 2.0.188 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **2.0.188**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+# Nyx 0.25+ Nox 2.1.51 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **2.1.51**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+
+## Kapandı (Nox 2.1.2–2.1.51)
+
+| İstek / fırsat | Nox | Nyx |
+|---|---|---|
+| `query_decode` form `+` | **2.1.2** | `nyx.params.parse_qs` doğrudan çağırır |
+| `render_blocks` | **2.1.7** | `nyx.view.render_blocks`, `nyx.ctrl.render_blocks`. `render` yorumlamaz |
+| `jwt.verify_claims` / `verify_now` | **2.1.7** | Hesap tokeni `nyx.jwt`. `verify` hâlâ claim bakmaz |
+| `uuid7` | **2.1.7** | İstek kimliği. Oturum `uuid4` |
+| Postgres `set_query_timeout` | **2.1.17** | `NYX_PG_QUERY_TIMEOUT_MS` |
+| Multicore fabrika + `AtomicRef` | **2.1.20** | Çıplak handler durur. Sayaç `SharedBuffer` |
+| `configure(ip_family)` | **2.1.32** | `nyx.server.ip_family`. IPv6 + worker birlikte |
+
+gRPC, Redis, protobuf, UDP ve `nox.postgres.Pool` Nyx API’si değildir. Liste ataması kopya olarak kalır.
 
 ## Kapandı (Nox 2.0.69–2.0.188)
 
@@ -107,4 +121,4 @@ Hâlâ açık olanlar ve kanıtları `docs/NOX_LIMITATIONS.md` içindedir: multi
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥2.0.188) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.
+`noxc upgrade` (≥2.1.51) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

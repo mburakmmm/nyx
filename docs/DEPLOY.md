@@ -1,12 +1,12 @@
-# Nyx 0.24 — Deployment guide
+# Nyx 0.25 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.143 ile varsayılan backend LLVM (M:N). `--release` bu adın takma adı, `--backend qbe` QBE seçer. Pin: **noxc 2.0.188**. Bayrak yoldan önce gelir: `noxc run --release main.nox` / `noxc build --release main.nox`. `noxc run main.nox --release` bayrağı programa argv olarak verir.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.143 ile varsayılan backend LLVM (M:N). `--release` bu adın takma adı, `--backend qbe` QBE seçer. Pin: **noxc 2.1.51**. Bayrak yoldan önce gelir: `noxc run --release main.nox` / `noxc build --release main.nox`. `noxc run main.nox --release` bayrağı programa argv olarak verir.
 
 ## 1. Process model
 
 - Prefer **`noxc build --release main.nox`** then run the binary (LLVM M:N pool).
-- `NYX_WORKERS>1` → template uses `nox.http.serve_multicore*` (shared pool under `--release`). IPv4 dinler.
-- `NYX_IPV6=1` tek worker: `listen_v6` + `serve_fd` / `serve_fd_tls`. `NYX_WORKERS>1` ile birlikte süreç `ServerError` ile durur.
+- `NYX_WORKERS>1` → `nox.http.serve_multicore*` (`--release` altında paylaşılan havuz). Dinleyici ailesi `ip_family` ile gelir.
+- `NYX_IPV6=1` dual-stack (`ip_family=1`). `NYX_IPV6_ONLY=1` yalnız IPv6 (`ip_family=2`). `NYX_WORKERS>1` aynı aileyi `serve_multicore*` ile açar. Windows `ip_family`’yi yok sayar; orada multicore IPv4 kalır. Tek worker IPv6 yolu `listen_v6` + `serve_fd` olmaya devam eder.
 - Set **`NOX_POOL_WORKERS`** to match (or size) the release pool when using multicore.
 - Boot **once** at module top-level. `nyx.app.boot` calls `nyx.server.apply`: `configure`, `set_http2`, `client_pool`. Register cleanup with `nyx.app.on_shutdown`, then
   `nyx.app.shutdown(application)` in `finally` (see `templates/app/main.nox`). POSIX’te SIGTERM/SIGINT `serve*`’ı döndürür; `finally` o zaman çalışır. İkinci sinyal süreci hemen kapatır. Windows’ta sinyal kurulmaz; kapanış `nox.http.shutdown()`.
@@ -31,8 +31,8 @@ Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22
 | `NYX_MAIL_SMTP_STARTTLS` | `1` = plain TCP then STARTTLS (typical 587). `0` or empty = immediate TLS |
 | `NYX_PORT` / `NYX_HOST` | Bind address |
 | `NYX_TLS_CERT` / `NYX_TLS_KEY` | Optional PEM paths for `serve_*tls` |
-| `NYX_WORKERS` | `1` default; `>1` enables `serve_multicore*` (IPv4) |
-| `NYX_IPV6` | `1` = `listen_v6` + `serve_fd*` (tek worker) |
+| `NYX_WORKERS` | `1` default; `>1` enables `serve_multicore*` (`ip_family` ile) |
+| `NYX_IPV6` | `1` = dual-stack. Tek worker `listen_v6` + `serve_fd*`; çok worker `ip_family=1` |
 | `NYX_IPV6_ONLY` | `1` = dual-stack kapalı; `NYX_IPV6` de açılır |
 | `NOX_POOL_WORKERS` | Release M:N pool size (pair with `NYX_WORKERS`) |
 | `NYX_RATE_LIMIT_STORE` | Prefer `db` when multicore (auto if unset + `NYX_WORKERS>1`) |
@@ -40,6 +40,7 @@ Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22
 | `NYX_MAX_BODY_BYTES` / `NYX_MAX_HEADER_BYTES` / `NYX_READ_TIMEOUT_MS` / `NYX_MAX_CONNECTIONS` / `NYX_DRAIN_TIMEOUT_MS` | `0` stdlib varsayılanı (10 MiB, 16 KiB, 30s, 4096, 10s) |
 | `NYX_HTTP2` | `1` varsayılan. `0` HTTP/1.1. Windows’ta HTTP/2 yoktur |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Giden havuz. Varsayılan `32` / `90000`. Idle `0` havuzu kapatır |
+| `NYX_PG_QUERY_TIMEOUT_MS` | Postgres istemci sorgu iptali. `0` kapalı. Boot, migrate’ten önce kurar |
 
 Optional: `NYX_CSP`, `NYX_CSRF_API_EXEMPT`, `NYX_CACHE_PATH`, `NYX_STORAGE_PATH`, `NYX_LOCALE`, `NYX_CABLE_STORE_PATH`.
 
@@ -127,9 +128,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.24.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.25.0" }
 ```
 
-Requires **noxc ≥ 2.0.188** (CI pin **2.0.188**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. `store_http_file` dosyayı akar.
+Requires **noxc ≥ 2.1.51** (CI pin **2.1.51**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. `store_http_file` dosyayı akar.
 
 SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. On noxc 1.142.23, Gmail 465/587 and Office365 587 completed EHLO, STARTTLS where used, and QUIT. Authentication and a real message were not sent.

@@ -91,6 +91,15 @@ def render_unescaped(status: int, path: str, context: dict[str, str]) -> HttpRes
     body: str = nyx.view.render_unescaped(path, context)
     return html(status, body)
 
+def render_blocks(
+    status: int,
+    path: str,
+    scalars: dict[str, str],
+    lists: dict[str, list[dict[str, str]]]
+) -> HttpResponse:
+    body: str = nyx.view.render_blocks(path, scalars, lists)
+    return html(status, body)
+
 # Layout icinde '{{ yield }}' konumuna 'view'in render edilmis govdesini
 # yerlestirip tek bir HTML yaniti doner (bkz. nyx.view.render_with_layout).
 def render_layout(status: int, layout: str, view: str, context: dict[str, str]) -> HttpResponse:

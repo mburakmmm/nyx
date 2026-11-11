@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.24.0 · **Lisans:** MIT · **Nox ≥ 2.0.188** (CI **2.0.188**)  
+**Sürüm:** 0.25.0 · **Lisans:** MIT · **Nox ≥ 2.1.51** (CI **2.1.51**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.24.0"
+      "ref": "v0.25.0"
     }
   ]
 }
@@ -120,7 +120,7 @@ JSON `create` / `update` uyumluluk için duruyor; yeni kod `Attributes` kullanma
 
 ### Döngüsüz şablonlar
 
-Nox template’te `{% for %}` yok. Alan listesi veya `list[dict]` / map (Nox ≥ 1.8.2):
+`nyx.view.render` `{% for %}` çalıştırmaz. Blok şablon `render_blocks` (`{% for %}` / `{% if %}`, Nox ≥ 2.1.7). Alan partial’ı durur:
 
 ```nox
 fields: list[str] = []
@@ -157,10 +157,20 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 | `NYX_MAX_BODY_BYTES` / `NYX_MAX_HEADER_BYTES` / `NYX_READ_TIMEOUT_MS` / `NYX_MAX_CONNECTIONS` / `NYX_DRAIN_TIMEOUT_MS` | `0` Nox varsayılanını korur (10 MiB, 16 KiB, 30s, 4096, 10s) |
 | `NYX_HTTP2` | Varsayılan açık. `0` HTTP/1.1. Başlık araması büyük/küçük harf duyarsız |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Giden havuz (varsayılan `32` / `90000`). Idle `0` havuzu kapatır |
+| `NYX_PG_QUERY_TIMEOUT_MS` | Postgres istemci sorgu iptali (`0` kapalı) |
 
 ---
 
 ## Sürüm notları
+
+### 0.25.0 — Nox 2.1.51 (1.0 değil)
+- **Nox ≥ 2.1.51** (CI resmi **2.1.51** paketi). Taslak `v2.1.52` pin değildir
+- `NYX_IPV6` ile `NYX_WORKERS>1` birlikte geçerlidir. `nyx.server.apply` `ip_family` geçirir (`1` dual-stack, `2` yalnız IPv6). Windows bu ayarı yok sayar
+- `nyx.view.render_blocks` / `nyx.ctrl.render_blocks`, `{% for %}` ve `{% if %}` çalıştırır. `render` bu etiketleri metin bırakır
+- Form sorgu dizgisi `nox.url.query_decode` üzerinden gider; `+` artık boşluktur
+- İstek kimliği UUIDv7’dir. Oturum ve depolama anahtarı UUIDv4 kalır
+- `NYX_PG_QUERY_TIMEOUT_MS`, migrate’ten önce `Connection.set_query_timeout` çağırır. `0` kurmaz
+- `serve_multicore*` closure değerini hâlâ reddeder. Üst düzey fabrika kabul edilir; Nyx çıplak handler adını kullanır
 
 ### 0.24.0 — Nox 2.0.188 (1.0 değil)
 - **Nox ≥ 2.0.188** (CI resmi **2.0.188** paketi: linux-x64, paket içi `qbe`)
@@ -321,16 +331,16 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 2.0.188** (CI **2.0.188**): HTTP/2, `configure`/`shutdown`, canlı SSE, `safe_join`, transfer indirme/yükleme, istemci havuzu; 0.23 yüzeyi (zaman aşımı, atomik yazım, Unicode `lower`) bunun altında kalır
+- **Nox ≥ 2.1.51** (CI **2.1.51**): IPv6 multicore, `render_blocks`, form `+`; 0.24 HTTP/2 ve canlı SSE yüzeyi bunun altında kalır
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite
 - İstek durumu `TaskLocal` (`nyx.runtime`)
 - Gelen TLS: `NYX_TLS_*` veya reverse proxy. Cable: tek kare SSE, canlı `live_sse` (çerez ve güvenlik başlığı akıştan önce), opsiyonel `serve_ws*`
-- Şablonda `{% for %}` yok → `render_records` / `render_each`
+- `{% for %}` / `{% if %}` → `render_blocks`. `render` bu etiketleri çalıştırmaz. Partial: `render_records` / `render_each`
 
 **Uygun:** reverse-proxy veya native TLS, SQLite/PG app DB, multicore/`--release`, Gmail/Office365 SMTP el sıkışması (1.142.23, auth ve gerçek posta gönderilmedi).  
-**Hâlâ Nox’a bağlı:** kanıtlı liste [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `nox.orm` Nyx modeli değil. `serve_multicore*` closure kabul etmez ve IPv4 dinler. Şablonda `{% for %}` yok. `nox.jwt` süre bakmaz.
+**Hâlâ Nox’a bağlı:** kanıtlı liste [docs/NOX_LIMITATIONS.md](docs/NOX_LIMITATIONS.md). `serve_multicore*` closure değerini reddeder (üst düzey fabrika geçer). `render` `{% for %}` çalıştırmaz. `nox.jwt.verify` süre bakmaz; `verify_now` bakar. Liste ataması kopyadır.
 
 ---
 

@@ -6,7 +6,6 @@ import nyx.config
 import nyx.metrics
 import nyx.server
 from nyx.config import Config
-from nyx.server import ServerError
 
 # --- serve_mode matrix ---
 cfg: Config = nyx.config.defaults("test")
@@ -31,17 +30,14 @@ nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "tls", "tls")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "ws_tls")
 nox.test.assert_true(not nyx.server.use_ipv6(cfg), "ipv6 default off")
 cfg.ipv6 = True
-nyx.server.ensure_listen_compatible(cfg)
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 1, "dual-stack family")
 cfg.workers = 4
-ipv6_mc: bool = False
-try:
-    nyx.server.ensure_listen_compatible(cfg)
-    ipv6_mc = True
-except ServerError:
-    ipv6_mc = False
-nox.test.assert_true(not ipv6_mc, "ipv6 multicore rejected")
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 1, "ipv6 multicore allowed")
+cfg.ipv6_only = True
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 2, "ipv6 only family")
 cfg.workers = 1
 cfg.ipv6 = False
+cfg.ipv6_only = False
 
 # --- metrics SharedBuffer lock path ---
 nyx.metrics.reset()

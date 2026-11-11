@@ -1,0 +1,36 @@
+# 0.25 — Nox 2.1: form '+', block templates, IPv6 multicore family.
+import nox.fs
+import nox.strings
+import nox.test
+import nyx.config
+import nyx.params
+import nyx.server
+import nyx.view
+from nyx.config import Config
+
+cfg: Config = nyx.config.defaults("test")
+nox.test.assert_eq_int(cfg.pg_query_timeout_ms, 0, "pg timeout default off")
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 0, "default ipv4")
+cfg.ipv6 = True
+cfg.workers = 4
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 1, "dual stack with workers")
+cfg.ipv6_only = True
+nox.test.assert_eq_int(nyx.server.ip_family(cfg), 2, "ipv6 only")
+
+plus: dict[str, str] = nyx.params.parse_qs("a+b=c%2Bd")
+nox.test.assert_eq_str(plus["a b"], "c+d", "query plus is space, %2B stays plus")
+
+path: str = "/tmp/nyx_v25_blocks.html"
+nox.fs.write_string_atomic(path, "{% for u in users %}<li>{{ u.name }}</li>{% endfor %}{% if title %}{{ title }}{% endif %}")
+scalars: dict[str, str] = {}
+scalars["title"] = "Merhaba"
+item: dict[str, str] = {}
+item["name"] = "Ada"
+users: list[dict[str, str]] = []
+users.append(item)
+lists: dict[str, list[dict[str, str]]] = {}
+lists["users"] = users
+html: str = nyx.view.render_blocks(path, scalars, lists)
+nox.test.assert_true(nox.strings.contains(html, "<li>Ada</li>"), "for block")
+nox.test.assert_true(nox.strings.contains(html, "Merhaba"), "if block")
+print("v25_surface_test ok")
