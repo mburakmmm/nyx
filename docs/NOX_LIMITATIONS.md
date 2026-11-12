@@ -2,7 +2,7 @@
 
 Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sürüm tablosu `docs/NOX_REQUESTS.md` içindedir. Tarihsel repro `docs/repro-p1c-c2/` 1.18.1’de kapandı; güncel bir hatanın repro’su değildir.
 
-**Doğrulama:** 11 Kasım 2026. Yüklü derleyici `noxc 2.1.51` (`noxc --version`). Yayımlanmış en son kararlı etiket budur (`v2.1.52` taslaktır, pinlenmez). Stdlib bu kurulumun `~/.nox-lang/lib/nox/stdlib/nox` ağacı. Nyx **0.25.0**. CI resmi **v2.1.51** paketini kurar.
+**Doğrulama:** 12 Kasım 2026. Yüklü derleyici `noxc 2.1.80` (`noxc --version`). Yayımlanmış en son kararlı etiket budur. Stdlib bu kurulumun `~/.nox-lang/lib/nox/stdlib/nox` ağacı. Nyx **0.26.0**. CI resmi **v2.1.80** paketini kurar.
 
 Çalıştırma kanıtları `/tmp` altında tek seferlik programlardır; depoya alınmadı. Her birinin komutu ve görülen çıktı aşağıdadır. `nox.test.AssertionError` satırı stdlib `test.nox` içindeki `raise` satırıdır; test dosyasının satırı değildir.
 
@@ -10,7 +10,7 @@ Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sür
 
 ## 1. Bu turda kapanıp Nyx 0.24’e bağlananlar
 
-Bunlar artık Nox sınırı değildir. Pin **≥ 2.1.51** bu satırların hepsini stdlib’e alır; Nyx çağırır.
+Bunlar artık Nox sınırı değildir. Pin **≥ 2.1.80** bu satırların hepsini stdlib’e alır; Nyx çağırır.
 
 | Nox | Ne kapandı | Nyx |
 |---|---|---|

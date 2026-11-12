@@ -1,5 +1,5 @@
 # {{APP_NAME}} - nyx application entry
-# Requires Nox >= 2.1.51: HTTP/2, live SSE, IPv6 multicore (ip_family), render_blocks.
+# Requires Nox >= 2.1.80: HTTP/2, live SSE, IPv6 multicore (ip_family), render_blocks.
 # Dev:  noxc fetch && NYX_ENV=development noxc run main.nox
 # Prod: noxc build --release main.nox && NYX_WORKERS=8 NOX_POOL_WORKERS=8 ./main
 

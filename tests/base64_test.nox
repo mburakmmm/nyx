@@ -1,5 +1,7 @@
+import nox.strings
 import nox.test
 import nyx.base64
+from nyx.base64 import Base64Error
 
 nox.test.assert_eq_str(nyx.base64.encode("hello"), "aGVsbG8=", "encode hello")
 nox.test.assert_eq_str(nyx.base64.decode("aGVsbG8="), "hello", "decode hello")
@@ -15,4 +17,19 @@ nox.test.assert_eq_str(nyx.base64.decode_url("e30"), "{}", "decode_url empty obj
 # HMAC-SHA256("", "") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 - not empty msg
 # Use known hex: sha256 of empty is above; for encode_hex_url of 2 bytes "4d" -> ...
 nox.test.assert_eq_str(nyx.base64.encode_hex_url("4d616e"), "TWFu", "encode_hex_url Man")
+nox.test.assert_eq_str(
+    nyx.base64.encode_hex_url("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+    "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+    "encode_hex_url sha256 empty"
+)
+nul: str = nox.strings.char_from_byte(97) + nox.strings.char_from_byte(0) + nox.strings.char_from_byte(98)
+nox.test.assert_eq_str(nyx.base64.encode(nul), "YQBi", "encode keeps interior NUL")
+nox.test.assert_eq_str(nyx.base64.decode(nyx.base64.encode(nul)), nul, "decode interior NUL")
+nox.test.assert_eq_str(nyx.base64.decode_url(nyx.base64.encode_url("ç")), "ç", "utf-8 url roundtrip")
+bad: bool = False
+try:
+    nyx.base64.decode("!!!!")
+except Base64Error:
+    bad = True
+nox.test.assert_true(bad, "invalid alphabet raises Base64Error")
 print("base64_test ok")

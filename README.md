@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.25.0 · **License:** MIT · **Requires Nox ≥ 2.1.51** (CI **2.1.51**)  
+**Version:** 0.26.0 · **License:** MIT · **Requires Nox ≥ 2.1.80** (CI **2.1.80**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.25.0"
+      "ref": "v0.26.0"
     }
   ]
 }
@@ -169,6 +169,13 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.26.0 — Nox 2.1.80 (not 1.0)
+- Requires **Nox ≥ 2.1.80** (CI installs the official **2.1.80** package)
+- `nyx.base64` calls `nox.base64`. `encode_url` stays unpadded. `encode_hex_url` still base64url-encodes the raw HMAC bytes, so existing session cookies and account tokens keep the same bytes. NUL and UTF-8 round-trip
+- `ModelError` carries `sqlstate` and `kind`. `is_unique_violation()` is true for Postgres `23505`. `nyx.pg_model.create_attrs` / `update_attrs` copy those fields from `PostgresError`
+- `nyx.pg_model.transaction` uses `with db.transaction()`. A Postgres error keeps `sqlstate` and `kind`. An error that is neither `ModelError` nor `PostgresError` rolls back and then propagates. The driver type in this module is `PgConnection`, so it does not share sqlite’s `Connection` name
+- `nyx.i18n` keeps catalogs in the worker’s module box. `load` replaces a locale in place. Locale JSON is not stored in the environment
 
 ### 0.25.0 — Nox 2.1.51 (not 1.0)
 - Requires **Nox ≥ 2.1.51** (CI installs the official **2.1.51** package). Draft `v2.1.52` is not the pin
@@ -373,7 +380,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 2.1.51** (CI **2.1.51**): IPv6 multicore, `render_blocks`, form `+` in `query_decode`, plus the 0.24 HTTP/2 and live SSE surface
+- Requires **Nox ≥ 2.1.80** (CI **2.1.80**): stdlib base64, Postgres `sqlstate`/`kind`, `with` transactions, plus the 0.25 IPv6 multicore and `render_blocks` surface
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)

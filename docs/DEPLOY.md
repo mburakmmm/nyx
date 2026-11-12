@@ -1,6 +1,6 @@
-# Nyx 0.25 — Deployment guide
+# Nyx 0.26 — Deployment guide
 
-Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.143 ile varsayılan backend LLVM (M:N). `--release` bu adın takma adı, `--backend qbe` QBE seçer. Pin: **noxc 2.1.51**. Bayrak yoldan önce gelir: `noxc run --release main.nox` / `noxc build --release main.nox`. `noxc run main.nox --release` bayrağı programa argv olarak verir.
+Production checklist for a Nyx app. Reverse proxy hâlâ önerilir; Nox ≥ 1.22 ile doğrudan HTTPS/WS, Nox ≥ 1.143 ile varsayılan backend LLVM (M:N). `--release` bu adın takma adı, `--backend qbe` QBE seçer. Pin: **noxc 2.1.80**. Bayrak yoldan önce gelir: `noxc run --release main.nox` / `noxc build --release main.nox`. `noxc run main.nox --release` bayrağı programa argv olarak verir.
 
 ## 1. Process model
 
@@ -128,9 +128,9 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.25.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.26.0" }
 ```
 
-Requires **noxc ≥ 2.1.51** (CI pin **2.1.51**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. `store_http_file` dosyayı akar.
+Requires **noxc ≥ 2.1.80** (CI pin **2.1.80**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. `store_http_file` dosyayı akar.
 
 SMTP: `NYX_MAIL_SMTP_STARTTLS=0` (default) speaks immediate TLS, typical port 465. `=1` speaks plain TCP then STARTTLS, typical port 587 (`NYX_MAIL_SMTP_PORT`). HTML multipart is sent as `to_eml`. On noxc 1.142.23, Gmail 465/587 and Office365 587 completed EHLO, STARTTLS where used, and QUIT. Authentication and a real message were not sent.

@@ -213,7 +213,7 @@ def transaction(db: MysqlConnection, fn: (MysqlConnection) -> None) -> None:
         db.execute("COMMIT")
     except ModelError as e:
         db.execute("ROLLBACK")
-        raise ModelError(e.message)
+        raise ModelError(e.message, e.sqlstate, e.kind)
     except MysqlError as e:
         db.execute("ROLLBACK")
         raise ModelError(e.message)

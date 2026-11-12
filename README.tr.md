@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.25.0 · **Lisans:** MIT · **Nox ≥ 2.1.51** (CI **2.1.51**)  
+**Sürüm:** 0.26.0 · **Lisans:** MIT · **Nox ≥ 2.1.80** (CI **2.1.80**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.25.0"
+      "ref": "v0.26.0"
     }
   ]
 }
@@ -162,6 +162,13 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.26.0 — Nox 2.1.80 (1.0 değil)
+- **Nox ≥ 2.1.80** (CI resmi **2.1.80** paketi)
+- `nyx.base64`, `nox.base64` çağırır. `encode_url` dolgusuz kalır. `encode_hex_url` HMAC’in ham baytını base64url yapar; mevcut oturum çerezi ve hesap tokeni aynı bayttadır. NUL ve UTF-8 gidiş-dönüş yapar
+- `ModelError` `sqlstate` ve `kind` taşır. `is_unique_violation()`, Postgres `23505` için doğrudur. `nyx.pg_model.create_attrs` / `update_attrs` bu alanları `PostgresError`’dan kopyalar
+- `nyx.pg_model.transaction`, `with db.transaction()` kullanır. Postgres hatası `sqlstate` ve `kind` alanlarını korur. `ModelError` ve `PostgresError` dışındaki hata geri alındıktan sonra olduğu gibi çıkar. Bu modüldeki sürücü adı `PgConnection`’dır; sqlite `Connection` adıyla çakışmaz
+- `nyx.i18n` katalogları worker’ın modül kutusunda tutar. `load` aynı locale’i yerinde değiştirir. Locale JSON ortam değişkenine yazılmaz
 
 ### 0.25.0 — Nox 2.1.51 (1.0 değil)
 - **Nox ≥ 2.1.51** (CI resmi **2.1.51** paketi). Taslak `v2.1.52` pin değildir
@@ -331,7 +338,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 2.1.51** (CI **2.1.51**): IPv6 multicore, `render_blocks`, form `+`; 0.24 HTTP/2 ve canlı SSE yüzeyi bunun altında kalır
+- **Nox ≥ 2.1.80** (CI **2.1.80**): stdlib base64, Postgres `sqlstate`/`kind`, `with` işlemi; 0.25 IPv6 multicore ve `render_blocks` yüzeyi bunun altında kalır
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite

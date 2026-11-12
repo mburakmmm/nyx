@@ -1,0 +1,15 @@
+import nox.test
+from nyx.model import ModelError
+
+plain: ModelError = ModelError("sutun yok")
+nox.test.assert_eq_str(plain.sqlstate, "", "duz ModelError sqlstate bos")
+nox.test.assert_eq_str(plain.kind, "", "duz ModelError kind bos")
+nox.test.assert_true(not plain.is_unique_violation(), "duz ModelError tekil ihlal degil")
+
+dup: ModelError = ModelError("postgres create failed: duplicate", "23505", "unique_violation")
+nox.test.assert_eq_str(dup.sqlstate, "23505", "sqlstate korunur")
+nox.test.assert_eq_str(dup.kind, "unique_violation", "kind korunur")
+nox.test.assert_true(dup.is_unique_violation(), "unique_violation")
+nox.test.assert_true(ModelError("x", "23505", "").is_unique_violation(), "sqlstate 23505 yeter")
+
+print("v26_surface_test ok")

@@ -43,6 +43,11 @@ nox.test.assert_eq_str(rendered, "Hos geldin, Ada", "t_with degiskeni doldurmali
 nyx.i18n.set_locale("en")
 nox.test.assert_eq_str(nyx.i18n.t("greeting"), "Hello", "locale degistirince ceviri de degismeli")
 
+nox.fs.write_string(dir_path + "/tr.json", "{\"greeting\":\"Selam\",\"welcome\":\"Hos geldin, {{ name }}\"}")
+nyx.i18n.load(dir_path, "tr")
+nyx.i18n.set_locale("tr")
+nox.test.assert_eq_str(nyx.i18n.t("greeting"), "Selam", "ayni locale yeniden yuklenince metin degisir")
+
 threw: bool = False
 try:
     nyx.i18n.load(dir_path, "hic_olmayan_locale")

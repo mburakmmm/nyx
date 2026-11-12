@@ -1,7 +1,16 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.25+ Nox 2.1.51 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **2.1.51**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+# Nyx 0.26+ Nox 2.1.80 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **2.1.80**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+
+## Nyx 0.26’da stdlib’e bırakılanlar
+
+| Ne | Nox | Nyx |
+|---|---|---|
+| Hızlı base64 | **2.1.56** / **2.1.63** | `nyx.base64` `nox.base64` çağırır. `encode_hex_url` ham HMAC baytını kodlar |
+| `PostgresError.sqlstate` / `kind` | **2.1.8** | `ModelError.sqlstate`, `kind`, `is_unique_violation()` |
+| `with conn.transaction()` | **2.1.8** | `nyx.pg_model.transaction` |
+| Modül kutusu | worker kopyası | `nyx.i18n` kataloğu ortam değişkeninde durmaz |
 
 ## Kapandı (Nox 2.1.2–2.1.51)
 
@@ -121,4 +130,4 @@ Hâlâ açık olanlar ve kanıtları `docs/NOX_LIMITATIONS.md` içindedir: multi
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥2.1.51) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.
+`noxc upgrade` (≥2.1.80) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

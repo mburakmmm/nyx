@@ -24,8 +24,20 @@ from nox.db import Statement
 from nox.json import JsonError
 from nox.db import Row
 
+# sqlstate ve kind, PostgresError'dan kopyalanir. SQLite/MySQL hatalarinda bos kalir.
 class ModelError(Exception):
-    pass
+    sqlstate: str
+    kind: str
+
+    def __init__(self: ModelError, message: str, sqlstate: str = "", kind: str = "") -> None:
+        super().__init__(message)
+        self.sqlstate = sqlstate
+        self.kind = kind
+
+    def is_unique_violation(self: ModelError) -> bool:
+        if self.kind == "unique_violation":
+            return True
+        return self.sqlstate == "23505"
 
 class Record:
     def __init__(self: Record, row: Row) -> None:
@@ -477,7 +489,7 @@ def transaction(db: Connection, fn: (Connection) -> None) -> None:
         db.execute("COMMIT")
     except ModelError as e:
         db.execute("ROLLBACK")
-        raise ModelError(e.message)
+        raise ModelError(e.message, e.sqlstate, e.kind)
     except SqliteError as e:
         db.execute("ROLLBACK")
         raise SqliteError(e.message)
