@@ -3,6 +3,7 @@
 
 import nox.test
 import nox.os
+import nox.strings
 import nox.postgres
 from nox.os import OsError
 from nox.http import HttpRequest, HttpResponse
@@ -101,6 +102,9 @@ if dialect == "postgres":
     app: Application = nyx.app.boot(cfg, setup_pg)
     nyx.app.pg(app).query("SELECT 1")
     nox.test.assert_eq_int(app._pg_pool[0].open_count(), 0, "outside a request the pool stays closed")
+    health: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/health", "", {}, ""))
+    nox.test.assert_eq_int(health.status, 200, "health")
+    nox.test.assert_eq_int(app._pg_pool[0].open_count(), 0, "health does not check out")
     n: int = 0
     while n < 3:
         resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", {}, ""))
@@ -108,6 +112,13 @@ if dialect == "postgres":
         n = n + 1
     nox.test.assert_eq_int(app._pg_pool[0].open_count(), 1, "three requests share one pooled connection")
     nox.test.assert_eq_int(app._pg_pool[0].idle_count(), 1, "request returned the connection")
+    held_a: PgConnection = app._pg_pool[0].acquire()
+    held_b: PgConnection = app._pg_pool[0].acquire()
+    blocked_req: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", {}, ""))
+    nox.test.assert_eq_int(blocked_req.status, 503, "lazy checkout fails closed")
+    nox.test.assert_true(nox.strings.contains(blocked_req.body, "db_pool_exhausted"), "exhausted body")
+    app._pg_pool[0].give_back(held_a)
+    app._pg_pool[0].give_back(held_b)
     nyx.app.shutdown(app)
     nox.test.assert_eq_int(app._pg_pool[0].open_count(), 0, "shutdown closes the pool")
     print("v272_db_pool_test ok")
@@ -142,6 +153,9 @@ elif dialect == "mysql":
     cfg_my.db_pool_size = 2
     cfg_my.db_pool_timeout_ms = 1000
     app_my: Application = nyx.app.boot(cfg_my, setup_my)
+    health_my: HttpResponse = nyx.app.dispatch(app_my, HttpRequest("GET", "/health", "", {}, ""))
+    nox.test.assert_eq_int(health_my.status, 200, "mysql health")
+    nox.test.assert_eq_int(app_my._my_pool[0].open_count(), 0, "mysql health does not check out")
     m: int = 0
     while m < 3:
         resp_my: HttpResponse = nyx.app.dispatch(app_my, HttpRequest("GET", "/", "", {}, ""))
@@ -149,6 +163,13 @@ elif dialect == "mysql":
         m = m + 1
     nox.test.assert_eq_int(app_my._my_pool[0].open_count(), 1, "mysql requests share one connection")
     nox.test.assert_eq_int(app_my._my_pool[0].idle_count(), 1, "mysql request returned the connection")
+    my_held_a: MysqlConnection = app_my._my_pool[0].acquire()
+    my_held_b: MysqlConnection = app_my._my_pool[0].acquire()
+    blocked_my: HttpResponse = nyx.app.dispatch(app_my, HttpRequest("GET", "/", "", {}, ""))
+    nox.test.assert_eq_int(blocked_my.status, 503, "mysql lazy checkout fails closed")
+    nox.test.assert_true(nox.strings.contains(blocked_my.body, "db_pool_exhausted"), "mysql exhausted body")
+    app_my._my_pool[0].give_back(my_held_a)
+    app_my._my_pool[0].give_back(my_held_b)
     nyx.app.shutdown(app_my)
     nox.test.assert_eq_int(app_my._my_pool[0].open_count(), 0, "mysql shutdown closes the pool")
     print("v272_db_pool_test ok")

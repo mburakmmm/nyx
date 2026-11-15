@@ -15,10 +15,12 @@
 # fail() olur. Kalanlar 'except:' ile fail() isaretlenir. 'finally' stuck-running
 # korumasini saglar.
 #
-# Lease 5 dakikadir (reclaim_stale ile ayni). heartbeat / heartbeat_active
-# updated_at ve lease_until degerlerini yeniler; yasayan uzun is geri alinmaz.
-# reserve ve reclaim fence'i artirir. complete ve fail_owned yalnizca ayni
-# fence ve status=running iken yazar. Eski worker isi bitiremez.
+# Lease 5 dakikadir (reclaim_stale ile ayni). Worker, handler yield ettikce
+# lease'i kendisi uzatir (heartbeat_interval_ms). heartbeat_active aninda
+# uzatmak icindir. Yield etmeyen handler 5 dakikada stale sayilir.
+# Dosya kuyrugunda yenileme ayri bir baglantidadir; bellek kuyrugunda ayni
+# baglanti kullanilir. reserve ve reclaim fence'i artirir. complete ve
+# fail_owned yalnizca ayni fence ve status=running iken yazar.
 
 import nox.sqlite
 import nox.json
@@ -56,6 +58,13 @@ def max_attempts() -> int:
 # reserve ve heartbeat bu kadar ileri lease yazar. work() reclaim_stale(300000) cagirir.
 def lease_ms() -> int:
     return 300000
+
+# Handler yield ettikce lease bu aralikla yenilenir. Lease'in altinda kalir.
+def heartbeat_interval_ms() -> int:
+    return 1000
+
+def _lease_slice_ms() -> int:
+    return 50
 
 class _Active:
     id: int
@@ -205,6 +214,57 @@ def heartbeat_active(db: Connection) -> bool:
     if _active.id == 0:
         return False
     return heartbeat(db, _active.id, _active.fence)
+
+class _LeaseConn:
+    db: Connection
+    owned: bool
+
+    def __init__(self: _LeaseConn, db: Connection, owned: bool) -> None:
+        self.db = db
+        self.owned = owned
+
+class _LeaseRun:
+    stop: bool
+    handle: Task[None]
+
+    def __init__(self: _LeaseRun, db: Connection, id: int, fence: int, owned: bool) -> None:
+        self.stop = False
+        self.handle = spawn _renew_lease(db, id, fence, self, owned)
+
+def _lease_conn(db: Connection) -> _LeaseConn:
+    path: str = ""
+    try:
+        rows: list[Row] = db.query("PRAGMA database_list")
+        if len(rows) > 0:
+            path = rows[0].get_str(2)
+    except SqliteError:
+        return _LeaseConn(db, False)
+    if len(path) == 0:
+        return _LeaseConn(db, False)
+    try:
+        opened: Connection = nyx.db.open(path)
+        opened.execute("PRAGMA busy_timeout = 50")
+        return _LeaseConn(opened, True)
+    except SqliteError:
+        return _LeaseConn(db, False)
+
+async def _renew_lease(db: Connection, id: int, fence: int, run: _LeaseRun, owned: bool) -> None:
+    waited: int = 0
+    step: int = _lease_slice_ms()
+    every: int = heartbeat_interval_ms()
+    while not run.stop:
+        nox.time.sleep_ms(step)
+        if run.stop:
+            break
+        waited = waited + step
+        if waited >= every:
+            waited = 0
+            try:
+                heartbeat(db, id, fence)
+            except SqliteError:
+                waited = 0
+    if owned:
+        db.close()
 
 def complete(db: Connection, id: int, fence: int) -> bool:
     now: int = nox.time.now_ms()
@@ -369,6 +429,8 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
 
     handler: (str) -> None = registry.get(job_name)
     finished: bool = False
+    lease_db: _LeaseConn = _lease_conn(db)
+    renewal: _LeaseRun = _LeaseRun(lease_db.db, id, fence, lease_db.owned)
     try:
         try:
             handler(payload_json)
@@ -382,6 +444,7 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
             fail_owned(db, id, fence, "unhandled handler error")
             finished = True
     finally:
+        renewal.stop = True
         if not finished:
             fail_owned(db, id, fence, "handler aborted without completion")
         _active.id = 0

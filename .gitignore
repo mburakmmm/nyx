@@ -1,6 +1,7 @@
 .DS_Store
 nox.lock
 plan.md
+tests/.auth_compile/
 *.o
 /zig-out/
 /tmp/

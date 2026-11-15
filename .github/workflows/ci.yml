@@ -172,3 +172,86 @@ jobs:
           noxc test tests/v152_pg_session_e2e_test.nox
           noxc test tests/v271_migrate_dialect_test.nox
           noxc test tests/v272_db_pool_test.nox
+          noxc test tests/v273_db_pool_race_test.nox
+
+  mysql-smoke:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: nyx
+          MYSQL_DATABASE: nyx
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pnyx"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
+      - name: Cache Nox toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.nox-lang
+          key: nox-v2.1.186-linux-x64-qbe
+      - name: Install Nox
+        run: |
+          if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then
+            bash ci/install_nox.sh
+          fi
+          echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
+      - name: Point package at checkout
+        run: |
+          python3 - <<'PY'
+          import json, os
+          ws = os.environ["GITHUB_WORKSPACE"]
+          sha = os.environ["GITHUB_SHA"]
+          data = {
+            "name": "nyx",
+            "entry": "examples/blog/main.nox",
+            "bin": {"name": "nyx", "path": "cli.nox"},
+            "requires": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+              },
+            ],
+          }
+          open("nox.json","w").write(json.dumps(data, indent=2)+"\n")
+          lock = {
+            "packages": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+                "resolved": sha,
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+                "resolved": "a4c5434563a7415cc45df687af4ac51f51085912",
+              },
+            ]
+          }
+          open("nox.lock","w").write(json.dumps(lock, indent=2)+"\n")
+          PY
+      - name: MySQL migrate and pool
+        env:
+          DATABASE_URL: mysql://root:nyx@127.0.0.1:3306/nyx
+        run: |
+          noxc --version
+          noxc fetch
+          noxc test tests/v271_migrate_dialect_test.nox
+          noxc test tests/v272_db_pool_test.nox
+          noxc test tests/v273_db_pool_race_test.nox

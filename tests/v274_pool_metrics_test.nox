@@ -1,0 +1,35 @@
+# Pool counters and gauge text. No database.
+
+import nox.test
+import nox.strings
+import nyx.metrics
+
+nyx.metrics.reset()
+body: str = nyx.metrics.prometheus_text()
+nox.test.assert_true(nox.strings.contains(body, "nyx_db_pool_checkouts_total 0"), "checkouts start at 0")
+nox.test.assert_true(nox.strings.contains(body, "nyx_db_pool_checkout_wait_ms_total 0"), "wait starts at 0")
+nox.test.assert_true(nox.strings.contains(body, "nyx_db_pool_exhausted_total 0"), "exhausted starts at 0")
+
+nyx.metrics.record_db_checkout(12)
+nyx.metrics.record_db_checkout(8)
+nyx.metrics.inc_db_pool_exhausted()
+nox.test.assert_eq_int(nyx.metrics.db_pool_checkouts(), 2, "two checkouts")
+nox.test.assert_eq_int(nyx.metrics.db_pool_checkout_wait_ms(), 20, "wait sums")
+nox.test.assert_eq_int(nyx.metrics.db_pool_exhausted(), 1, "one exhaustion")
+
+again: str = nyx.metrics.prometheus_text()
+nox.test.assert_true(nox.strings.contains(again, "nyx_db_pool_checkouts_total 2"), "checkout counter")
+nox.test.assert_true(nox.strings.contains(again, "nyx_db_pool_checkout_wait_ms_total 20"), "wait counter")
+nox.test.assert_true(nox.strings.contains(again, "nyx_db_pool_exhausted_total 1"), "exhausted counter")
+
+gauges: str = nyx.metrics.pool_gauge_text(4, 1, 1)
+nox.test.assert_true(nox.strings.contains(gauges, "nyx_db_pool_size 4"), "pool size")
+nox.test.assert_true(nox.strings.contains(gauges, "nyx_db_pool_open 1"), "pool open")
+nox.test.assert_true(nox.strings.contains(gauges, "nyx_db_pool_idle 1"), "pool idle")
+
+nyx.metrics.record_db_checkout(-5)
+nox.test.assert_eq_int(nyx.metrics.db_pool_checkout_wait_ms(), 20, "negative wait is zero")
+nyx.metrics.reset()
+nox.test.assert_eq_int(nyx.metrics.db_pool_checkouts(), 0, "reset checkouts")
+nox.test.assert_eq_int(nyx.metrics.db_pool_exhausted(), 0, "reset exhausted")
+print("v274_pool_metrics_test ok")

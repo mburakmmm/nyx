@@ -1,0 +1,91 @@
+# Uncomment the generated auth snippet and typecheck it.
+# The snippet must compile for sqlite, postgres, and mysql branches.
+
+import nox.fs
+import nox.os
+import nox.process
+import nox.strings
+import nox.test
+import nyx.cli_gen
+
+def drop_hash(line: str) -> str:
+    if nox.strings.starts_with(line, "# "):
+        out: str = ""
+        i: int = 2
+        while i < len(line):
+            out = out + nox.strings.char_from_byte(nox.strings.byte_at(line, i))
+            i = i + 1
+        return out
+    return ""
+
+def is_import_line(line: str) -> bool:
+    return nox.strings.starts_with(line, "import ") or nox.strings.starts_with(line, "from ")
+
+root: str = "tests/.auth_compile"
+if nox.fs.exists(root):
+    nox.fs.remove_dir_all(root)
+nyx.cli_gen.generate_auth(root)
+snippet: str = nox.fs.read_to_string(root + "/config/auth_routes.nox.snippet")
+nox.test.assert_true(nox.strings.contains(snippet, "nox.json.dump_string"), "dump_string")
+nox.test.assert_true(not nox.strings.contains(snippet, "encode_string"), "old json name is gone")
+nox.test.assert_true(nox.strings.contains(snippet, "nyx.auth_engine_mysql.register"), "mysql register")
+nox.test.assert_true(nox.strings.contains(snippet, "nyx.auth_engine_pg.register"), "pg register")
+nox.test.assert_true(nox.strings.contains(snippet, "nyx.auth_engine.register"), "sqlite register")
+
+imports: str = ""
+body: str = ""
+lines: list[str] = nox.strings.split(snippet, "\n")
+n: int = 0
+while n < len(lines):
+    code: str = drop_hash(lines[n])
+    if len(code) > 0 and not nox.strings.starts_with(code, "Paste "):
+        if is_import_line(code):
+            imports = imports + code + "\n"
+        else:
+            body = body + "    " + code + "\n"
+    n = n + 1
+
+program: str = imports
+program = program + "import nyx.app\n"
+program = program + "import nyx.config\n"
+program = program + "import nyx.ctrl\n"
+program = program + "from nyx.app import Application\n"
+program = program + "from nyx.config import Config\n"
+program = program + "from nox.http import HttpResponse\n"
+program = program + "from nox.router import Context\n"
+program = program + "\n"
+program = program + "def setup(application: Application) -> None:\n"
+program = program + body
+program = program + "\n"
+program = program + "cfg: Config = nyx.config.defaults(\"test\")\n"
+program = program + "cfg.secret_key = \"nyx-test-secret-change-me-32bytes!\"\n"
+program = program + "cfg.db_path = \":memory:\"\n"
+program = program + "cfg.migrate_path = \"\"\n"
+program = program + "cfg.auto_migrate = False\n"
+program = program + "cfg.csrf_enabled = False\n"
+program = program + "cfg.log_requests = False\n"
+program = program + "application: Application = nyx.app.boot(cfg, setup)\n"
+program = program + "nyx.app.shutdown(application)\n"
+program = program + "print(\"auth snippet typechecks\")\n"
+
+prog_path: str = nox.os.current_dir() + "/" + root + "/auth_wire.nox"
+nox.fs.write_string(root + "/auth_wire.nox", program)
+# nox.process starts the child with an empty environment. noxc then
+# resolves its cache from an empty HOME and fails with ReadOnlyFileSystem.
+# The wrapper puts HOME and PATH back before exec.
+home: str = nox.os.getenv("HOME")
+wrapper: str = root + "/run_noxc.sh"
+script: str = "#!/bin/sh\n"
+script = script + "export HOME=\"" + home + "\"\n"
+script = script + "export PATH=\"" + home + "/.nox-lang/bin:/usr/bin:/bin\"\n"
+script = script + "cd \"" + nox.os.current_dir() + "\"\n"
+script = script + "exec \"" + home + "/.nox-lang/bin/noxc\" test \"" + prog_path + "\"\n"
+nox.fs.write_string(wrapper, script)
+out: nox.process.Output = nox.process.Command("/bin/sh").arg(wrapper).run()
+if len(out.stdout) > 0:
+    print(out.stdout)
+if len(out.stderr) > 0:
+    print(out.stderr)
+nox.test.assert_eq_int(out.status, 0, "generated auth snippet typechecks")
+nox.fs.remove_dir_all(root)
+print("cli_auth_compile_test ok")

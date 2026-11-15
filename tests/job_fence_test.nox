@@ -36,6 +36,17 @@ nox.test.assert_true(nyx.job.process_one(live, registry), "long job ran")
 nox.test.assert_eq_str(status_of(live, long_id), "completed", "owner completed the long job")
 nox.test.assert_eq_int(nyx.job.active_id(), 0, "active job cleared")
 
+def auto_handler(payload_json: str) -> None:
+    live.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE status = 'running'")
+    nox.time.sleep_ms(nyx.job.heartbeat_interval_ms() + 400)
+    kept: int = nyx.job.reclaim_stale(live, 300000)
+    nox.test.assert_eq_int(kept, 0, "automatic heartbeat keeps the lease")
+
+registry.register("Auto", auto_handler)
+auto_id: int = nyx.job.enqueue(live, "Auto", "{}", nox.time.now_ms())
+nox.test.assert_true(nyx.job.process_one(live, registry), "auto job ran")
+nox.test.assert_eq_str(status_of(live, auto_id), "completed", "auto job completed")
+
 # Old table from before fence/lease columns.
 legacy: Connection = nyx.db.open(":memory:")
 legacy.execute(
@@ -86,8 +97,24 @@ nox.test.assert_true(nyx.job.complete(other, job_id, second_fence), "new worker 
 nox.test.assert_true(not nyx.job.complete(other, job_id, second_fence), "complete is once")
 nox.test.assert_eq_str(status_of(owner, job_id), "completed", "one completed row")
 
+file_db: Connection = nyx.db.open(path)
+nyx.job.ensure_schema(file_db)
+
+def file_auto(payload_json: str) -> None:
+    file_db.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE status = 'running'")
+    nox.time.sleep_ms(nyx.job.heartbeat_interval_ms() + 400)
+    kept_file: int = nyx.job.reclaim_stale(other, 300000)
+    nox.test.assert_eq_int(kept_file, 0, "file queue renews the lease on its own connection")
+
+file_reg: JobRegistry = JobRegistry()
+file_reg.register("FileAuto", file_auto)
+file_id: int = nyx.job.enqueue(file_db, "FileAuto", "{}", nox.time.now_ms())
+nox.test.assert_true(nyx.job.process_one(file_db, file_reg), "file auto job ran")
+nox.test.assert_eq_str(status_of(file_db, file_id), "completed", "file auto job completed")
+
 owner.close()
 other.close()
+file_db.close()
 live.close()
 legacy.close()
 print("job_fence_test ok")

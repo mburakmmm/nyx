@@ -1,0 +1,136 @@
+# Overlapping pool checkouts. Skips without a postgres or mysql DATABASE_URL.
+# Two holders fill a size-2 pool; a third acquire must fail closed.
+# Eight overlapping checkouts on a size-4 pool must not open a fifth connection.
+
+import nox.test
+import nox.os
+import nox.time
+import nox.tasks
+import nox.postgres
+import nox.mysql
+from nox.tasks import TaskGroup
+from nox.os import OsError
+from nox.postgres import Connection as PgConnection, Pool as PgPool, PostgresError
+from nox.mysql import Connection as MysqlConnection, MysqlError
+import nyx.db
+import nyx.db_pool
+from nyx.db_pool import MysqlPool
+
+def database_url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+async def hold_pg(pool: PgPool, release: Channel[int]) -> None:
+    conn: PgConnection = pool.acquire()
+    await release.recv()
+    pool.give_back(conn)
+
+async def hold_my(pool: MysqlPool, release: Channel[int]) -> None:
+    conn: MysqlConnection = pool.acquire()
+    await release.recv()
+    pool.give_back(conn)
+
+async def burst_pg(pool: PgPool) -> None:
+    conn: PgConnection = pool.acquire()
+    nox.time.sleep_ms(40)
+    pool.give_back(conn)
+
+async def burst_my(pool: MysqlPool) -> None:
+    conn: MysqlConnection = pool.acquire()
+    nox.time.sleep_ms(40)
+    pool.give_back(conn)
+
+async def race_pg(url: str) -> None:
+    small: PgPool = nox.postgres.pool(url, 2, 200)
+    release: Channel[int] = Channel[int](0)
+    a: Task[None] = spawn hold_pg(small, release)
+    b: Task[None] = spawn hold_pg(small, release)
+    ready: bool = False
+    spins: int = 0
+    while not ready and spins < 200:
+        nox.time.sleep_ms(10)
+        ready = small.open_count() >= 2
+        spins = spins + 1
+    nox.test.assert_true(ready, "two postgres connections are held")
+    blocked: bool = False
+    try:
+        extra: PgConnection = small.acquire()
+        small.give_back(extra)
+    except PostgresError:
+        blocked = True
+    nox.test.assert_true(blocked, "third postgres acquire fails while both are held")
+    await release.send(1)
+    await release.send(1)
+    await a
+    await b
+    small.close()
+
+    wide: PgPool = nox.postgres.pool(url, 4, 5000)
+    group: TaskGroup[None] = TaskGroup[None]()
+    n: int = 0
+    while n < 8:
+        group.add(spawn burst_pg(wide))
+        n = n + 1
+    nox.test.assert_true(group.wait_all(10000), "postgres burst finished")
+    nox.test.assert_true(wide.open_count() <= 4, "postgres pool stays within size")
+    nox.test.assert_true(wide.open_count() > 0, "postgres pool opened a connection")
+    nox.test.assert_eq_int(wide.idle_count(), wide.open_count(), "postgres connections returned")
+    wide.close()
+    nox.test.assert_eq_int(wide.open_count(), 0, "postgres pool closed")
+
+async def race_my(url: str) -> None:
+    small: MysqlPool = nyx.db_pool.open_mysql(url, 2, 200)
+    release: Channel[int] = Channel[int](0)
+    a: Task[None] = spawn hold_my(small, release)
+    b: Task[None] = spawn hold_my(small, release)
+    ready: bool = False
+    spins: int = 0
+    while not ready and spins < 200:
+        nox.time.sleep_ms(10)
+        ready = small.open_count() >= 2
+        spins = spins + 1
+    nox.test.assert_true(ready, "two mysql connections are held")
+    blocked: bool = False
+    try:
+        extra: MysqlConnection = small.acquire()
+        small.give_back(extra)
+    except MysqlError:
+        blocked = True
+    nox.test.assert_true(blocked, "third mysql acquire fails while both are held")
+    await release.send(1)
+    await release.send(1)
+    await a
+    await b
+    small.close()
+
+    wide: MysqlPool = nyx.db_pool.open_mysql(url, 4, 5000)
+    group: TaskGroup[None] = TaskGroup[None]()
+    n: int = 0
+    while n < 8:
+        group.add(spawn burst_my(wide))
+        n = n + 1
+    nox.test.assert_true(group.wait_all(10000), "mysql burst finished")
+    nox.test.assert_true(wide.open_count() <= 4, "mysql pool stays within size")
+    nox.test.assert_true(wide.open_count() > 0, "mysql pool opened a connection")
+    nox.test.assert_eq_int(wide.idle_count(), wide.open_count(), "mysql connections returned")
+    wide.close()
+    nox.test.assert_eq_int(wide.open_count(), 0, "mysql pool closed")
+
+async def race_main() -> None:
+    url: str = database_url()
+    dialect: str = nyx.db.dialect_of_url(url)
+    if dialect == "postgres":
+        pg_job: Task[None] = spawn race_pg(url)
+        await pg_job
+        print("v273_db_pool_race_test ok (postgres)")
+    elif dialect == "mysql":
+        my_job: Task[None] = spawn race_my(url)
+        await my_job
+        print("v273_db_pool_race_test ok (mysql)")
+    else:
+        print("v273_db_pool_race_test skipped (no postgres or mysql DATABASE_URL)")
+
+job: Task[None] = spawn race_main()
+await job

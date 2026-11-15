@@ -164,43 +164,88 @@ def _ends_with_sql(name: str) -> bool:
 
 # Up dosyalari: sqlite `Ad.sql`, postgres `Ad.pg.sql`, mysql `Ad.mysql.sql`.
 # Down: `Ad.down.sql`, `Ad.pg.down.sql`, `Ad.mysql.down.sql`.
-# Dizinde lehce soneki varsa yalniz o sonek. Yoksa duz `Ad.sql`
-# (tek lehceli mevcut dizin). `.pg.sql`, `.mysql.sql` ve `*.down.sql` disarida.
-def select_up_migrations(names: list[str], dialect: str) -> list[str]:
-    specific: str = ""
-    if dialect == "postgres":
-        specific = ".pg.sql"
-    elif dialect == "mysql":
-        specific = ".mysql.sql"
-    has_specific: bool = False
-    if len(specific) > 0:
-        i: int = 0
-        while i < len(names):
-            if nox.strings.ends_with(names[i], specific):
-                has_specific = True
-            i = i + 1
-    chosen: list[str] = []
-    j: int = 0
-    while j < len(names):
-        if _take_up(names[j], dialect, has_specific):
-            chosen.append(names[j])
-        j = j + 1
-    return _sort_names(chosen)
+# Secim kimlik basina: `001_users.sql` ile `002_posts.pg.sql` ayni kimlik degil.
+# Kimligin lehce ikizi varsa o dosya; yoksa duz `Ad.sql`. Ikizi olmayan
+# duz dosya, dizinde baska bir `.pg.sql` olsa da uygulanir.
+def _drop_suffix(s: str, suffix: str) -> str:
+    if not nox.strings.ends_with(s, suffix):
+        return s
+    keep: int = len(s) - len(suffix)
+    out: str = ""
+    i: int = 0
+    while i < keep:
+        out = out + nox.strings.char_from_byte(nox.strings.byte_at(s, i))
+        i = i + 1
+    return out
 
-def _take_up(name: str, dialect: str, has_specific: bool) -> bool:
+def _migration_identity(name: str) -> str:
+    base: str = _drop_suffix(name, ".sql")
+    if nox.strings.ends_with(base, ".mysql"):
+        return _drop_suffix(base, ".mysql")
+    if nox.strings.ends_with(base, ".pg"):
+        return _drop_suffix(base, ".pg")
+    return base
+
+def _is_up_candidate(name: str) -> bool:
     if nox.strings.ends_with(name, ".down.sql"):
         return False
-    if not _ends_with_sql(name):
-        return False
-    if dialect == "postgres" and has_specific:
-        return nox.strings.ends_with(name, ".pg.sql")
-    if dialect == "mysql" and has_specific:
-        return nox.strings.ends_with(name, ".mysql.sql")
-    if nox.strings.ends_with(name, ".pg.sql"):
-        return False
-    if nox.strings.ends_with(name, ".mysql.sql"):
-        return False
-    return True
+    return _ends_with_sql(name)
+
+def _dialect_rank(name: str, dialect: str) -> int:
+    pg: bool = nox.strings.ends_with(name, ".pg.sql")
+    my: bool = nox.strings.ends_with(name, ".mysql.sql")
+    if dialect == "postgres":
+        if pg:
+            return 2
+        if my:
+            return 0
+        return 1
+    if dialect == "mysql":
+        if my:
+            return 2
+        if pg:
+            return 0
+        return 1
+    if pg or my:
+        return 0
+    return 2
+
+def _identity_seen(seen: list[str], ident: str) -> bool:
+    i: int = 0
+    while i < len(seen):
+        if seen[i] == ident:
+            return True
+        i = i + 1
+    return False
+
+def select_up_migrations(names: list[str], dialect: str) -> list[str]:
+    ups: list[str] = []
+    i: int = 0
+    while i < len(names):
+        if _is_up_candidate(names[i]):
+            ups.append(names[i])
+        i = i + 1
+    chosen: list[str] = []
+    seen: list[str] = []
+    j: int = 0
+    while j < len(ups):
+        ident: str = _migration_identity(ups[j])
+        if not _identity_seen(seen, ident):
+            seen.append(ident)
+            best: str = ""
+            best_rank: int = 0
+            k: int = 0
+            while k < len(ups):
+                if _migration_identity(ups[k]) == ident:
+                    rank: int = _dialect_rank(ups[k], dialect)
+                    if rank > best_rank:
+                        best_rank = rank
+                        best = ups[k]
+                k = k + 1
+            if best_rank > 0:
+                chosen.append(best)
+        j = j + 1
+    return _sort_names(chosen)
 
 def _str_less(a: str, b: str) -> bool:
     i: int = 0
@@ -342,7 +387,7 @@ def _record_applied_pg(conn: PgConnection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
-# Postgres: dizinde `*.pg.sql` varsa yalniz onlar. Yoksa duz `*.sql`.
+# Postgres: kimligin `*.pg.sql` ikizi varsa o, yoksa duz `*.sql`.
 def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
@@ -411,7 +456,7 @@ def _record_applied_mysql(conn: MysqlConnection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
-# MySQL: dizinde `*.mysql.sql` varsa yalniz onlar. Yoksa duz `*.sql`.
+# MySQL: kimligin `*.mysql.sql` ikizi varsa o, yoksa duz `*.sql`.
 # execute tek deyim calistirir; bir dosyada birden fazla deyim varsa ayri dosyaya bolun.
 def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):

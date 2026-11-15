@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.28.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.29.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.28.0"
+      "ref": "v0.29.0"
     }
   ]
 }
@@ -160,11 +160,20 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 | `NYX_HTTP2` | Varsayılan açık. `0` HTTP/1.1. Başlık araması büyük/küçük harf duyarsız |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Giden havuz (varsayılan `32` / `90000`). Idle `0` havuzu kapatır |
 | `NYX_PG_QUERY_TIMEOUT_MS` | Postgres istemci sorgu iptali (`0` kapalı) |
-| `NYX_DB_POOL` / `NYX_DB_POOL_TIMEOUT_MS` | Postgres/MySQL havuzu. `0` veya `1` tek bağlantı (varsayılan). `>1` istek başına bağlantı alır ve geri verir |
+| `NYX_DB_POOL` / `NYX_DB_POOL_TIMEOUT_MS` | Postgres/MySQL havuzu. `0` veya `1` tek bağlantı (varsayılan). `>1` istekte ilk `pg()` veya `mysql()` çağrısında bağlantı alır ve geri verir. `/health` yuva tutmaz |
 
 ---
 
 ## Sürüm notları
+
+### 0.29.0 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Her migration kimliği kendi lehçe dosyasını seçer (`*.pg.sql`, `*.mysql.sql`). İkizi yoksa düz `*.sql` uygulanır. Başka kimliğin lehçe dosyası eski düz dosyayı düşürmez
+- `nyx generate auth` `nox.json.dump_string` ve MySQL için `nyx.auth_engine_mysql` yazar. Yorumlar açılınca snippet ayağa kalkar
+- `NYX_DB_POOL` 1’den büyükse bağlantı ilk `pg()` veya `mysql()` çağrısında alınır. `/health` yuva tutmaz. Havuz doluysa yanıt 503 `db_pool_exhausted`. SQLite havuzu yok sayar
+- `/metrics` checkout, bekleme ve tükenme sayaçlarını yazar. Havuz açıksa o worker için size, open ve idle gauge’ları da gelir
+- İşçi, handler yield ettikçe lease’i saniyede bir uzatır. Yield etmeyen iş beş dakikada reclaim edilir. `heartbeat_active` anında uzatma olarak durur
+- CI, MySQL 8.4 üzerinde migration ve havuz testlerini çalıştırır
 
 ### 0.28.0 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı

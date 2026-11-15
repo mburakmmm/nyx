@@ -11,12 +11,16 @@ import nox.uuid
 import nox.sharedmem
 from nox.sharedmem import SharedBuffer
 
-# Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited
+# Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited,
+# 40 pool checkouts, 48 pool wait ms, 56 pool exhausted.
 _SLOT_REQ: int = 0
 _SLOT_5XX: int = 8
 _SLOT_JOB: int = 16
 _SLOT_MAIL: int = 24
 _SLOT_RL: int = 32
+_SLOT_POOL_OUT: int = 40
+_SLOT_POOL_WAIT: int = 48
+_SLOT_POOL_FAIL: int = 56
 _SIZE: int = 64
 
 def _compact_shm_name() -> str:
@@ -79,6 +83,9 @@ def reset() -> None:
     buf.write_int(_SLOT_JOB, 0)
     buf.write_int(_SLOT_MAIL, 0)
     buf.write_int(_SLOT_RL, 0)
+    buf.write_int(_SLOT_POOL_OUT, 0)
+    buf.write_int(_SLOT_POOL_WAIT, 0)
+    buf.write_int(_SLOT_POOL_FAIL, 0)
     buf.unlock()
 
 def inc_requests() -> None:
@@ -111,6 +118,39 @@ def mail_fail() -> int:
 def rate_limited() -> int:
     return _get(_SLOT_RL)
 
+def record_db_checkout(wait_ms: int) -> None:
+    waited: int = wait_ms
+    if waited < 0:
+        waited = 0
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    buf.write_int(_SLOT_POOL_OUT, buf.read_int(_SLOT_POOL_OUT) + 1)
+    buf.write_int(_SLOT_POOL_WAIT, buf.read_int(_SLOT_POOL_WAIT) + waited)
+    buf.unlock()
+
+def inc_db_pool_exhausted() -> None:
+    _bump(_SLOT_POOL_FAIL)
+
+def db_pool_checkouts() -> int:
+    return _get(_SLOT_POOL_OUT)
+
+def db_pool_checkout_wait_ms() -> int:
+    return _get(_SLOT_POOL_WAIT)
+
+def db_pool_exhausted() -> int:
+    return _get(_SLOT_POOL_FAIL)
+
+def pool_gauge_text(size: int, opened: int, idle: int) -> str:
+    out: str = ""
+    out = out + "# HELP nyx_db_pool_size Checkout slots configured on this worker\n"
+    out = out + "# TYPE nyx_db_pool_size gauge\n"
+    out = out + "nyx_db_pool_size " + str(size) + "\n"
+    out = out + "# TYPE nyx_db_pool_open gauge\n"
+    out = out + "nyx_db_pool_open " + str(opened) + "\n"
+    out = out + "# TYPE nyx_db_pool_idle gauge\n"
+    out = out + "nyx_db_pool_idle " + str(idle) + "\n"
+    return out
+
 def prometheus_text() -> str:
     buf: SharedBuffer = _store.ensure()
     buf.lock()
@@ -119,6 +159,9 @@ def prometheus_text() -> str:
     j: int = buf.read_int(_SLOT_JOB)
     m: int = buf.read_int(_SLOT_MAIL)
     rl: int = buf.read_int(_SLOT_RL)
+    checkouts: int = buf.read_int(_SLOT_POOL_OUT)
+    wait_ms: int = buf.read_int(_SLOT_POOL_WAIT)
+    exhausted: int = buf.read_int(_SLOT_POOL_FAIL)
     buf.unlock()
     out: str = ""
     out = out + "# HELP nyx_metrics_locked Process-wide counters (SharedBuffer lock; M:N safe)\n"
@@ -134,4 +177,10 @@ def prometheus_text() -> str:
     out = out + "nyx_mail_fail_total " + str(m) + "\n"
     out = out + "# TYPE nyx_rate_limited_total counter\n"
     out = out + "nyx_rate_limited_total " + str(rl) + "\n"
+    out = out + "# TYPE nyx_db_pool_checkouts_total counter\n"
+    out = out + "nyx_db_pool_checkouts_total " + str(checkouts) + "\n"
+    out = out + "# TYPE nyx_db_pool_checkout_wait_ms_total counter\n"
+    out = out + "nyx_db_pool_checkout_wait_ms_total " + str(wait_ms) + "\n"
+    out = out + "# TYPE nyx_db_pool_exhausted_total counter\n"
+    out = out + "nyx_db_pool_exhausted_total " + str(exhausted) + "\n"
     return out

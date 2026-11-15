@@ -101,6 +101,8 @@ def pg(application: Application) -> PgConnection:
     held: PgConnection | None = nyx.db_pool.current_pg()
     if held != None:
         return held
+    if nyx.db_pool.armed() and len(application._pg_pool) > 0:
+        return _take_pg(application)
     return application._pg[0]
 
 def has_mysql(application: Application) -> bool:
@@ -112,7 +114,18 @@ def mysql(application: Application) -> MysqlConnection:
     held: MysqlConnection | None = nyx.db_pool.current_mysql()
     if held != None:
         return held
+    if nyx.db_pool.armed() and len(application._my_pool) > 0:
+        return _take_mysql(application)
     return application._my[0]
+
+def _pool_gauge(application: Application) -> str:
+    if application.dialect == "postgres" and len(application._pg_pool) > 0:
+        pool: PgPool = application._pg_pool[0]
+        return nyx.metrics.pool_gauge_text(pool.size, pool.open_count(), pool.idle_count())
+    if application.dialect == "mysql" and len(application._my_pool) > 0:
+        my_pool: MysqlPool = application._my_pool[0]
+        return nyx.metrics.pool_gauge_text(my_pool.size, my_pool.open_count(), my_pool.idle_count())
+    return ""
 
 def _is_placeholder_secret(secret: str) -> bool:
     if nox.strings.contains(secret, "change-me"):
@@ -192,7 +205,8 @@ def mount_health(application: Application) -> None:
             return nyx.ctrl.not_found()
         headers: dict[str, str] = {}
         headers["Content-Type"] = "text/plain; version=0.0.4; charset=utf-8"
-        return HttpResponse(200, nyx.metrics.prometheus_text(), headers)
+        body: str = nyx.metrics.prometheus_text() + _pool_gauge(application)
+        return HttpResponse(200, body, headers)
 
     application.router.get("/health", health)
     application.router.get("/healthz", health)
@@ -776,24 +790,43 @@ def _error_response(ctx: Context, cfg: Config, kind: str, message: str, line: in
 
 EMPTY_HEADERS: dict[str, str] = {}
 
-def _checkout_db(application: Application) -> bool:
-    if application.config.db_pool_size <= 1:
-        return False
-    if application.dialect == "postgres" and len(application._pg_pool) > 0:
-        conn: PgConnection = application._pg_pool[0].acquire()
-        if application.config.pg_query_timeout_ms > 0:
-            try:
-                conn.set_query_timeout(application.config.pg_query_timeout_ms)
-            except PostgresError as e:
-                application._pg_pool[0].give_back(conn)
-                raise PostgresError(e.message)
-        nyx.db_pool.hold_pg(conn)
-        return True
-    if application.dialect == "mysql" and len(application._my_pool) > 0:
-        my_conn: MysqlConnection = application._my_pool[0].acquire()
-        nyx.db_pool.hold_mysql(my_conn)
-        return True
-    return False
+def _take_pg(application: Application) -> PgConnection:
+    started: int = nox.time.now_ms()
+    conn: PgConnection = application._pg[0]
+    took: bool = False
+    try:
+        conn = application._pg_pool[0].acquire()
+        took = True
+    except PostgresError:
+        nyx.metrics.inc_db_pool_exhausted()
+        raise AppError("db_pool_exhausted")
+    if not took:
+        raise AppError("db_pool_exhausted")
+    if application.config.pg_query_timeout_ms > 0:
+        try:
+            conn.set_query_timeout(application.config.pg_query_timeout_ms)
+        except PostgresError as e:
+            application._pg_pool[0].give_back(conn)
+            raise PostgresError(e.message)
+    nyx.db_pool.hold_pg(conn)
+    nyx.metrics.record_db_checkout(nox.time.now_ms() - started)
+    return conn
+
+def _take_mysql(application: Application) -> MysqlConnection:
+    started: int = nox.time.now_ms()
+    conn: MysqlConnection = application._my[0]
+    took: bool = False
+    try:
+        conn = application._my_pool[0].acquire()
+        took = True
+    except MysqlError:
+        nyx.metrics.inc_db_pool_exhausted()
+        raise AppError("db_pool_exhausted")
+    if not took:
+        raise AppError("db_pool_exhausted")
+    nyx.db_pool.hold_mysql(conn)
+    nyx.metrics.record_db_checkout(nox.time.now_ms() - started)
+    return conn
 
 def _release_db(application: Application) -> None:
     if application.dialect == "postgres" and len(application._pg_pool) > 0:
@@ -831,39 +864,32 @@ def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     err_ctx: Context = Context(routed, empty_params)
     resp: HttpResponse = HttpResponse(500, "", {})
     counted: bool = False
-    checked_out: bool = False
-    pool_failed: bool = False
+    pooled: bool = cfg.db_pool_size > 1 and (len(application._pg_pool) > 0 or len(application._my_pool) > 0)
+    if pooled:
+        nyx.db_pool.arm()
     try:
         try:
-            checked_out = _checkout_db(application)
-        except PostgresError:
-            pool_failed = True
-        except MysqlError:
-            pool_failed = True
-        if pool_failed:
-            resp = nyx.ctrl.json(503, "{\"error\":\"db_pool_exhausted\"}")
-            if cfg.metrics_enabled:
-                nyx.metrics.inc_requests()
-                nyx.metrics.inc_5xx()
-        else:
-            try:
-                resp = application.router.dispatch(routed)
-                counted = True
-            except ModelError as e:
-                resp = _error_response(err_ctx, cfg, "ModelError", e.message, e.line)
-            except AppError as e:
+            resp = application.router.dispatch(routed)
+            counted = True
+        except ModelError as e:
+            resp = _error_response(err_ctx, cfg, "ModelError", e.message, e.line)
+        except AppError as e:
+            if e.message == "db_pool_exhausted":
+                resp = nyx.ctrl.json(503, "{\"error\":\"db_pool_exhausted\"}")
+            else:
                 resp = _error_response(err_ctx, cfg, "AppError", e.message, e.line)
-            except DbError as e:
-                resp = _error_response(err_ctx, cfg, "DbError", e.message, e.line)
-            except Exception as e:
-                resp = _error_response(err_ctx, cfg, "Exception", e.message, e.line)
-            if not counted and cfg.metrics_enabled:
-                nyx.metrics.inc_requests()
-                if resp.status >= 500:
-                    nyx.metrics.inc_5xx()
+        except DbError as e:
+            resp = _error_response(err_ctx, cfg, "DbError", e.message, e.line)
+        except Exception as e:
+            resp = _error_response(err_ctx, cfg, "Exception", e.message, e.line)
+        if not counted and cfg.metrics_enabled:
+            nyx.metrics.inc_requests()
+            if resp.status >= 500:
+                nyx.metrics.inc_5xx()
     finally:
-        if checked_out:
+        if pooled:
             _release_db(application)
+            nyx.db_pool.disarm()
         if want_tl:
             nyx.runtime.end()
     return resp

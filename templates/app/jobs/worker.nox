@@ -13,9 +13,10 @@ db: Connection = nyx.db.open(cfg.jobs_db_path)
 nyx.job.ensure_schema(db)
 registry: JobRegistry = JobRegistry()
 
-# Register handlers here. A long handler keeps the lease with:
+# Register handlers here. The worker renews the lease while the handler
+# yields (sleep, query, HTTP). A handler that never yields is reclaimed
+# after the 5 minute lease. Immediate renewal is still:
 #   nyx.job.heartbeat_active(db)
-# id and fence belong to the job this worker is running.
 # def send_welcome(payload_json: str) -> None:
 #     return None
 # registry.register("SendWelcomeEmail", send_welcome)

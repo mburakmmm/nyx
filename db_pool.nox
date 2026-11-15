@@ -1,8 +1,10 @@
 # nyx.db_pool - optional Postgres and MySQL connection pools.
 #
 # NYX_DB_POOL defaults to 0. 0 and 1 keep the single boot connection.
-# Above 1, each request checks a connection out and gives it back.
-# The boot connection stays for migrate and for pg()/mysql() outside a request.
+# Above 1, dispatch arms the pool but does not take a connection.
+# The first pg() or mysql() call in that request checks one out.
+# Routes that never call them, including /health, do not take a slot.
+# The boot connection stays for migrate, /ready, and calls outside a request.
 
 import nox.atomic
 import nox.time
@@ -94,6 +96,40 @@ def clear_mysql() -> None:
         got.live = False
     if len(_my_root) > 0:
         _my_root[0].live = False
+
+class _PoolArm:
+    on: bool
+
+    def __init__(self: _PoolArm, on: bool) -> None:
+        self.on = on
+
+_nyx_db_pool_arm_tl: TaskLocal[_PoolArm] = TaskLocal[_PoolArm]()
+_arm_root: list[_PoolArm] = []
+
+def arm() -> None:
+    flag: _PoolArm = _PoolArm(True)
+    _nyx_db_pool_arm_tl.set(flag)
+    got: _PoolArm | None = _nyx_db_pool_arm_tl.get()
+    if got == None:
+        if len(_arm_root) == 0:
+            _arm_root.append(flag)
+        else:
+            _arm_root[0] = flag
+
+def disarm() -> None:
+    got: _PoolArm | None = _nyx_db_pool_arm_tl.get()
+    if got != None:
+        got.on = False
+    if len(_arm_root) > 0:
+        _arm_root[0].on = False
+
+def armed() -> bool:
+    got: _PoolArm | None = _nyx_db_pool_arm_tl.get()
+    if got != None and got.on:
+        return True
+    if not _has_fiber() and len(_arm_root) > 0 and _arm_root[0].on:
+        return True
+    return False
 
 def _mysql_ok(conn: MysqlConnection) -> bool:
     try:

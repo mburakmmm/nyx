@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.28.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.29.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.28.0"
+      "ref": "v0.29.0"
     }
   ]
 }
@@ -167,11 +167,20 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 | `NYX_HTTP2` | Default on. `0` forces HTTP/1.1. Header lookup is case-insensitive (`X-Csrf-Token`, `Last-Event-Id`) |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Outbound pool (default `32` / `90000`). Idle `0` disables it |
 | `NYX_PG_QUERY_TIMEOUT_MS` | Postgres client query cancel (`0` off) |
-| `NYX_DB_POOL` / `NYX_DB_POOL_TIMEOUT_MS` | Postgres/MySQL pool. `0` or `1` keeps one connection (default). `>1` checks a connection out per request and returns it |
+| `NYX_DB_POOL` / `NYX_DB_POOL_TIMEOUT_MS` | Postgres/MySQL pool. `0` or `1` keeps one connection (default). `>1` checks a connection out on the first `pg()` or `mysql()` call in the request and returns it. `/health` does not take a slot |
 
 ---
 
 ## Changelog
+
+### 0.29.0 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- Each migration id prefers its dialect file (`*.pg.sql`, `*.mysql.sql`) and uses plain `*.sql` only when that id has no twin. A later dialect file does not drop older plain files of other ids
+- `nyx generate auth` writes `nox.json.dump_string` and a MySQL path through `nyx.auth_engine_mysql`. The uncommented snippet boots
+- `NYX_DB_POOL` above 1 checks out on the first `pg()` or `mysql()` call. `/health` does not take a slot. An empty pool still returns 503 `db_pool_exhausted`. SQLite ignores the pool
+- `/metrics` adds pool checkout, wait, and exhaustion counters. When a pool is configured it also exports size, open, and idle gauges for that worker
+- The job worker renews the lease every second while the handler yields. A handler that never yields is still reclaimed after five minutes. `heartbeat_active` remains for an immediate renewal
+- CI runs the MySQL migrate and pool tests against MySQL 8.4
 
 ### 0.28.0 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
