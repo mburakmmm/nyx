@@ -72,7 +72,9 @@ class Config:
         http2: bool,
         http_pool_idle: int,
         http_pool_idle_ms: int,
-        pg_query_timeout_ms: int
+        pg_query_timeout_ms: int,
+        db_pool_size: int,
+        db_pool_timeout_ms: int
     ) -> None:
         self.env = env
         self.secret_key = secret_key
@@ -153,6 +155,9 @@ class Config:
         self.http_pool_idle_ms = http_pool_idle_ms
         # Nox >= 2.1.17: client-side Postgres cancel. 0 leaves the server default.
         self.pg_query_timeout_ms = pg_query_timeout_ms
+        # 0 or 1: one boot connection. >1: request checkout pool.
+        self.db_pool_size = db_pool_size
+        self.db_pool_timeout_ms = db_pool_timeout_ms
 
     def is_development(self: Config) -> bool:
         return self.env == "development"
@@ -289,7 +294,9 @@ def defaults(env: str) -> Config:
         True,
         32,
         90000,
-        0
+        0,
+        0,
+        5000
     )
 
 def from_env() -> Config:
@@ -379,6 +386,8 @@ def from_env() -> Config:
     cfg.http_pool_idle = _nonneg("NYX_HTTP_POOL_IDLE", cfg.http_pool_idle)
     cfg.http_pool_idle_ms = _nonneg("NYX_HTTP_POOL_IDLE_MS", cfg.http_pool_idle_ms)
     cfg.pg_query_timeout_ms = _nonneg("NYX_PG_QUERY_TIMEOUT_MS", cfg.pg_query_timeout_ms)
+    cfg.db_pool_size = _nonneg("NYX_DB_POOL", cfg.db_pool_size)
+    cfg.db_pool_timeout_ms = _nonneg("NYX_DB_POOL_TIMEOUT_MS", cfg.db_pool_timeout_ms)
     cfg.ipv6 = _env_bool("NYX_IPV6", cfg.ipv6)
     cfg.ipv6_only = _env_bool("NYX_IPV6_ONLY", cfg.ipv6_only)
     if cfg.ipv6_only:

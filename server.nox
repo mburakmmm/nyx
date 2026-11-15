@@ -41,6 +41,13 @@ def use_multicore(cfg: Config) -> bool:
 def use_ipv6(cfg: Config) -> bool:
     return cfg.ipv6
 
+# Dinleme soketi yalnizca tek worker. NYX_WORKERS>1 ip_family'yi apply() ile alir;
+# aksi halde multicore_tls, TLS'siz serve_fd yoluna duser.
+def use_listen_fd(cfg: Config) -> bool:
+    if not use_ipv6(cfg):
+        return False
+    return not use_multicore(cfg)
+
 # Nox >= 2.1.32: 0 IPv4, 1 dual-stack, 2 IPv6-only. Windows ignores ip_family.
 def ip_family(cfg: Config) -> int:
     if not cfg.ipv6:

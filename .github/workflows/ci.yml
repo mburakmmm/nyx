@@ -37,22 +37,37 @@ jobs:
             "name": "nyx",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
-            "requires": [{
-              "alias": "nyx",
-              "repo": ws,
-              "ref": "master",
-            }],
+            "requires": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+              },
+            ],
           }
           with open("nox.json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
           lock = {
-            "packages": [{
-              "alias": "nyx",
-              "repo": ws,
-              "ref": "master",
-              "resolved": sha,
-            }]
+            "packages": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+                "resolved": sha,
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+                "resolved": "a4c5434563a7415cc45df687af4ac51f51085912",
+              },
+            ]
           }
           with open("nox.lock", "w", encoding="utf-8") as f:
             json.dump(lock, f, indent=2)
@@ -114,20 +129,35 @@ jobs:
             "name": "nyx",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
-            "requires": [{
-              "alias": "nyx",
-              "repo": ws,
-              "ref": "master",
-            }],
+            "requires": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+              },
+            ],
           }
           open("nox.json","w").write(json.dumps(data, indent=2)+"\n")
           lock = {
-            "packages": [{
-              "alias": "nyx",
-              "repo": ws,
-              "ref": "master",
-              "resolved": sha,
-            }]
+            "packages": [
+              {
+                "alias": "nyx",
+                "repo": ws,
+                "ref": "master",
+                "resolved": sha,
+              },
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+                "resolved": "a4c5434563a7415cc45df687af4ac51f51085912",
+              },
+            ]
           }
           open("nox.lock","w").write(json.dumps(lock, indent=2)+"\n")
           PY
@@ -140,3 +170,5 @@ jobs:
           noxc fetch
           noxc run ci/pg_smoke.nox
           noxc test tests/v152_pg_session_e2e_test.nox
+          noxc test tests/v271_migrate_dialect_test.nox
+          noxc test tests/v272_db_pool_test.nox

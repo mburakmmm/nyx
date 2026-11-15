@@ -1,0 +1,366 @@
+# cli_gen.nox — Dosya uretimi. Argv Rune'da; burasi yalnizca disk.
+# Sablon agaci NYX_ROOT/templates. Windows'ta bash yok.
+
+import nox.fs
+import nox.strings
+import nox.time
+from nox.time import DateTime
+
+class CliGenError(Exception):
+    def __init__(self: CliGenError, message: str) -> None:
+        self.message = message
+
+def snake(name: str) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(name):
+        b: int = nox.strings.byte_at(name, i)
+        if b >= 65 and b <= 90:
+            if i > 0:
+                out = out + "_"
+            out = out + nox.strings.char_from_byte(b + 32)
+        else:
+            out = out + nox.strings.char_from_byte(b)
+        i = i + 1
+    return out
+
+def _without_last(s: str) -> str:
+    out: str = ""
+    i: int = 0
+    last: int = len(s) - 1
+    while i < last:
+        out = out + nox.strings.char_from_byte(nox.strings.byte_at(s, i))
+        i = i + 1
+    return out
+
+def pluralize(name: str) -> str:
+    base: str = snake(name)
+    if nox.strings.ends_with(base, "s"):
+        return base + "es"
+    if nox.strings.ends_with(base, "y"):
+        return _without_last(base) + "ies"
+    return base + "s"
+
+def _pad2(n: int) -> str:
+    if n < 10:
+        return "0" + str(n)
+    return str(n)
+
+def stamp() -> str:
+    d: DateTime = nox.time.now()
+    return str(d.year) + _pad2(d.month) + _pad2(d.day) + _pad2(d.hour) + _pad2(d.minute) + _pad2(d.second)
+
+def _join(a: str, b: str) -> str:
+    if len(a) == 0 or a == ".":
+        return b
+    return a + "/" + b
+
+def _field_name(spec: str) -> str:
+    parts: list[str] = nox.strings.split(spec, ":")
+    return parts[0]
+
+def _field_type(spec: str) -> str:
+    parts: list[str] = nox.strings.split(spec, ":")
+    if len(parts) < 2:
+        return "string"
+    out: str = parts[1]
+    i: int = 2
+    while i < len(parts):
+        out = out + ":" + parts[i]
+        i = i + 1
+    return out
+
+def sql_type(ftype: str) -> str:
+    if ftype == "integer" or ftype == "int" or ftype == "boolean" or ftype == "bool":
+        return "INTEGER"
+    if ftype == "float" or ftype == "real":
+        return "REAL"
+    return "TEXT"
+
+def _col_sql(fields: list[str], quote: str) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(fields):
+        spec: str = fields[i]
+        if nox.strings.contains(spec, ":"):
+            out = out + "\n  " + quote + _field_name(spec) + quote + " " + sql_type(_field_type(spec)) + ","
+        i = i + 1
+    return out
+
+def write_migration_pair(root: str, table: str, fields: list[str]) -> None:
+    dirp: str = _join(root, "db/migrate")
+    nox.fs.create_dir_all(dirp)
+    ts: str = stamp()
+    base: str = dirp + "/" + ts + "_create_" + table
+    cols_sql: str = _col_sql(fields, "\"")
+    cols_my: str = _col_sql(fields, "`")
+    up: str = "CREATE TABLE IF NOT EXISTS \"" + table + "\" (\n  id INTEGER PRIMARY KEY AUTOINCREMENT," + cols_sql + "\n  created_at TEXT NOT NULL DEFAULT (datetime('now')),\n  updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\n"
+    down: str = "DROP TABLE IF EXISTS \"" + table + "\";\n"
+    pg: str = "CREATE TABLE IF NOT EXISTS \"" + table + "\" (\n  id BIGSERIAL PRIMARY KEY," + cols_sql + "\n  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n);\n"
+    my: str = "CREATE TABLE IF NOT EXISTS `" + table + "` (\n  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY," + cols_my + "\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n);\n"
+    my_down: str = "DROP TABLE IF EXISTS `" + table + "`;\n"
+    nox.fs.write_string(base + ".sql", up)
+    nox.fs.write_string(base + ".down.sql", down)
+    nox.fs.write_string(base + ".pg.sql", pg)
+    nox.fs.write_string(base + ".pg.down.sql", down)
+    nox.fs.write_string(base + ".mysql.sql", my)
+    nox.fs.write_string(base + ".mysql.down.sql", my_down)
+    print("created: " + base + ".sql")
+    print("created: " + base + ".down.sql")
+    print("created: " + base + ".pg.sql")
+    print("created: " + base + ".pg.down.sql")
+    print("created: " + base + ".mysql.sql")
+    print("created: " + base + ".mysql.down.sql")
+
+def _is_intish(ftype: str) -> bool:
+    return ftype == "integer" or ftype == "int" or ftype == "boolean" or ftype == "bool"
+
+def _model_source(name: str, table: str, fields: list[str]) -> str:
+    create_params: str = ""
+    create_sets: str = ""
+    save_params: str = "id: int"
+    save_sets: str = ""
+    i: int = 0
+    while i < len(fields):
+        field: str = _field_name(fields[i])
+        ftype: str = _field_type(fields[i])
+        if len(create_params) > 0:
+            create_params = create_params + ", "
+        if _is_intish(ftype):
+            create_params = create_params + field + ": int"
+            create_sets = create_sets + "    nyx.model.set_int(attrs, \"" + field + "\", " + field + ")\n"
+            save_params = save_params + ", " + field + ": int"
+            save_sets = save_sets + "    nyx.model.set_int(attrs, \"" + field + "\", " + field + ")\n"
+        else:
+            create_params = create_params + field + ": str"
+            create_sets = create_sets + "    nyx.model.set_str(attrs, \"" + field + "\", " + field + ")\n"
+            save_params = save_params + ", " + field + ": str"
+            save_sets = save_sets + "    nyx.model.set_str(attrs, \"" + field + "\", " + field + ")\n"
+        i = i + 1
+    if len(create_sets) == 0:
+        create_sets = "    # add nyx.model.set_* calls\n"
+        save_sets = create_sets
+    sig: str = "def create(db: Connection) -> int:"
+    if len(create_params) > 0:
+        sig = "def create(db: Connection, " + create_params + ") -> int:"
+    return "# " + name + " — typed nyx.model helpers (SQLite Application.db)\nimport nyx.model\nfrom nyx.model import Record, Attributes\nfrom nox.sqlite import Connection\n\ndef table_name() -> str:\n    return \"" + table + "\"\n\ndef find(db: Connection, id: int) -> Record | None:\n    return nyx.model.find(db, table_name(), id)\n\ndef all(db: Connection) -> list[Record]:\n    return nyx.model.all(db, table_name())\n\ndef destroy(db: Connection, id: int) -> None:\n    nyx.model.destroy(db, table_name(), id)\n\n" + sig + "\n    attrs: Attributes = nyx.model.attributes()\n" + create_sets + "    return nyx.model.create_attrs(db, table_name(), attrs)\n\ndef save(db: Connection, " + save_params + ") -> None:\n    attrs: Attributes = nyx.model.attributes()\n" + save_sets + "    nyx.model.update_attrs(db, table_name(), id, attrs)\n"
+
+def generate_model(root: str, name: str, fields: list[str]) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate model <Name> [field:type ...]")
+    table: str = pluralize(name)
+    sn: str = snake(name)
+    nox.fs.create_dir_all(_join(root, "app/models"))
+    path: str = _join(root, "app/models/" + sn + ".nox")
+    nox.fs.write_string(path, _model_source(name, table, fields))
+    write_migration_pair(root, table, fields)
+    print("created: " + path)
+
+def _view() -> str:
+    return "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>{{ title }}</title></head>\n<body><h1>{{ title }}</h1></body></html>\n"
+
+def generate_controller(root: str, name: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate controller <Name>")
+    sn: str = snake(name)
+    table: str = pluralize(name)
+    nox.fs.create_dir_all(_join(root, "app/controllers"))
+    nox.fs.create_dir_all(_join(root, "app/views/" + sn))
+    nox.fs.create_dir_all(_join(root, "config"))
+    file: str = _join(root, "app/controllers/" + sn + "_controller.nox")
+    note: str = "# " + name + "Controller\n#\n# Nox kisiti: router handler'lari setup(application) ICINDE closure olmali\n# (db/application yakalamak icin). Asagidaki snippet'i main.nox setup()\n# icine yapistirin — satir basindaki '#' isaretlerini kaldirin:\n#\n#   config/" + sn + "_routes.nox.snippet\n#\n# Views: app/views/" + sn + "/\n"
+    nox.fs.write_string(file, note)
+    page: str = _view()
+    nox.fs.write_string(_join(root, "app/views/" + sn + "/index.html"), page)
+    nox.fs.write_string(_join(root, "app/views/" + sn + "/show.html"), page)
+    nox.fs.write_string(_join(root, "app/views/" + sn + "/new.html"), page)
+    nox.fs.write_string(_join(root, "app/views/" + sn + "/edit.html"), page)
+    snippet: str = _route_snippet(name, sn, table, [], True)
+    nox.fs.write_string(_join(root, "config/" + sn + "_routes.nox.snippet"), snippet)
+    print("created: " + file)
+    print("created: config/" + sn + "_routes.nox.snippet")
+
+def _attr_block(fields: list[str], indent: str, commented: bool) -> str:
+    hash: str = ""
+    if commented:
+        hash = "# "
+    if len(fields) == 0:
+        return indent + hash + "nyx.model.set_str(attrs, \"field\", ac.param(\"field\", \"\"))\n"
+    out: str = ""
+    i: int = 0
+    while i < len(fields):
+        field: str = _field_name(fields[i])
+        ftype: str = _field_type(fields[i])
+        if ftype == "integer" or ftype == "int":
+            out = out + indent + hash + "nyx.model.set_int(attrs, \"" + field + "\", int(nyx.params.get(permitted, \"" + field + "\", \"0\")))\n"
+        else:
+            if ftype == "boolean" or ftype == "bool":
+                out = out + indent + hash + "nyx.model.set_bool(attrs, \"" + field + "\", nyx.params.get(permitted, \"" + field + "\", \"\") == \"1\" or nyx.params.get(permitted, \"" + field + "\", \"\") == \"true\")\n"
+            else:
+                out = out + indent + hash + "nyx.model.set_str(attrs, \"" + field + "\", nyx.params.get(permitted, \"" + field + "\", \"\"))\n"
+        i = i + 1
+    return out
+
+def _key_block(fields: list[str], indent: str, commented: bool) -> str:
+    hash: str = ""
+    if commented:
+        hash = "# "
+    if len(fields) == 0:
+        return indent + hash + "keys.append(\"field\")\n"
+    out: str = ""
+    i: int = 0
+    while i < len(fields):
+        out = out + indent + hash + "keys.append(\"" + _field_name(fields[i]) + "\")\n"
+        i = i + 1
+    return out
+
+def _route_snippet(name: str, sn: str, table: str, fields: list[str], commented: bool) -> str:
+    keys: str = _key_block(fields, "        ", commented)
+    sets: str = _attr_block(fields, "        ", commented)
+    hash: str = ""
+    if commented:
+        hash = "# "
+    return hash + "import nyx.ctx\n" + hash + "import nyx.csrf\n" + hash + "import nyx.form\n" + hash + "import nyx.model\n" + hash + "import nyx.params\n" + hash + "import nyx.routes\n" + hash + "from nyx.ctx import AppContext\n" + hash + "from nyx.model import Record, Attributes\n\n" + hash + "    def " + sn + "_index(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        rows: list[Record] = nyx.model.all(ac.db(), \"" + table + "\")\n" + hash + "        context: dict[str, str] = {}\n" + hash + "        context[\"title\"] = \"" + name + "\"\n" + hash + "        context[\"count\"] = str(len(rows))\n" + hash + "        return nyx.ctrl.render(200, \"app/views/" + sn + "/index.html\", context)\n\n" + hash + "    def " + sn + "_show(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        id: int = ac.path_int(\"id\")\n" + hash + "        row: Record | None = nyx.model.find(ac.db(), \"" + table + "\", id)\n" + hash + "        if row == None:\n" + hash + "            return nyx.ctrl.not_found_for(ctx)\n" + hash + "        context: dict[str, str] = {}\n" + hash + "        context[\"title\"] = row.get_or(\"id\", str(id))\n" + hash + "        return nyx.ctrl.render(200, \"app/views/" + sn + "/show.html\", context)\n\n" + hash + "    def " + sn + "_new(ctx: Context) -> HttpResponse:\n" + hash + "        secret: str = application.config.secret_key\n" + hash + "        context: dict[str, str] = {}\n" + hash + "        context[\"title\"] = \"New " + name + "\"\n" + hash + "        context[\"form_start\"] = nyx.csrf.form_with(nyx.routes.path_index(\"" + table + "\"), \"POST\", secret)\n" + hash + "        context[\"form_end\"] = nyx.form.form_end()\n" + hash + "        context[\"submit\"] = nyx.form.submit(\"Save\")\n" + hash + "        return nyx.ctrl.render_unescaped(200, \"app/views/" + sn + "/new.html\", context)\n\n" + hash + "    def " + sn + "_create(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        raw: dict[str, str] = nyx.params.from_request(ctx.request)\n" + hash + "        keys: list[str] = []\n" + keys + hash + "        permitted: dict[str, str] = nyx.params.permit(raw, keys)\n" + hash + "        req_errs: list[str] = nyx.params.missing_required(permitted, keys)\n" + hash + "        if len(req_errs) > 0:\n" + hash + "            return nyx.ctrl.unprocessable_html(req_errs)\n" + hash + "        attrs: Attributes = nyx.model.attributes()\n" + sets + hash + "        nyx.model.create_attrs(ac.db(), \"" + table + "\", attrs)\n" + hash + "        return nyx.ctrl.redirect(nyx.routes.path_index(\"" + table + "\"))\n\n" + hash + "    def " + sn + "_edit(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        id: int = ac.path_int(\"id\")\n" + hash + "        secret: str = application.config.secret_key\n" + hash + "        context: dict[str, str] = {}\n" + hash + "        context[\"title\"] = \"Edit " + name + "\"\n" + hash + "        context[\"id\"] = str(id)\n" + hash + "        context[\"form_start\"] = nyx.csrf.form_with(nyx.routes.path_show(\"" + table + "\", id), \"POST\", secret)\n" + hash + "        context[\"form_end\"] = nyx.form.form_end()\n" + hash + "        context[\"submit\"] = nyx.form.submit(\"Update\")\n" + hash + "        return nyx.ctrl.render_unescaped(200, \"app/views/" + sn + "/edit.html\", context)\n\n" + hash + "    def " + sn + "_update(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        id: int = ac.path_int(\"id\")\n" + hash + "        raw: dict[str, str] = nyx.params.from_request(ctx.request)\n" + hash + "        keys: list[str] = []\n" + keys + hash + "        permitted: dict[str, str] = nyx.params.permit(raw, keys)\n" + hash + "        attrs: Attributes = nyx.model.attributes()\n" + sets + hash + "        nyx.model.update_attrs(ac.db(), \"" + table + "\", id, attrs)\n" + hash + "        return nyx.ctrl.redirect(nyx.routes.path_show(\"" + table + "\", id))\n\n" + hash + "    def " + sn + "_destroy(ctx: Context) -> HttpResponse:\n" + hash + "        ac: AppContext = nyx.ctx.wrap(application, ctx)\n" + hash + "        id: int = ac.path_int(\"id\")\n" + hash + "        nyx.model.destroy(ac.db(), \"" + table + "\", id)\n" + hash + "        return nyx.ctrl.redirect(nyx.routes.path_index(\"" + table + "\"))\n\n" + hash + "    nyx.routes.resources(application.router, \"" + table + "\", " + sn + "_index, " + sn + "_show, " + sn + "_new, " + sn + "_create, " + sn + "_edit, " + sn + "_update, " + sn + "_destroy)\n"
+
+def splice_marker(path: str, block: str) -> bool:
+    if not nox.fs.exists(path):
+        return False
+    text: str = nox.fs.read_to_string(path)
+    marker: str = "<<NYX_GENERATED_ROUTES>>"
+    if not nox.strings.contains(text, marker):
+        return False
+    nox.fs.write_string(path, nox.strings.replace(text, marker, block + "\n    # " + marker))
+    return True
+
+def generate_scaffold(root: str, name: str, fields: list[str]) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate scaffold <Name> [field:type ...]")
+    generate_model(root, name, fields)
+    generate_controller(root, name)
+    sn: str = snake(name)
+    table: str = pluralize(name)
+    commented: str = _route_snippet(name, sn, table, fields, True)
+    live: str = _route_snippet(name, sn, table, fields, False)
+    nox.fs.write_string(_join(root, "config/scaffold_" + sn + "_routes.nox.snippet"), commented)
+    nox.fs.write_string(_join(root, "config/" + sn + "_routes.nox.snippet"), commented)
+    print("created: config/scaffold_" + sn + "_routes.nox.snippet")
+    main: str = _join(root, "main.nox")
+    if splice_marker(main, live):
+        print("updated: main.nox (<<NYX_GENERATED_ROUTES>>)")
+    else:
+        print("tip: add '    # <<NYX_GENERATED_ROUTES>>' inside setup() for auto-wire")
+
+def generate_migration(root: str, name: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate migration <name>")
+    dirp: str = _join(root, "db/migrate")
+    nox.fs.create_dir_all(dirp)
+    ts: str = stamp()
+    sn: str = snake(name)
+    base: str = dirp + "/" + ts + "_" + sn
+    nox.fs.write_string(base + ".sql", "-- up (sqlite)\n")
+    nox.fs.write_string(base + ".down.sql", "-- down (sqlite)\n")
+    nox.fs.write_string(base + ".pg.sql", "-- up (postgres)\n")
+    nox.fs.write_string(base + ".pg.down.sql", "-- down (postgres)\n")
+    nox.fs.write_string(base + ".mysql.sql", "-- up (mysql)\n")
+    nox.fs.write_string(base + ".mysql.down.sql", "-- down (mysql)\n")
+    print("created: " + base + ".sql")
+    print("created: " + base + ".down.sql")
+    print("created: " + base + ".pg.sql")
+    print("created: " + base + ".pg.down.sql")
+    print("created: " + base + ".mysql.sql")
+    print("created: " + base + ".mysql.down.sql")
+
+def generate_auth(root: str) -> None:
+    dirp: str = _join(root, "db/migrate")
+    nox.fs.create_dir_all(dirp)
+    nox.fs.create_dir_all(_join(root, "app/views/auth"))
+    nox.fs.create_dir_all(_join(root, "config"))
+    ts: str = stamp()
+    base: str = dirp + "/" + ts + "_create_users"
+    up: str = "CREATE TABLE IF NOT EXISTS users (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  email TEXT NOT NULL UNIQUE,\n  password_digest TEXT NOT NULL,\n  failed_attempts INTEGER NOT NULL DEFAULT 0,\n  locked_at_ms INTEGER NOT NULL DEFAULT 0,\n  reset_token TEXT NOT NULL DEFAULT '',\n  reset_sent_at_ms INTEGER NOT NULL DEFAULT 0\n);\nCREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token);\n"
+    down: str = "DROP TABLE IF EXISTS users;\n"
+    pg: str = "CREATE TABLE IF NOT EXISTS users (\n  id BIGSERIAL PRIMARY KEY,\n  email TEXT NOT NULL UNIQUE,\n  password_digest TEXT NOT NULL,\n  failed_attempts INTEGER NOT NULL DEFAULT 0,\n  locked_at_ms BIGINT NOT NULL DEFAULT 0,\n  reset_token TEXT NOT NULL DEFAULT '',\n  reset_sent_at_ms BIGINT NOT NULL DEFAULT 0\n);\nCREATE INDEX IF NOT EXISTS idx_users_reset_token ON users (reset_token);\n"
+    my: str = "CREATE TABLE IF NOT EXISTS users (\n  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,\n  email VARCHAR(255) NOT NULL,\n  password_digest TEXT NOT NULL,\n  failed_attempts INTEGER NOT NULL DEFAULT 0,\n  locked_at_ms BIGINT NOT NULL DEFAULT 0,\n  reset_token VARCHAR(255) NOT NULL DEFAULT '',\n  reset_sent_at_ms BIGINT NOT NULL DEFAULT 0,\n  UNIQUE KEY uniq_users_email (email)\n);\n"
+    nox.fs.write_string(base + ".sql", up)
+    nox.fs.write_string(base + ".down.sql", down)
+    nox.fs.write_string(base + ".pg.sql", pg)
+    nox.fs.write_string(base + ".pg.down.sql", down)
+    nox.fs.write_string(base + ".mysql.sql", my)
+    nox.fs.write_string(base + ".mysql.down.sql", down)
+    snippet: str = "# Paste into setup(application):\n# import nyx.auth_engine\n# import nyx.params\n# from nyx.auth_engine import AuthEngineError\n#\n# if application.dialect == \"postgres\":\n#     import nyx.auth_engine_pg\n#     nyx.auth_engine_pg.ensure_schema(nyx.app.pg(application))\n# else:\n#     nyx.auth_engine.ensure_schema(application.db)\n#\n# def auth_register(ctx: Context) -> HttpResponse:\n#     p: dict[str, str] = nyx.params.from_request(ctx.request)\n#     email: str = nyx.params.get(p, \"email\", \"\")\n#     password: str = nyx.params.get(p, \"password\", \"\")\n#     if len(email) == 0 or len(password) == 0:\n#         return nyx.ctrl.json(422, \"{\\\"error\\\":\\\"missing_fields\\\"}\")\n#     try:\n#         uid: int = 0\n#         if application.dialect == \"postgres\":\n#             uid = nyx.auth_engine_pg.register(nyx.app.pg(application), email, password)\n#         else:\n#             uid = nyx.auth_engine.register(application.db, email, password)\n#         nyx.auth_engine.login_session(uid)\n#         return nyx.ctrl.redirect(\"/\")\n#     except AuthEngineError as e:\n#         return nyx.ctrl.json(422, \"{\\\"error\\\":\" + nox.json.encode_string(e.message) + \"}\")\n#\n# def auth_login(ctx: Context) -> HttpResponse:\n#     p: dict[str, str] = nyx.params.from_request(ctx.request)\n#     email: str = nyx.params.get(p, \"email\", \"\")\n#     password: str = nyx.params.get(p, \"password\", \"\")\n#     if len(email) == 0 or len(password) == 0:\n#         return nyx.ctrl.json(422, \"{\\\"error\\\":\\\"missing_fields\\\"}\")\n#     try:\n#         uid: int = 0\n#         if application.dialect == \"postgres\":\n#             uid = nyx.auth_engine_pg.authenticate(nyx.app.pg(application), email, password)\n#         else:\n#             uid = nyx.auth_engine.authenticate(application.db, email, password)\n#         nyx.auth_engine.login_session(uid)\n#         return nyx.ctrl.redirect(\"/\")\n#     except AuthEngineError as e:\n#         return nyx.ctrl.json(401, \"{\\\"error\\\":\" + nox.json.encode_string(e.message) + \"}\")\n#\n# def auth_logout(ctx: Context) -> HttpResponse:\n#     nyx.auth_engine.logout_session()\n#     return nyx.ctrl.redirect(\"/\")\n#\n# application.router.post(\"/register\", auth_register)\n# application.router.post(\"/login\", auth_login)\n# application.router.post(\"/logout\", auth_logout)\n"
+    nox.fs.write_string(_join(root, "config/auth_routes.nox.snippet"), snippet)
+    print("created: " + base + ".sql")
+    print("created: " + base + ".down.sql")
+    print("created: " + base + ".pg.sql")
+    print("created: " + base + ".pg.down.sql")
+    print("created: " + base + ".mysql.sql")
+    print("created: " + base + ".mysql.down.sql")
+    print("created: config/auth_routes.nox.snippet")
+
+def generate_mailer(root: str, name: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate mailer <Name>")
+    sn: str = snake(name)
+    nox.fs.create_dir_all(_join(root, "app/mailers"))
+    nox.fs.create_dir_all(_join(root, "app/views/mailers"))
+    path: str = _join(root, "app/mailers/" + sn + ".nox")
+    nox.fs.write_string(path, "# Mailer: " + name + "\n# import nyx.mailer\n# mail = nyx.mailer.mail_from_template(to, from_addr, subject, \"app/views/mailers/" + sn + ".txt\", ctx)\n# nyx.mailer.deliver(cfg, mail)\n")
+    nox.fs.write_string(_join(root, "app/views/mailers/" + sn + ".txt"), "Hello {{name}},\n\nThis is the " + name + " mailer body.\n")
+    print("created: " + path)
+
+def generate_job(root: str, name: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate job <Name>")
+    sn: str = snake(name)
+    nox.fs.create_dir_all(_join(root, "app/jobs"))
+    path: str = _join(root, "app/jobs/" + sn + ".nox")
+    nox.fs.write_string(path, "# Job handler: " + name + "\n# Register in jobs/worker.nox:\n# def " + sn + "_perform(payload_json: str) -> None:\n#     return None\n# registry.register(\"" + name + "\", " + sn + "_perform)\n")
+    print("created: " + path)
+
+def generate_channel(root: str, name: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx generate channel <Name>")
+    sn: str = snake(name)
+    nox.fs.create_dir_all(_join(root, "app/channels"))
+    path: str = _join(root, "app/channels/" + sn + ".nox")
+    nox.fs.write_string(path, "# Cable channel: " + name + "\n# ch = nyx.cable.channel_memory(hub, \"" + sn + "\")\n# nyx.cable.channel_broadcast(ch, \"ping\", \"{}\")\n# WS: nyx.cable.ws_auth_broadcast_loop(ch, conn, application.db, secret, \"\")\n# PG:  nyx.cable.ws_auth_broadcast_loop_pg(ch, conn, nyx.app.pg(application), secret, \"\")\n# Ticket: nyx.cable.issue_ws_ticket(secret, sid, ch.name, 60)\n")
+    print("created: " + path)
+
+def _copy_tree(src: str, dst: str, app_name: str) -> None:
+    nox.fs.create_dir_all(dst)
+    names: list[str] = nox.fs.read_dir(src)
+    i: int = 0
+    while i < len(names):
+        name: str = names[i]
+        if name != "." and name != "..":
+            sp: str = src + "/" + name
+            dp: str = dst + "/" + name
+            if nox.fs.is_dir(sp):
+                _copy_tree(sp, dp, app_name)
+            else:
+                text_file: bool = nox.strings.ends_with(name, ".nox") or nox.strings.ends_with(name, ".json") or nox.strings.ends_with(name, ".html") or nox.strings.ends_with(name, ".md") or nox.strings.ends_with(name, ".sql")
+                if text_file:
+                    text: str = nox.fs.read_to_string(sp)
+                    text = nox.strings.replace(text, "{{APP_NAME}}", app_name)
+                    nox.fs.write_string(dp, text)
+                else:
+                    nox.fs.copy(sp, dp)
+        i = i + 1
+
+def generate_new(dest_parent: str, name: str, templates_root: str) -> None:
+    if len(name) == 0:
+        raise CliGenError("usage: nyx new <name>")
+    src: str = templates_root + "/templates/app"
+    if not nox.fs.is_dir(src):
+        raise CliGenError("missing templates: " + src)
+    dest: str = _join(dest_parent, name)
+    if nox.fs.exists(dest):
+        raise CliGenError("exists: " + dest)
+    label: str = name
+    parts: list[str] = nox.strings.split(name, "/")
+    if len(parts) > 0:
+        label = parts[len(parts) - 1]
+    _copy_tree(src, dest, label)
+    print("created: " + dest + "/")
+    print("  cd " + dest + " && noxc fetch && NYX_ENV=development noxc run main.nox")

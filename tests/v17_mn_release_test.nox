@@ -31,8 +31,11 @@ nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "ws_tls")
 nox.test.assert_true(not nyx.server.use_ipv6(cfg), "ipv6 default off")
 cfg.ipv6 = True
 nox.test.assert_eq_int(nyx.server.ip_family(cfg), 1, "dual-stack family")
+nox.test.assert_true(nyx.server.use_listen_fd(cfg), "ipv6 single uses listen fd")
 cfg.workers = 4
 nox.test.assert_eq_int(nyx.server.ip_family(cfg), 1, "ipv6 multicore allowed")
+nox.test.assert_true(not nyx.server.use_listen_fd(cfg), "ipv6 multicore skips listen fd")
+nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "multicore_tls", "ipv6 multicore keeps tls")
 cfg.ipv6_only = True
 nox.test.assert_eq_int(nyx.server.ip_family(cfg), 2, "ipv6 only family")
 cfg.workers = 1

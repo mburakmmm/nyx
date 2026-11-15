@@ -51,7 +51,7 @@ def handle(req: HttpRequest) -> HttpResponse:
 mode: str = nyx.server.serve_mode(cfg, False)
 print("{{APP_NAME}} listening on :" + str(cfg.port) + " mode=" + mode)
 try:
-    if nyx.server.use_ipv6(cfg):
+    if nyx.server.use_listen_fd(cfg):
         fd: int = nyx.server.listen_fd(cfg)
         if mode == "tls":
             nyx.server.require_tls_files(cfg)

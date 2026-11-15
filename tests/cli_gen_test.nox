@@ -1,0 +1,84 @@
+import nox.fs
+import nox.strings
+import nox.test
+import nyx.cli_gen
+
+nox.test.assert_eq_str(nyx.cli_gen.snake("BlogPost"), "blog_post", "snake")
+nox.test.assert_eq_str(nyx.cli_gen.pluralize("Post"), "posts", "plural post")
+nox.test.assert_eq_str(nyx.cli_gen.pluralize("Category"), "categories", "plural category")
+nox.test.assert_eq_str(nyx.cli_gen.pluralize("Bus"), "buses", "plural bus")
+nox.test.assert_eq_str(nyx.cli_gen.sql_type("integer"), "INTEGER", "sql int")
+nox.test.assert_eq_str(nyx.cli_gen.sql_type("float"), "REAL", "sql float")
+nox.test.assert_eq_str(nyx.cli_gen.sql_type("string"), "TEXT", "sql string")
+
+root: str = "/tmp/nyx_cli_gen_test"
+if nox.fs.exists(root):
+    nox.fs.remove_dir_all(root)
+
+nyx.cli_gen.generate_migration(root, "AddNote")
+mig_dir: str = root + "/db/migrate"
+names: list[str] = nox.fs.read_dir(mig_dir)
+nox.test.assert_eq_int(len(names), 6, "six migration files")
+saw_up: bool = False
+i: int = 0
+while i < len(names):
+    name: str = names[i]
+    if nox.strings.ends_with(name, "_add_note.sql"):
+        saw_up = True
+        body: str = nox.fs.read_to_string(mig_dir + "/" + name)
+        nox.test.assert_true(nox.strings.contains(body, "-- up (sqlite)"), "up comment")
+    i = i + 1
+nox.test.assert_true(saw_up, "sqlite up stub")
+
+nyx.cli_gen.generate_model(root, "Post", ["title:string", "views:integer"])
+model: str = nox.fs.read_to_string(root + "/app/models/post.nox")
+nox.test.assert_true(nox.strings.contains(model, "def create(db: Connection, title: str, views: int) -> int:"), "create sig")
+nox.test.assert_true(nox.strings.contains(model, "nyx.model.set_int(attrs, \"views\", views)"), "set_int")
+created: list[str] = nox.fs.read_dir(mig_dir)
+j: int = 0
+while j < len(created):
+    file: str = created[j]
+    text: str = nox.fs.read_to_string(mig_dir + "/" + file)
+    if nox.strings.ends_with(file, "_create_posts.sql"):
+        nox.test.assert_true(nox.strings.contains(text, "AUTOINCREMENT"), "sqlite id")
+        nox.test.assert_true(nox.strings.contains(text, "\"title\" TEXT"), "sqlite title")
+    if nox.strings.ends_with(file, "_create_posts.pg.sql"):
+        nox.test.assert_true(nox.strings.contains(text, "BIGSERIAL"), "pg id")
+        nox.test.assert_true(not nox.strings.contains(text, "AUTOINCREMENT"), "pg has no sqlite keyword")
+    if nox.strings.ends_with(file, "_create_posts.mysql.sql"):
+        nox.test.assert_true(nox.strings.contains(text, "AUTO_INCREMENT"), "mysql id")
+        nox.test.assert_true(nox.strings.contains(text, "`title` TEXT"), "mysql title")
+        nox.test.assert_true(not nox.strings.contains(text, "AUTOINCREMENT"), "mysql has no sqlite keyword")
+    j = j + 1
+
+nyx.cli_gen.generate_auth(root)
+auth_names: list[str] = nox.fs.read_dir(mig_dir)
+k: int = 0
+saw_users: bool = False
+while k < len(auth_names):
+    auth_file: str = auth_names[k]
+    auth_text: str = nox.fs.read_to_string(mig_dir + "/" + auth_file)
+    if nox.strings.ends_with(auth_file, "_create_users.sql"):
+        saw_users = True
+        nox.test.assert_true(nox.strings.contains(auth_text, "AUTOINCREMENT"), "users sqlite")
+    if nox.strings.ends_with(auth_file, "_create_users.pg.sql"):
+        nox.test.assert_true(nox.strings.contains(auth_text, "BIGSERIAL"), "users pg")
+        nox.test.assert_true(not nox.strings.contains(auth_text, "AUTOINCREMENT"), "users pg keyword")
+    if nox.strings.ends_with(auth_file, "_create_users.mysql.sql"):
+        nox.test.assert_true(nox.strings.contains(auth_text, "AUTO_INCREMENT"), "users mysql")
+        nox.test.assert_true(nox.strings.contains(auth_text, "UNIQUE KEY uniq_users_email"), "users mysql unique")
+    k = k + 1
+nox.test.assert_true(saw_users, "users migration")
+nox.test.assert_true(nox.fs.is_file(root + "/config/auth_routes.nox.snippet"), "auth snippet")
+
+main_path: str = root + "/main.nox"
+nox.fs.write_string(main_path, "def setup(application: Application) -> None:\n    # <<NYX_GENERATED_ROUTES>>\n    return None\n")
+nyx.cli_gen.generate_scaffold(root, "Comment", ["body:text"])
+wired: str = nox.fs.read_to_string(main_path)
+nox.test.assert_true(nox.strings.contains(wired, "def comment_index(ctx: Context) -> HttpResponse:"), "spliced route")
+nox.test.assert_true(nox.strings.contains(wired, "<<NYX_GENERATED_ROUTES>>"), "marker kept")
+nox.test.assert_true(nox.fs.is_file(root + "/app/models/comment.nox"), "comment model")
+nox.test.assert_true(nox.fs.is_file(root + "/app/views/comment/index.html"), "comment view")
+
+nox.fs.remove_dir_all(root)
+print("cli_gen_test ok")

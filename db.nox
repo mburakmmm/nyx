@@ -162,8 +162,45 @@ def postgres_insert_returning_id_bound(conn: PgConnection, sql: str, binds: list
 def _ends_with_sql(name: str) -> bool:
     return nox.strings.ends_with(name, ".sql")
 
-def _is_up_migration(name: str) -> bool:
-    return _ends_with_sql(name) and not nox.strings.ends_with(name, ".down.sql")
+# Up dosyalari: sqlite `Ad.sql`, postgres `Ad.pg.sql`, mysql `Ad.mysql.sql`.
+# Down: `Ad.down.sql`, `Ad.pg.down.sql`, `Ad.mysql.down.sql`.
+# Dizinde lehce soneki varsa yalniz o sonek. Yoksa duz `Ad.sql`
+# (tek lehceli mevcut dizin). `.pg.sql`, `.mysql.sql` ve `*.down.sql` disarida.
+def select_up_migrations(names: list[str], dialect: str) -> list[str]:
+    specific: str = ""
+    if dialect == "postgres":
+        specific = ".pg.sql"
+    elif dialect == "mysql":
+        specific = ".mysql.sql"
+    has_specific: bool = False
+    if len(specific) > 0:
+        i: int = 0
+        while i < len(names):
+            if nox.strings.ends_with(names[i], specific):
+                has_specific = True
+            i = i + 1
+    chosen: list[str] = []
+    j: int = 0
+    while j < len(names):
+        if _take_up(names[j], dialect, has_specific):
+            chosen.append(names[j])
+        j = j + 1
+    return _sort_names(chosen)
+
+def _take_up(name: str, dialect: str, has_specific: bool) -> bool:
+    if nox.strings.ends_with(name, ".down.sql"):
+        return False
+    if not _ends_with_sql(name):
+        return False
+    if dialect == "postgres" and has_specific:
+        return nox.strings.ends_with(name, ".pg.sql")
+    if dialect == "mysql" and has_specific:
+        return nox.strings.ends_with(name, ".mysql.sql")
+    if nox.strings.ends_with(name, ".pg.sql"):
+        return False
+    if nox.strings.ends_with(name, ".mysql.sql"):
+        return False
+    return True
 
 def _str_less(a: str, b: str) -> bool:
     i: int = 0
@@ -222,14 +259,7 @@ def migrate(db: Connection, dir_path: str) -> int:
         raise DbError("migration yolu dizin degil: " + dir_path)
     _ensure_migrations_table(db)
     entries: list[str] = nox.fs.read_dir(dir_path)
-    sql_files: list[str] = []
-    i: int = 0
-    while i < len(entries):
-        name: str = entries[i]
-        if _is_up_migration(name):
-            sql_files.append(name)
-        i = i + 1
-    ordered: list[str] = _sort_names(sql_files)
+    ordered: list[str] = select_up_migrations(entries, "sqlite")
     applied: int = 0
     j: int = 0
     while j < len(ordered):
@@ -258,7 +288,7 @@ def _drop_last_n(s: str, n: int) -> str:
         i = i + 1
     return out
 
-def _down_name(version: str) -> str:
+def down_migration_name(version: str) -> str:
     if _ends_with_sql(version):
         return _drop_last_n(version, 4) + ".down.sql"
     return version + ".down.sql"
@@ -270,7 +300,7 @@ def rollback(db: Connection, dir_path: str) -> str:
     if len(rows) == 0:
         raise DbError("geri alinacak migration yok")
     version: str = rows[0].get_str(0)
-    down_name: str = _down_name(version)
+    down_name: str = down_migration_name(version)
     down_path: str = nox.path.join(dir_path, down_name)
     if not nox.fs.exists(down_path):
         raise DbError("down migration dosyasi yok: " + down_path)
@@ -312,8 +342,7 @@ def _record_applied_pg(conn: PgConnection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
-# Postgres migration runner - ayni dosya adlandirmasi (*.sql / *.down.sql).
-# SQL diyalekti migration dosyasinda postgres uyumlu olmali.
+# Postgres: dizinde `*.pg.sql` varsa yalniz onlar. Yoksa duz `*.sql`.
 def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
@@ -321,14 +350,7 @@ def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
         raise DbError("migration yolu dizin degil: " + dir_path)
     _ensure_migrations_table_pg(conn)
     entries: list[str] = nox.fs.read_dir(dir_path)
-    sql_files: list[str] = []
-    i: int = 0
-    while i < len(entries):
-        name: str = entries[i]
-        if _is_up_migration(name):
-            sql_files.append(name)
-        i = i + 1
-    ordered: list[str] = _sort_names(sql_files)
+    ordered: list[str] = select_up_migrations(entries, "postgres")
     applied: int = 0
     j: int = 0
     while j < len(ordered):
@@ -356,7 +378,7 @@ def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
     if len(rows) == 0:
         raise DbError("geri alinacak migration yok")
     version: str = rows[0].get_str(0)
-    down_name: str = _down_name(version)
+    down_name: str = down_migration_name(version)
     down_path: str = nox.path.join(dir_path, down_name)
     if not nox.fs.exists(down_path):
         raise DbError("down migration dosyasi yok: " + down_path)
@@ -389,7 +411,7 @@ def _record_applied_mysql(conn: MysqlConnection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
-# MySQL migration runner. SQL diyalekti migration dosyasinda mysql uyumlu olmali.
+# MySQL: dizinde `*.mysql.sql` varsa yalniz onlar. Yoksa duz `*.sql`.
 # execute tek deyim calistirir; bir dosyada birden fazla deyim varsa ayri dosyaya bolun.
 def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
@@ -398,14 +420,7 @@ def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
         raise DbError("migration yolu dizin degil: " + dir_path)
     _ensure_migrations_table_mysql(conn)
     entries: list[str] = nox.fs.read_dir(dir_path)
-    sql_files: list[str] = []
-    i: int = 0
-    while i < len(entries):
-        name: str = entries[i]
-        if _is_up_migration(name):
-            sql_files.append(name)
-        i = i + 1
-    ordered: list[str] = _sort_names(sql_files)
+    ordered: list[str] = select_up_migrations(entries, "mysql")
     applied: int = 0
     j: int = 0
     while j < len(ordered):
@@ -433,7 +448,7 @@ def rollback_mysql(conn: MysqlConnection, dir_path: str) -> str:
     if len(rows) == 0:
         raise DbError("geri alinacak migration yok")
     version: str = rows[0].get_str(0)
-    down_name: str = _down_name(version)
+    down_name: str = down_migration_name(version)
     down_path: str = nox.path.join(dir_path, down_name)
     if not nox.fs.exists(down_path):
         raise DbError("down migration dosyasi yok: " + down_path)

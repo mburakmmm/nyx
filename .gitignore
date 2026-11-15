@@ -1,5 +1,6 @@
 .DS_Store
 nox.lock
+plan.md
 *.o
 /zig-out/
 /tmp/

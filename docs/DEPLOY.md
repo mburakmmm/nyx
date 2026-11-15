@@ -51,6 +51,7 @@ Optional: `NYX_CSP`, `NYX_CSRF_API_EXEMPT`, `NYX_CACHE_PATH`, `NYX_STORAGE_PATH`
 ```sh
 export NYX_DB_PATH=db/app.sqlite
 ./bin/nyx db migrate
+# Windows: bin\nyx.cmd db migrate
 noxc run main.nox
 ```
 
@@ -65,7 +66,8 @@ noxc run main.nox
 
 In handlers: `nyx.pg_model.*` + `nyx.app.pg(application)`.  
 `application.db` remains a SQLite `Connection` placeholder when dialect is postgres.  
-`nox.db.DbConnection` covers `close` / `execute` / `query` / `prepare`; SQL still differs (`$1`, `RETURNING`).
+`nox.db.DbConnection` covers `close` / `execute` / `query` / `prepare`; SQL still differs (`$1`, `RETURNING`).  
+`NYX_DB_POOL=0` (default) keeps that one connection. `NYX_DB_POOL>1` checks a pooled connection out for the request and gives it back before the response returns. Shutdown closes idle pooled connections and the boot connection.
 
 ### MySQL
 
@@ -77,7 +79,8 @@ noxc run main.nox
 ```
 
 In handlers: `nyx.mysql_model.*` + `nyx.app.mysql(application)`.  
-Sessions use `nyx.session_store_mysql`; accounts use `nyx.auth_engine_mysql`. Placeholders are `?`. Jobs stay on the SQLite queue.
+Sessions use `nyx.session_store_mysql`; accounts use `nyx.auth_engine_mysql`. Placeholders are `?`. Jobs stay on the SQLite queue.  
+`NYX_DB_POOL` uses the same checkout rule as Postgres.
 
 ## 4. TLS / WebSocket / multicore
 
@@ -128,7 +131,7 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.27.0" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.28.0" }
 ```
 
 Requires **noxc ≥ 2.1.186** (CI pin **2.1.186**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. Sunucu `gzip` veya `deflate` gönderirse diske açılmış bayt yazılır. `store_http_file` dosyayı akar. HTTP/2 Windows’ta da açıktır. HTTP/3 çağrılmaz.

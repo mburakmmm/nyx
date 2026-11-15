@@ -14,6 +14,11 @@
 # Nox >= 2.0: bilinen handler hatalari tek 'except (A, B) as e' govdesinde
 # fail() olur. Kalanlar 'except:' ile fail() isaretlenir. 'finally' stuck-running
 # korumasini saglar.
+#
+# Lease 5 dakikadir (reclaim_stale ile ayni). heartbeat / heartbeat_active
+# updated_at ve lease_until degerlerini yeniler; yasayan uzun is geri alinmaz.
+# reserve ve reclaim fence'i artirir. complete ve fail_owned yalnizca ayni
+# fence ve status=running iken yazar. Eski worker isi bitiremez.
 
 import nox.sqlite
 import nox.json
@@ -48,6 +53,36 @@ def status_failed() -> str:
 def max_attempts() -> int:
     return 5
 
+# reserve ve heartbeat bu kadar ileri lease yazar. work() reclaim_stale(300000) cagirir.
+def lease_ms() -> int:
+    return 300000
+
+class _Active:
+    id: int
+    fence: int
+
+    def __init__(self: _Active) -> None:
+        self.id = 0
+        self.fence = 0
+
+_active: _Active = _Active()
+
+def active_id() -> int:
+    return _active.id
+
+def active_fence() -> int:
+    return _active.fence
+
+def _has_column(db: Connection, name: str) -> bool:
+    stmt: Statement = db.prepare("SELECT name FROM pragma_table_info('jobs')")
+    rows: list[Row] = stmt.query()
+    i: int = 0
+    while i < len(rows):
+        if rows[i].get_str(0) == name:
+            return True
+        i = i + 1
+    return False
+
 def ensure_schema(db: Connection) -> None:
     db.execute(
         "CREATE TABLE IF NOT EXISTS jobs (" +
@@ -59,9 +94,15 @@ def ensure_schema(db: Connection) -> None:
         "attempts INTEGER NOT NULL DEFAULT 0, " +
         "last_error TEXT NOT NULL DEFAULT '', " +
         "created_at_ms INTEGER NOT NULL, " +
-        "updated_at_ms INTEGER NOT NULL" +
+        "updated_at_ms INTEGER NOT NULL, " +
+        "fence INTEGER NOT NULL DEFAULT 0, " +
+        "lease_until_ms INTEGER NOT NULL DEFAULT 0" +
         ")"
     )
+    if not _has_column(db, "fence"):
+        db.execute("ALTER TABLE jobs ADD COLUMN fence INTEGER NOT NULL DEFAULT 0")
+    if not _has_column(db, "lease_until_ms"):
+        db.execute("ALTER TABLE jobs ADD COLUMN lease_until_ms INTEGER NOT NULL DEFAULT 0")
     db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at ON jobs (status, run_at_ms)")
 
 def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) -> int:
@@ -83,14 +124,15 @@ def enqueue(db: Connection, job_name: str, payload_json: str, run_at_ms: int) ->
     stmt.execute()
     return db.last_insert_rowid()
 
-def _job_json(id: int, job_name: str, payload_json: str, status: str, attempts: int, run_at_ms: int) -> str:
+def _job_json(id: int, job_name: str, payload_json: str, status: str, attempts: int, run_at_ms: int, fence: int) -> str:
     return (
         "{\"id\":" + str(id) +
         ",\"job_name\":" + nox.json.dump_string(job_name) +
         ",\"payload\":" + payload_json +
         ",\"status\":" + nox.json.dump_string(status) +
         ",\"attempts\":" + str(attempts) +
-        ",\"run_at_ms\":" + str(run_at_ms) + "}"
+        ",\"run_at_ms\":" + str(run_at_ms) +
+        ",\"fence\":" + str(fence) + "}"
     )
 
 def _field(v: JsonValue, name: str) -> JsonValue:
@@ -111,7 +153,7 @@ def reserve(db: Connection) -> str | None:
     try:
         now: int = nox.time.now_ms()
         stmt: Statement = db.prepare(
-            "SELECT id, job_name, payload, attempts, run_at_ms FROM jobs " +
+            "SELECT id, job_name, payload, attempts, run_at_ms, fence FROM jobs " +
             "WHERE status = ? AND run_at_ms <= ? ORDER BY run_at_ms ASC, id ASC LIMIT 1"
         )
         stmt.bind_str(0, status_queued())
@@ -126,24 +168,55 @@ def reserve(db: Connection) -> str | None:
         payload: str = row.get_str(2)
         attempts: int = row.get_int(3)
         run_at: int = row.get_int(4)
-        upd: Statement = db.prepare("UPDATE jobs SET status = ?, updated_at_ms = ? WHERE id = ?")
+        fence: int = row.get_int(5) + 1
+        upd: Statement = db.prepare(
+            "UPDATE jobs SET status = ?, updated_at_ms = ?, fence = ?, lease_until_ms = ? " +
+            "WHERE id = ? AND status = ?"
+        )
         upd.bind_str(0, status_running())
         upd.bind_int(1, now)
-        upd.bind_int(2, id)
-        upd.execute()
+        upd.bind_int(2, fence)
+        upd.bind_int(3, now + lease_ms())
+        upd.bind_int(4, id)
+        upd.bind_str(5, status_queued())
+        changed: int = upd.execute()
         db.execute("COMMIT")
-        return _job_json(id, job_name, payload, status_running(), attempts, run_at)
+        if changed == 0:
+            return None
+        return _job_json(id, job_name, payload, status_running(), attempts, run_at, fence)
     except SqliteError as e:
         db.execute("ROLLBACK")
         raise SqliteError(e.message)
 
-def complete(db: Connection, id: int) -> None:
+def heartbeat(db: Connection, id: int, fence: int) -> bool:
     now: int = nox.time.now_ms()
-    stmt: Statement = db.prepare("UPDATE jobs SET status = ?, updated_at_ms = ? WHERE id = ?")
+    stmt: Statement = db.prepare(
+        "UPDATE jobs SET updated_at_ms = ?, lease_until_ms = ? " +
+        "WHERE id = ? AND fence = ? AND status = ?"
+    )
+    stmt.bind_int(0, now)
+    stmt.bind_int(1, now + lease_ms())
+    stmt.bind_int(2, id)
+    stmt.bind_int(3, fence)
+    stmt.bind_str(4, status_running())
+    return stmt.execute() > 0
+
+def heartbeat_active(db: Connection) -> bool:
+    if _active.id == 0:
+        return False
+    return heartbeat(db, _active.id, _active.fence)
+
+def complete(db: Connection, id: int, fence: int) -> bool:
+    now: int = nox.time.now_ms()
+    stmt: Statement = db.prepare(
+        "UPDATE jobs SET status = ?, updated_at_ms = ? WHERE id = ? AND fence = ? AND status = ?"
+    )
     stmt.bind_str(0, status_completed())
     stmt.bind_int(1, now)
     stmt.bind_int(2, id)
-    stmt.execute()
+    stmt.bind_int(3, fence)
+    stmt.bind_str(4, status_running())
+    return stmt.execute() > 0
 
 # Basarisiz isi isaretler - 'max_attempts()'in altindaysa ussel geri
 # cekilme (backoff) ile yeniden kuyruklar, aksi halde kalici olarak
@@ -179,12 +252,53 @@ def fail(db: Connection, id: int, error: str) -> None:
         stmt2.bind_int(4, id)
         stmt2.execute()
 
+# Worker yolu. Fence ve status=running tutmuyorsa satir degistirmez.
+def fail_owned(db: Connection, id: int, fence: int, error: str) -> bool:
+    now: int = nox.time.now_ms()
+    sel: Statement = db.prepare(
+        "SELECT attempts FROM jobs WHERE id = ? AND fence = ? AND status = ?"
+    )
+    sel.bind_int(0, id)
+    sel.bind_int(1, fence)
+    sel.bind_str(2, status_running())
+    rows: list[Row] = sel.query()
+    if len(rows) == 0:
+        return False
+    attempts: int = rows[0].get_int(0) + 1
+    if attempts < max_attempts():
+        backoff_ms: int = attempts * attempts * 1000
+        stmt: Statement = db.prepare(
+            "UPDATE jobs SET status = ?, attempts = ?, last_error = ?, run_at_ms = ?, updated_at_ms = ? " +
+            "WHERE id = ? AND fence = ? AND status = ?"
+        )
+        stmt.bind_str(0, status_queued())
+        stmt.bind_int(1, attempts)
+        stmt.bind_str(2, error)
+        stmt.bind_int(3, now + backoff_ms)
+        stmt.bind_int(4, now)
+        stmt.bind_int(5, id)
+        stmt.bind_int(6, fence)
+        stmt.bind_str(7, status_running())
+        return stmt.execute() > 0
+    stmt2: Statement = db.prepare(
+        "UPDATE jobs SET status = ?, attempts = ?, last_error = ?, updated_at_ms = ? " +
+        "WHERE id = ? AND fence = ? AND status = ?"
+    )
+    stmt2.bind_str(0, status_failed())
+    stmt2.bind_int(1, attempts)
+    stmt2.bind_str(2, error)
+    stmt2.bind_int(3, now)
+    stmt2.bind_int(4, id)
+    stmt2.bind_int(5, fence)
+    stmt2.bind_str(6, status_running())
+    return stmt2.execute() > 0
+
 # Kalıcı failed (dead) işler - max_attempts aşımı. Dead-set listesi.
 def list_dead(db: Connection, limit: int) -> list[str]:
     if limit <= 0:
         raise JobError("limit must be positive")
     stmt: Statement = db.prepare(
-        "SELECT id, job_name, payload, attempts, run_at_ms FROM jobs " +
+        "SELECT id, job_name, payload, attempts, run_at_ms, fence FROM jobs " +
         "WHERE status = ? ORDER BY updated_at_ms DESC LIMIT ?"
     )
     stmt.bind_str(0, status_failed())
@@ -194,7 +308,7 @@ def list_dead(db: Connection, limit: int) -> list[str]:
     i: int = 0
     while i < len(rows):
         r: Row = rows[i]
-        out.append(_job_json(r.get_int(0), r.get_str(1), r.get_str(2), status_failed(), r.get_int(3), r.get_int(4)))
+        out.append(_job_json(r.get_int(0), r.get_str(1), r.get_str(2), status_failed(), r.get_int(3), r.get_int(4), r.get_int(5)))
         i = i + 1
     return out
 
@@ -241,11 +355,16 @@ class JobRegistry:
 def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> bool:
     v: JsonValue = nox.json.parse(job_json)
     id: int = int(nox.json.as_number(_field(v, "id")))
+    fence: int = int(nox.json.as_number(_field(v, "fence")))
     job_name: str = nox.json.as_string(_field(v, "job_name"))
     payload_v: JsonValue = _field(v, "payload")
     payload_json: str = nox.json.dump(payload_v)
+    _active.id = id
+    _active.fence = fence
     if not registry.has(job_name):
-        fail(db, id, "kayitli handler yok: " + job_name)
+        fail_owned(db, id, fence, "kayitli handler yok: " + job_name)
+        _active.id = 0
+        _active.fence = 0
         return True
 
     handler: (str) -> None = registry.get(job_name)
@@ -253,37 +372,40 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
     try:
         try:
             handler(payload_json)
-            complete(db, id)
+            complete(db, id, fence)
             finished = True
         except (ModelError, MailerError, SqliteError, DbError, JsonError, HttpError, ValueError, JobError) as e:
-            fail(db, id, e.message)
+            fail_owned(db, id, fence, e.message)
             finished = True
         except:
             # Nox >= 1.9 bare except: bilinmeyen handler hatalari job'u fail eder.
-            fail(db, id, "unhandled handler error")
+            fail_owned(db, id, fence, "unhandled handler error")
             finished = True
     finally:
         if not finished:
-            fail(db, id, "handler aborted without completion")
+            fail_owned(db, id, fence, "handler aborted without completion")
+        _active.id = 0
+        _active.fence = 0
     return True
 
-# Re-queue jobs stuck in 'running' longer than 'stale_ms' (worker crash recovery).
+# Re-queue jobs stuck in 'running' longer than 'stale_ms'.
+# Lease dolmus ve updated_at esigi gecmis satirlar bir kez queued olur; fence artar.
 def reclaim_stale(db: Connection, stale_ms: int) -> int:
     if stale_ms <= 0:
         raise JobError("stale_ms must be positive")
     now: int = nox.time.now_ms()
     cutoff: int = now - stale_ms
     stmt: Statement = db.prepare(
-        "UPDATE jobs SET status = ?, updated_at_ms = ?, last_error = ? " +
-        "WHERE status = ? AND updated_at_ms <= ?"
+        "UPDATE jobs SET status = ?, updated_at_ms = ?, last_error = ?, fence = fence + 1, lease_until_ms = 0 " +
+        "WHERE status = ? AND updated_at_ms <= ? AND lease_until_ms <= ?"
     )
     stmt.bind_str(0, status_queued())
     stmt.bind_int(1, now)
     stmt.bind_str(2, "reclaimed: stale running")
     stmt.bind_str(3, status_running())
     stmt.bind_int(4, cutoff)
-    stmt.execute()
-    return db.changes()
+    stmt.bind_int(5, now)
+    return stmt.execute()
 
 # Sirada bekleyen TEK bir isi alip ilgili handler'i cagirir. Is yoksa
 # False doner. Handler basariliysa 'complete', bilinen hatalarda 'fail'.

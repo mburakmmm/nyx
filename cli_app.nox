@@ -1,0 +1,244 @@
+# cli_app.nox — Rune Command/CliApp argv. Dosya uretimi cli_gen.nox'ta.
+# TUI ve tablo yok. db/jobs/console bu surecte calisir; server, seed ve
+# jobs work ayri bir noxc programidir.
+
+import nox.fs
+import nox.os
+import nox.process
+import nox.strings
+from nox.os import OsError
+from nox.sqlite import Connection
+
+import nyx.cli_gen
+import nyx.config
+import nyx.db
+import nyx.job
+from nyx.cli_gen import CliGenError
+from nyx.config import Config
+
+import rune.arguments
+import rune.cli
+from rune.arguments import TYPE_STR
+from rune.cli import CliApp, CliResult, Command
+
+def read_version() -> str:
+    path: str = "VERSION"
+    root: str = ""
+    try:
+        root = nox.os.getenv("NYX_ROOT")
+    except OsError:
+        root = ""
+    if len(root) > 0:
+        path = root + "/VERSION"
+    if nox.fs.is_file(path):
+        text: str = nox.strings.trim(nox.fs.read_to_string(path))
+        if len(text) > 0:
+            return text
+    return "0.28.0"
+
+def templates_root() -> str:
+    root: str = ""
+    try:
+        root = nox.os.getenv("NYX_ROOT")
+    except OsError:
+        root = ""
+    if len(root) > 0 and nox.fs.is_dir(root + "/templates/app"):
+        return root
+    if nox.fs.is_dir("templates/app"):
+        return "."
+    raise CliGenError("templates/app not found; set NYX_ROOT to the nyx checkout")
+
+def _with_name(cmd: Command, help: str) -> Command:
+    cmd.add_argument("name", TYPE_STR, True, "", help)
+    return cmd
+
+def _with_fields(cmd: Command) -> Command:
+    cmd.add_argument("name", TYPE_STR, True, "", "name")
+    cmd.add_argument("fields", TYPE_STR, False, "", "field:type", True)
+    return cmd
+
+def build_root() -> Command:
+    root: Command = Command("nyx", "Nox web framework helper")
+    new_cmd: Command = Command("new", "Copy the app template")
+    _with_name(new_cmd, "application directory")
+    root.add_subcommand(new_cmd)
+
+    gen: Command = Command("generate", "Write models, controllers, migrations")
+    gen.add_alias("g")
+    model: Command = Command("model", "Model plus sqlite, postgres and mysql migrations")
+    _with_fields(model)
+    gen.add_subcommand(model)
+    controller: Command = Command("controller", "Controller, views and route snippet")
+    _with_name(controller, "controller name")
+    gen.add_subcommand(controller)
+    scaffold: Command = Command("scaffold", "Model, controller, views and route snippet")
+    _with_fields(scaffold)
+    gen.add_subcommand(scaffold)
+    migration: Command = Command("migration", "Empty up/down for sqlite, postgres and mysql")
+    _with_name(migration, "migration name")
+    gen.add_subcommand(migration)
+    auth: Command = Command("auth", "Users table for sqlite, postgres and mysql")
+    gen.add_subcommand(auth)
+    mailer: Command = Command("mailer", "Mailer stub")
+    _with_name(mailer, "mailer name")
+    gen.add_subcommand(mailer)
+    job: Command = Command("job", "Job handler stub")
+    _with_name(job, "job name")
+    gen.add_subcommand(job)
+    channel: Command = Command("channel", "Cable channel stub")
+    _with_name(channel, "channel name")
+    gen.add_subcommand(channel)
+    root.add_subcommand(gen)
+
+    db: Command = Command("db", "Migrations, schema and seeds")
+    db.add_subcommand(Command("migrate", "Apply pending migrations"))
+    db.add_subcommand(Command("rollback", "Roll back the last migration"))
+    db.add_subcommand(Command("schema", "Write db/schema.sql"))
+    db.add_subcommand(Command("seed", "Run db/seeds.nox"))
+    root.add_subcommand(db)
+
+    jobs: Command = Command("jobs", "Background jobs")
+    jobs.add_subcommand(Command("work", "Run jobs/worker.nox"))
+    jobs.add_subcommand(Command("dead", "List dead jobs"))
+    root.add_subcommand(jobs)
+
+    root.add_subcommand(Command("console", "Run db/console.nox"))
+    server: Command = Command("server", "Run main.nox")
+    server.add_alias("s")
+    root.add_subcommand(server)
+    root.add_subcommand(Command("version", "Print version"))
+    return root
+
+def run_noxc(script: str) -> int:
+    if not nox.fs.is_file(script):
+        print("missing " + script)
+        return 1
+    out: nox.process.Output = nox.process.Command("noxc").arg("run").arg(script).run()
+    if len(out.stdout) > 0:
+        print(out.stdout)
+    if len(out.stderr) > 0:
+        print(out.stderr)
+    return out.status
+
+def cmd_db(name: str) -> int:
+    cfg: Config = nyx.config.load()
+    if name == "migrate":
+        n: int = nyx.db.migrate_url(cfg.db_path, cfg.migrate_path)
+        print("applied=" + str(n))
+        return 0
+    if name == "rollback":
+        version: str = nyx.db.rollback_url(cfg.db_path, cfg.migrate_path)
+        print("rolled_back=" + version)
+        return 0
+    if name == "schema":
+        nox.fs.create_dir_all("db")
+        db: Connection = nyx.db.open(cfg.db_path)
+        nyx.db.schema_dump(db, "db/schema.sql")
+        db.close()
+        print("wrote db/schema.sql")
+        return 0
+    if name == "seed":
+        return run_noxc("db/seeds.nox")
+    print("usage: nyx db migrate|rollback|schema|seed")
+    return 1
+
+def cmd_jobs(name: str) -> int:
+    if name == "work":
+        return run_noxc("jobs/worker.nox")
+    if name == "dead":
+        cfg: Config = nyx.config.load()
+        db: Connection = nyx.db.open(cfg.jobs_db_path)
+        nyx.job.ensure_schema(db)
+        print("dead_count=" + str(nyx.job.count_dead(db)))
+        rows: list[str] = nyx.job.list_dead(db, 50)
+        i: int = 0
+        while i < len(rows):
+            print(rows[i])
+            i = i + 1
+        db.close()
+        return 0
+    print("usage: nyx jobs work|dead")
+    return 1
+
+def cmd_console() -> int:
+    if nox.fs.is_file("db/console.nox"):
+        return run_noxc("db/console.nox")
+    cfg: Config = nyx.config.load()
+    db: Connection = nyx.db.open(cfg.db_path)
+    print("nyx console — env=" + cfg.env + " db=" + cfg.db_path)
+    print("Nox has no REPL; db is open for this run. Put queries in db/console.nox.")
+    db.close()
+    return 0
+
+def dispatch(res: CliResult) -> int:
+    name: str = res.command.name
+    try:
+        if name == "new":
+            nyx.cli_gen.generate_new(".", res.context.get_str("name"), templates_root())
+            return 0
+        if name == "model":
+            nyx.cli_gen.generate_model(".", res.context.get_str("name"), res.context.variadic_values)
+            return 0
+        if name == "controller":
+            nyx.cli_gen.generate_controller(".", res.context.get_str("name"))
+            return 0
+        if name == "scaffold":
+            nyx.cli_gen.generate_scaffold(".", res.context.get_str("name"), res.context.variadic_values)
+            return 0
+        if name == "migration":
+            nyx.cli_gen.generate_migration(".", res.context.get_str("name"))
+            return 0
+        if name == "auth":
+            nyx.cli_gen.generate_auth(".")
+            return 0
+        if name == "mailer":
+            nyx.cli_gen.generate_mailer(".", res.context.get_str("name"))
+            return 0
+        if name == "job":
+            nyx.cli_gen.generate_job(".", res.context.get_str("name"))
+            return 0
+        if name == "channel":
+            nyx.cli_gen.generate_channel(".", res.context.get_str("name"))
+            return 0
+        if name == "migrate" or name == "rollback" or name == "schema" or name == "seed":
+            return cmd_db(name)
+        if name == "work" or name == "dead":
+            return cmd_jobs(name)
+        if name == "console":
+            return cmd_console()
+        if name == "server":
+            return run_noxc("main.nox")
+        if name == "version":
+            print(read_version())
+            return 0
+        if name == "generate":
+            print("usage: nyx generate model|controller|scaffold|migration|auth|mailer|job|channel")
+            return 1
+        if name == "db":
+            print("usage: nyx db migrate|rollback|schema|seed")
+            return 1
+        if name == "jobs":
+            print("usage: nyx jobs work|dead")
+            return 1
+        print("unknown command: " + name)
+        return 1
+    except CliGenError as e:
+        print(e.message)
+        return 1
+
+def execute(argv: list[str]) -> int:
+    app: CliApp = CliApp(build_root(), read_version())
+    res: CliResult = app.parse(argv)
+    if res.help_requested:
+        print(res.command.format_help(app.console))
+        return 0
+    if res.version_requested:
+        print(read_version())
+        return 0
+    if not res.is_success():
+        print(res.error_message)
+        return res.exit_code
+    if res.command.name == "nyx":
+        print(res.command.format_help(app.console))
+        return 0
+    return dispatch(res)

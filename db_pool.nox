@@ -1,0 +1,206 @@
+# nyx.db_pool - optional Postgres and MySQL connection pools.
+#
+# NYX_DB_POOL defaults to 0. 0 and 1 keep the single boot connection.
+# Above 1, each request checks a connection out and gives it back.
+# The boot connection stays for migrate and for pg()/mysql() outside a request.
+
+import nox.atomic
+import nox.time
+import nox.postgres
+import nox.mysql
+from nox.postgres import Connection as PgConnection
+from nox.mysql import Connection as MysqlConnection, MysqlError
+
+class PgHold:
+    conn: PgConnection
+    live: bool
+
+    def __init__(self: PgHold, conn: PgConnection) -> None:
+        self.conn = conn
+        self.live = True
+
+class MyHold:
+    conn: MysqlConnection
+    live: bool
+
+    def __init__(self: MyHold, conn: MysqlConnection) -> None:
+        self.conn = conn
+        self.live = True
+
+class _FiberProbe:
+    def __init__(self: _FiberProbe) -> None:
+        self.ok = True
+
+_nyx_db_pool_pg_tl: TaskLocal[PgHold] = TaskLocal[PgHold]()
+_nyx_db_pool_my_tl: TaskLocal[MyHold] = TaskLocal[MyHold]()
+_nyx_db_pool_probe_tl: TaskLocal[_FiberProbe] = TaskLocal[_FiberProbe]()
+_pg_root: list[PgHold] = []
+_my_root: list[MyHold] = []
+
+def _has_fiber() -> bool:
+    marker: _FiberProbe = _FiberProbe()
+    _nyx_db_pool_probe_tl.set(marker)
+    got: _FiberProbe | None = _nyx_db_pool_probe_tl.get()
+    if got == None:
+        return False
+    return True
+
+def hold_pg(conn: PgConnection) -> None:
+    hold: PgHold = PgHold(conn)
+    _nyx_db_pool_pg_tl.set(hold)
+    got: PgHold | None = _nyx_db_pool_pg_tl.get()
+    if got == None:
+        if len(_pg_root) == 0:
+            _pg_root.append(hold)
+        else:
+            _pg_root[0] = hold
+
+def current_pg() -> PgConnection | None:
+    got: PgHold | None = _nyx_db_pool_pg_tl.get()
+    if got != None and got.live:
+        return got.conn
+    if not _has_fiber() and len(_pg_root) > 0 and _pg_root[0].live:
+        return _pg_root[0].conn
+    return None
+
+def clear_pg() -> None:
+    got: PgHold | None = _nyx_db_pool_pg_tl.get()
+    if got != None:
+        got.live = False
+    if len(_pg_root) > 0:
+        _pg_root[0].live = False
+
+def hold_mysql(conn: MysqlConnection) -> None:
+    hold: MyHold = MyHold(conn)
+    _nyx_db_pool_my_tl.set(hold)
+    got: MyHold | None = _nyx_db_pool_my_tl.get()
+    if got == None:
+        if len(_my_root) == 0:
+            _my_root.append(hold)
+        else:
+            _my_root[0] = hold
+
+def current_mysql() -> MysqlConnection | None:
+    got: MyHold | None = _nyx_db_pool_my_tl.get()
+    if got != None and got.live:
+        return got.conn
+    if not _has_fiber() and len(_my_root) > 0 and _my_root[0].live:
+        return _my_root[0].conn
+    return None
+
+def clear_mysql() -> None:
+    got: MyHold | None = _nyx_db_pool_my_tl.get()
+    if got != None:
+        got.live = False
+    if len(_my_root) > 0:
+        _my_root[0].live = False
+
+def _mysql_ok(conn: MysqlConnection) -> bool:
+    try:
+        conn.query("SELECT 1")
+        return True
+    except MysqlError:
+        return False
+
+# Same rules as nox.postgres.Pool. MySQL has no stdlib pool.
+class MysqlPool:
+    conn_url: str
+    size: int
+    acquire_timeout_ms: int
+    idle: list[MysqlConnection]
+    opened: int
+    lock: nox.atomic.AtomicInt
+
+    def __init__(self: MysqlPool, conn_url: str, size: int, acquire_timeout_ms: int) -> None:
+        self.conn_url = conn_url
+        self.size = size
+        self.acquire_timeout_ms = acquire_timeout_ms
+        self.idle = []
+        self.opened = 0
+        self.lock = nox.atomic.new_int(0)
+
+    def _lock(self: MysqlPool) -> None:
+        spins: int = 0
+        while not self.lock.compare_and_swap(0, 1):
+            spins = spins + 1
+            if spins > 20:
+                nox.time.sleep_ms(1)
+
+    def _unlock(self: MysqlPool) -> None:
+        self.lock.store(0)
+
+    def acquire(self: MysqlPool) -> MysqlConnection:
+        started: nox.time.Instant = nox.time.instant_now()
+        poll: int = 1
+        while True:
+            self._lock()
+            reuse: bool = len(self.idle) > 0
+            candidate: MysqlConnection | None = None
+            if reuse:
+                idle: list[MysqlConnection] = self.idle
+                candidate = idle.pop()
+                self.idle = idle
+            can_open: bool = (not reuse) and self.opened < self.size
+            if can_open:
+                self.opened = self.opened + 1
+            self._unlock()
+            if candidate != None:
+                if _mysql_ok(candidate):
+                    return candidate
+                candidate.close()
+                self._lock()
+                self.opened = self.opened - 1
+                self._unlock()
+            elif can_open:
+                try:
+                    return nox.mysql.open_url(self.conn_url)
+                except MysqlError as e:
+                    self._lock()
+                    self.opened = self.opened - 1
+                    self._unlock()
+                    raise e
+            else:
+                if started.elapsed_ms() >= self.acquire_timeout_ms:
+                    raise MysqlError(
+                        "connection pool exhausted: no connection became free within " +
+                        str(self.acquire_timeout_ms) + " ms"
+                    )
+                nox.time.sleep_ms(poll)
+                if poll < 10:
+                    poll = poll * 2
+        raise MysqlError("unreachable")
+
+    def give_back(self: MysqlPool, conn: MysqlConnection) -> None:
+        healthy: bool = _mysql_ok(conn)
+        self._lock()
+        if healthy:
+            idle: list[MysqlConnection] = self.idle
+            idle.append(conn)
+            self.idle = idle
+        else:
+            self.opened = self.opened - 1
+        self._unlock()
+        if not healthy:
+            conn.close()
+
+    def close(self: MysqlPool) -> None:
+        self._lock()
+        idle: list[MysqlConnection] = self.idle
+        self.idle = []
+        self.opened = self.opened - len(idle)
+        self._unlock()
+        i: int = 0
+        while i < len(idle):
+            idle[i].close()
+            i = i + 1
+
+    def idle_count(self: MysqlPool) -> int:
+        return len(self.idle)
+
+    def open_count(self: MysqlPool) -> int:
+        return self.opened
+
+def open_mysql(conn_url: str, size: int, acquire_timeout_ms: int) -> MysqlPool:
+    if size <= 0:
+        raise MysqlError("pool size must be positive")
+    return MysqlPool(conn_url, size, acquire_timeout_ms)

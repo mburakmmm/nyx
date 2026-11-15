@@ -1,0 +1,156 @@
+# Optional DB pool. Default stays one connection.
+# Live checkout runs only when DATABASE_URL is postgres or mysql.
+
+import nox.test
+import nox.os
+import nox.postgres
+from nox.os import OsError
+from nox.http import HttpRequest, HttpResponse
+from nox.router import Context
+from nox.db import Row
+from nox.postgres import PostgresError, Pool as PgPool, Connection as PgConnection
+from nox.mysql import MysqlError, Connection as MysqlConnection
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.db
+import nyx.db_pool
+from nyx.db_pool import MysqlPool
+from nyx.app import Application
+from nyx.config import Config
+
+def database_url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+def setup_quiet(application: Application) -> None:
+    application.config.csrf_enabled = False
+
+def setup_pg(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        rows: list[Row] = nyx.app.pg(application).query("SELECT 1")
+        return nyx.ctrl.text(200, str(len(rows)))
+    application.router.get("/", home)
+
+def setup_my(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        rows: list[Row] = nyx.app.mysql(application).query("SELECT 1")
+        return nyx.ctrl.text(200, str(len(rows)))
+    application.router.get("/", home)
+
+base: Config = nyx.config.defaults("test")
+nox.test.assert_eq_int(base.db_pool_size, 0, "pool default off")
+base.db_pool_size = 4
+base.csrf_enabled = False
+base.session_enabled = False
+base.auto_migrate = False
+base.rate_limit_enabled = False
+base.metrics_enabled = False
+base.log_requests = False
+sqlite_app: Application = nyx.app.boot(base, setup_quiet)
+nox.test.assert_eq_int(len(sqlite_app._pg_pool), 0, "sqlite ignores pool")
+nox.test.assert_eq_int(len(sqlite_app._my_pool), 0, "sqlite ignores mysql pool")
+nyx.app.shutdown(sqlite_app)
+
+nox.os.set_var("NYX_ENV", "test")
+nox.os.set_var("NYX_DB_POOL", "4")
+nox.os.set_var("NYX_DB_POOL_TIMEOUT_MS", "250")
+loaded: Config = nyx.config.from_env()
+nox.test.assert_eq_int(loaded.db_pool_size, 4, "NYX_DB_POOL")
+nox.test.assert_eq_int(loaded.db_pool_timeout_ms, 250, "NYX_DB_POOL_TIMEOUT_MS")
+nox.os.set_var("NYX_DB_POOL", "0")
+nox.os.set_var("NYX_DB_POOL_TIMEOUT_MS", "5000")
+
+url: str = database_url()
+dialect: str = nyx.db.dialect_of_url(url)
+if dialect == "postgres":
+    pool: PgPool = nox.postgres.pool(url, 2, 200)
+    first: PgConnection = pool.acquire()
+    second: PgConnection = pool.acquire()
+    nox.test.assert_eq_int(pool.open_count(), 2, "two open")
+    nox.test.assert_eq_int(pool.idle_count(), 0, "none idle while held")
+    exhausted: bool = False
+    try:
+        pool.acquire()
+    except PostgresError:
+        exhausted = True
+    nox.test.assert_true(exhausted, "third acquire waits out")
+    pool.give_back(first)
+    pool.give_back(second)
+    nox.test.assert_eq_int(pool.idle_count(), 2, "both returned")
+    nox.test.assert_eq_int(pool.open_count(), 2, "give_back does not open another")
+    again: PgConnection = pool.acquire()
+    nox.test.assert_eq_int(pool.open_count(), 2, "reuse does not grow the pool")
+    pool.give_back(again)
+    pool.close()
+    nox.test.assert_eq_int(pool.idle_count(), 0, "close drops idle")
+    nox.test.assert_eq_int(pool.open_count(), 0, "close drops open")
+
+    cfg: Config = nyx.config.defaults("test")
+    cfg.db_path = url
+    cfg.auto_migrate = False
+    cfg.csrf_enabled = False
+    cfg.session_enabled = False
+    cfg.rate_limit_enabled = False
+    cfg.metrics_enabled = False
+    cfg.log_requests = False
+    cfg.db_pool_size = 2
+    cfg.db_pool_timeout_ms = 1000
+    app: Application = nyx.app.boot(cfg, setup_pg)
+    nyx.app.pg(app).query("SELECT 1")
+    nox.test.assert_eq_int(app._pg_pool[0].open_count(), 0, "outside a request the pool stays closed")
+    n: int = 0
+    while n < 3:
+        resp: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", {}, ""))
+        nox.test.assert_eq_int(resp.status, 200, "pooled request")
+        n = n + 1
+    nox.test.assert_eq_int(app._pg_pool[0].open_count(), 1, "three requests share one pooled connection")
+    nox.test.assert_eq_int(app._pg_pool[0].idle_count(), 1, "request returned the connection")
+    nyx.app.shutdown(app)
+    nox.test.assert_eq_int(app._pg_pool[0].open_count(), 0, "shutdown closes the pool")
+    print("v272_db_pool_test ok")
+elif dialect == "mysql":
+    my_pool: MysqlPool = nyx.db_pool.open_mysql(url, 2, 200)
+    my_a: MysqlConnection = my_pool.acquire()
+    my_b: MysqlConnection = my_pool.acquire()
+    nox.test.assert_eq_int(my_pool.open_count(), 2, "mysql two open")
+    my_full: bool = False
+    try:
+        my_pool.acquire()
+    except MysqlError:
+        my_full = True
+    nox.test.assert_true(my_full, "mysql third acquire waits out")
+    my_pool.give_back(my_a)
+    my_pool.give_back(my_b)
+    nox.test.assert_eq_int(my_pool.idle_count(), 2, "mysql both returned")
+    my_again: MysqlConnection = my_pool.acquire()
+    nox.test.assert_eq_int(my_pool.open_count(), 2, "mysql reuse does not grow")
+    my_pool.give_back(my_again)
+    my_pool.close()
+    nox.test.assert_eq_int(my_pool.open_count(), 0, "mysql close drops open")
+
+    cfg_my: Config = nyx.config.defaults("test")
+    cfg_my.db_path = url
+    cfg_my.auto_migrate = False
+    cfg_my.csrf_enabled = False
+    cfg_my.session_enabled = False
+    cfg_my.rate_limit_enabled = False
+    cfg_my.metrics_enabled = False
+    cfg_my.log_requests = False
+    cfg_my.db_pool_size = 2
+    cfg_my.db_pool_timeout_ms = 1000
+    app_my: Application = nyx.app.boot(cfg_my, setup_my)
+    m: int = 0
+    while m < 3:
+        resp_my: HttpResponse = nyx.app.dispatch(app_my, HttpRequest("GET", "/", "", {}, ""))
+        nox.test.assert_eq_int(resp_my.status, 200, "mysql pooled request")
+        m = m + 1
+    nox.test.assert_eq_int(app_my._my_pool[0].open_count(), 1, "mysql requests share one connection")
+    nox.test.assert_eq_int(app_my._my_pool[0].idle_count(), 1, "mysql request returned the connection")
+    nyx.app.shutdown(app_my)
+    nox.test.assert_eq_int(app_my._my_pool[0].open_count(), 0, "mysql shutdown closes the pool")
+    print("v272_db_pool_test ok")
+else:
+    print("v272_db_pool_test ok (no postgres or mysql DATABASE_URL)")

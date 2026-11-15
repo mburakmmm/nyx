@@ -1,0 +1,131 @@
+# Mixed migration directory against a live Postgres or MySQL URL.
+# Skips when DATABASE_URL is unset or is not that dialect.
+
+import nox.test
+import nox.os
+import nox.fs
+import nox.uuid
+from nox.os import OsError
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.mysql import Connection as MysqlConnection, MysqlError
+from nox.db import Statement
+import nyx.db
+
+def database_url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+def token() -> str:
+    raw: str = nox.uuid.uuid4()
+    out: str = ""
+    i: int = 0
+    while i < len(raw) and len(out) < 12:
+        ch: str = raw[i]
+        if ch != "-":
+            out = out + ch
+        i = i + 1
+    return out
+
+def write_pair(dir_path: str, version: str, up_sql: str, down_sql: str) -> None:
+    nox.fs.write_string(dir_path + "/" + version, up_sql)
+    nox.fs.write_string(dir_path + "/" + nyx.db.down_migration_name(version), down_sql)
+
+url: str = database_url()
+dialect: str = nyx.db.dialect_of_url(url)
+if dialect != "postgres" and dialect != "mysql":
+    print("v271_migrate_dialect_test skipped (no postgres or mysql DATABASE_URL)")
+else:
+    stamp: str = token()
+    table: str = "nyx_mig_" + stamp
+    dir_path: str = "/tmp/nyx_mig_" + stamp
+    nox.fs.create_dir(dir_path)
+    nox.fs.write_string(
+        dir_path + "/001_" + stamp + ".sql",
+        "CREATE TABLE " + table + " (id INTEGER PRIMARY KEY AUTOINCREMENT);"
+    )
+    nox.fs.write_string(dir_path + "/001_" + stamp + ".down.sql", "DROP TABLE IF EXISTS " + table + ";")
+    if dialect == "postgres":
+        version: str = "001_" + stamp + ".pg.sql"
+        write_pair(
+            dir_path,
+            version,
+            "CREATE TABLE " + table + " (id BIGSERIAL PRIMARY KEY);",
+            "DROP TABLE IF EXISTS " + table + ";"
+        )
+        nox.fs.write_string(
+            dir_path + "/001_" + stamp + ".mysql.sql",
+            "CREATE TABLE " + table + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY);"
+        )
+        conn_pg: PgConnection = nyx.db.open_postgres(url)
+        applied: int = 0
+        try:
+            applied = nyx.db.migrate_postgres(conn_pg, dir_path)
+            nox.test.assert_eq_int(applied, 1, "postgres applies only pg file")
+            seen: int = len(conn_pg.query("SELECT id FROM " + table))
+            nox.test.assert_eq_int(seen, 0, "postgres table exists")
+            reverted: str = nyx.db.rollback_postgres(conn_pg, dir_path)
+            nox.test.assert_eq_str(reverted, version, "postgres rollback uses pg down")
+            gone: bool = False
+            try:
+                conn_pg.query("SELECT id FROM " + table)
+            except PostgresError:
+                gone = True
+            nox.test.assert_true(gone, "postgres table dropped")
+        finally:
+            try:
+                conn_pg.execute("DROP TABLE IF EXISTS " + table)
+            except PostgresError:
+                applied = applied
+            try:
+                drop_row: Statement = conn_pg.prepare(
+                    "DELETE FROM schema_migrations WHERE version = $1"
+                )
+                drop_row.bind_str(0, version)
+                drop_row.execute()
+            except PostgresError:
+                applied = applied
+            conn_pg.close()
+    else:
+        version_my: str = "001_" + stamp + ".mysql.sql"
+        write_pair(
+            dir_path,
+            version_my,
+            "CREATE TABLE " + table + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY);",
+            "DROP TABLE IF EXISTS " + table + ";"
+        )
+        nox.fs.write_string(
+            dir_path + "/001_" + stamp + ".pg.sql",
+            "CREATE TABLE " + table + " (id BIGSERIAL PRIMARY KEY);"
+        )
+        conn_my: MysqlConnection = nyx.db.open_mysql(url)
+        applied_my: int = 0
+        try:
+            applied_my = nyx.db.migrate_mysql(conn_my, dir_path)
+            nox.test.assert_eq_int(applied_my, 1, "mysql applies only mysql file")
+            seen_my: int = len(conn_my.query("SELECT id FROM " + table))
+            nox.test.assert_eq_int(seen_my, 0, "mysql table exists")
+            reverted_my: str = nyx.db.rollback_mysql(conn_my, dir_path)
+            nox.test.assert_eq_str(reverted_my, version_my, "mysql rollback uses mysql down")
+            gone_my: bool = False
+            try:
+                conn_my.query("SELECT id FROM " + table)
+            except MysqlError:
+                gone_my = True
+            nox.test.assert_true(gone_my, "mysql table dropped")
+        finally:
+            try:
+                conn_my.execute("DROP TABLE IF EXISTS " + table)
+            except MysqlError:
+                applied_my = applied_my
+            try:
+                drop_my: Statement = conn_my.prepare(
+                    "DELETE FROM schema_migrations WHERE version = ?"
+                )
+                drop_my.bind_str(0, version_my)
+                drop_my.execute()
+            except MysqlError:
+                applied_my = applied_my
+            conn_my.close()
+    print("v271_migrate_dialect_test ok")

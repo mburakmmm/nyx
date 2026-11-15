@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.27.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.28.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.27.0"
+      "ref": "v0.28.0"
     }
   ]
 }
@@ -133,6 +133,8 @@ html: str = nyx.view.render_records("app/views/posts/_item.html", rows, fields)
 Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar. `*_unescaped` yalnızca güvenilir HTML için. Layout: slot-sonra-replace.
 ### CLI
 
+Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’ta `bin\nyx.cmd` (bash yok). Unix `./bin/nyx` yalnız `noxc run cli.nox` başlatır.
+
 ```sh
 ./bin/nyx new blog
 ./bin/nyx generate model Post title:string body:text
@@ -158,10 +160,20 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 | `NYX_HTTP2` | Varsayılan açık. `0` HTTP/1.1. Başlık araması büyük/küçük harf duyarsız |
 | `NYX_HTTP_POOL_IDLE` / `NYX_HTTP_POOL_IDLE_MS` | Giden havuz (varsayılan `32` / `90000`). Idle `0` havuzu kapatır |
 | `NYX_PG_QUERY_TIMEOUT_MS` | Postgres istemci sorgu iptali (`0` kapalı) |
+| `NYX_DB_POOL` / `NYX_DB_POOL_TIMEOUT_MS` | Postgres/MySQL havuzu. `0` veya `1` tek bağlantı (varsayılan). `>1` istek başına bağlantı alır ve geri verir |
 
 ---
 
 ## Sürüm notları
+
+### 0.28.0 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Birden fazla worker ile IPv6, multicore ve TLS’i birlikte tutar. `use_listen_fd` yalnız tek worker’lı IPv6 yoludur
+- Dizinde `*.pg.sql` veya `*.mysql.sql` varsa yalnız o lehçe uygulanır. Sonek yoksa düz `*.sql` kalır
+- Veritabanı hız sınırı pencereyi karşılaştır-ve-değiştir ile açar. Sekiz denemeden sonra kapalı kalır
+- İşler fence ve lease tutar. Heartbeat lease’i uzatır. Reclaim çöken işi bir kez kuyruğa alır. Tamamlama ve sahip olunan başarısızlık güncel fence ister
+- `NYX_DB_POOL` 1’den büyükse istek başına bir Postgres veya MySQL bağlantısı alır. SQLite ayarı yok sayar. Havuz doluysa yanıt 503’tür
+- CLI, Rune 2.0.1 ve Nox dosya üretimidir. Unix `bin/nyx` ve Windows `bin\nyx.cmd` yalnız `noxc run cli.nox` başlatır
 
 ### 0.27.0 — Nox 2.1.186 (1.0 değil)
 - **Nox ≥ 2.1.186** (CI resmi **2.1.186** paketi)

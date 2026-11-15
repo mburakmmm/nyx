@@ -1,0 +1,93 @@
+# Lease, heartbeat, and fence. A crashed running job is reclaimed once.
+# The worker that lost the fence cannot complete it.
+
+import nox.test
+import nox.json
+import nox.time
+import nox.fs
+from nox.json import JsonValue
+from nox.db import Row
+from nox.sqlite import Connection
+import nyx.db
+import nyx.job
+from nyx.job import JobRegistry
+
+def fence_of(job_json: str) -> int:
+    parsed: JsonValue = nox.json.parse(job_json)
+    return int(nox.json.as_number(nox.json.get(parsed, "fence")))
+
+def status_of(db: Connection, job_id: int) -> str:
+    rows: list[Row] = db.query("SELECT status FROM jobs WHERE id = " + str(job_id))
+    return rows[0].get_str(0)
+
+live: Connection = nyx.db.open(":memory:")
+nyx.job.ensure_schema(live)
+
+def long_handler(payload_json: str) -> None:
+    live.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE status = 'running'")
+    nox.test.assert_true(nyx.job.heartbeat_active(live), "heartbeat renews the lease")
+    kept: int = nyx.job.reclaim_stale(live, 300000)
+    nox.test.assert_eq_int(kept, 0, "a heartbeating job stays running")
+
+registry: JobRegistry = JobRegistry()
+registry.register("Long", long_handler)
+long_id: int = nyx.job.enqueue(live, "Long", "{}", nox.time.now_ms())
+nox.test.assert_true(nyx.job.process_one(live, registry), "long job ran")
+nox.test.assert_eq_str(status_of(live, long_id), "completed", "owner completed the long job")
+nox.test.assert_eq_int(nyx.job.active_id(), 0, "active job cleared")
+
+# Old table from before fence/lease columns.
+legacy: Connection = nyx.db.open(":memory:")
+legacy.execute(
+    "CREATE TABLE jobs (" +
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+    "job_name TEXT NOT NULL, " +
+    "payload TEXT NOT NULL, " +
+    "status TEXT NOT NULL, " +
+    "run_at_ms INTEGER NOT NULL, " +
+    "attempts INTEGER NOT NULL DEFAULT 0, " +
+    "last_error TEXT NOT NULL DEFAULT '', " +
+    "created_at_ms INTEGER NOT NULL, " +
+    "updated_at_ms INTEGER NOT NULL)"
+)
+nyx.job.ensure_schema(legacy)
+legacy_id: int = nyx.job.enqueue(legacy, "Legacy", "{}", nox.time.now_ms())
+nox.test.assert_true(legacy_id > 0, "legacy table accepts enqueue")
+
+# Two workers, one file. Crash, reclaim once, old fence cannot finish.
+path: str = "/tmp/nyx_job_fence.sqlite"
+if nox.fs.exists(path):
+    nox.fs.remove_file(path)
+owner: Connection = nyx.db.open(path)
+other: Connection = nyx.db.open(path)
+nyx.job.ensure_schema(owner)
+job_id: int = nyx.job.enqueue(owner, "Send", "{}", nox.time.now_ms())
+first_json: str | None = nyx.job.reserve(owner)
+nox.test.assert_true(first_json != None, "first worker reserved")
+first_fence: int = 0
+if first_json != None:
+    first_fence = fence_of(first_json)
+nox.test.assert_eq_int(first_fence, 1, "first fence")
+owner.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE id = " + str(job_id))
+once: int = nyx.job.reclaim_stale(other, 300000)
+twice: int = nyx.job.reclaim_stale(other, 300000)
+nox.test.assert_eq_int(once, 1, "crash reclaims one job")
+nox.test.assert_eq_int(twice, 0, "second reclaim is a no-op")
+second_json: str | None = nyx.job.reserve(other)
+nox.test.assert_true(second_json != None, "second worker reserved")
+second_fence: int = 0
+if second_json != None:
+    second_fence = fence_of(second_json)
+nox.test.assert_true(second_fence != first_fence, "fence moved")
+nox.test.assert_true(not nyx.job.complete(owner, job_id, first_fence), "old worker cannot complete")
+nox.test.assert_true(not nyx.job.fail_owned(owner, job_id, first_fence, "late"), "old worker cannot fail")
+nox.test.assert_eq_str(status_of(other, job_id), "running", "new worker still owns the job")
+nox.test.assert_true(nyx.job.complete(other, job_id, second_fence), "new worker completes")
+nox.test.assert_true(not nyx.job.complete(other, job_id, second_fence), "complete is once")
+nox.test.assert_eq_str(status_of(owner, job_id), "completed", "one completed row")
+
+owner.close()
+other.close()
+live.close()
+legacy.close()
+print("job_fence_test ok")

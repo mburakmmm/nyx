@@ -12,6 +12,8 @@ nox.test.assert_true(not cfg.csrf_api_exempt, "csrf_api_exempt default false")
 nox.test.assert_eq_int(cfg.workers, 1, "default workers 1")
 nox.test.assert_eq_str(cfg.rate_limit_store, "memory", "default rate store")
 nox.test.assert_eq_int(cfg.http_timeout_ms, 10000, "default http timeout 10s")
+nox.test.assert_eq_int(cfg.db_pool_size, 0, "default db pool off")
+nox.test.assert_eq_int(cfg.db_pool_timeout_ms, 5000, "default db pool timeout")
 
 t: Config = nyx.config.defaults("test")
 nox.test.assert_eq_str(t.db_path, ":memory:", "test db")

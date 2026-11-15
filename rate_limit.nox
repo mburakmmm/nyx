@@ -1,6 +1,7 @@
-# nyx.rate_limit - fixed-window rate limiter (memory + sqlite UPSERT).
+# nyx.rate_limit - fixed-window rate limiter (memory + sqlite).
 # MemoryStore uses list fields + methods (same pattern as nyx.cache.MemoryCache).
 # Capacity eviction drops oldest window entries when full.
+# DB window reset is a compare-and-swap on window_start_ms.
 
 import nox.time
 from nox.sqlite import Connection
@@ -121,50 +122,61 @@ def ensure_schema(db: Connection) -> None:
         ")"
     )
 
+# Tek UPDATE. Yalnizca okunan window_start hâlâ duruyorsa pencereyi 1'e açar.
+# Kaybeden çağrı 0 döner; sayacı ezmez.
+def try_open_window(db: Connection, key: str, now: int, observed_start: int) -> int:
+    upd: Statement = db.prepare(
+        "UPDATE nyx_rate_limits SET count = 1, window_start_ms = ? " +
+        "WHERE key = ? AND window_start_ms = ?"
+    )
+    upd.bind_int(0, now)
+    upd.bind_str(1, key)
+    upd.bind_int(2, observed_start)
+    return upd.execute()
+
+# Sayacı yalnız aynı pencerede ve limitin altındayken artırır.
+def try_count(db: Connection, key: str, limit: int, observed_start: int) -> int:
+    upd: Statement = db.prepare(
+        "UPDATE nyx_rate_limits SET count = count + 1 " +
+        "WHERE key = ? AND count < ? AND window_start_ms = ?"
+    )
+    upd.bind_str(0, key)
+    upd.bind_int(1, limit)
+    upd.bind_int(2, observed_start)
+    return upd.execute()
+
 def allow_db(db: Connection, key: str, limit: int, window_ms: int) -> bool:
-    # Prefer conditional UPDATE + INSERT; UPSERT when racing inserts.
     if limit <= 0:
         return True
     if window_ms <= 0:
         raise RateLimitError("window_ms must be positive")
     now: int = nox.time.now_ms()
-    stmt: Statement = db.prepare("SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?")
-    stmt.bind_str(0, key)
-    rows: list[Row] = stmt.query()
-    if len(rows) == 0:
-        try:
-            ins: Statement = db.prepare(
-                "INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES (?, 1, ?)"
-            )
-            ins.bind_str(0, key)
-            ins.bind_int(1, now)
-            ins.execute()
-            return True
-        except:
-            # Concurrent insert: fall through to update path via re-read.
-            stmt2: Statement = db.prepare(
-                "SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?"
-            )
-            stmt2.bind_str(0, key)
-            rows = stmt2.query()
-            if len(rows) == 0:
+    attempt: int = 0
+    while attempt < 8:
+        attempt = attempt + 1
+        stmt: Statement = db.prepare("SELECT count, window_start_ms FROM nyx_rate_limits WHERE key = ?")
+        stmt.bind_str(0, key)
+        rows: list[Row] = stmt.query()
+        if len(rows) == 0:
+            try:
+                ins: Statement = db.prepare(
+                    "INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES (?, 1, ?)"
+                )
+                ins.bind_str(0, key)
+                ins.bind_int(1, now)
+                ins.execute()
                 return True
-    count: int = rows[0].get_int(0)
-    start: int = rows[0].get_int(1)
-    if now - start >= window_ms:
-        upd: Statement = db.prepare(
-            "UPDATE nyx_rate_limits SET count = 1, window_start_ms = ? WHERE key = ?"
-        )
-        upd.bind_int(0, now)
-        upd.bind_str(1, key)
-        upd.execute()
-        return True
-    if count >= limit:
-        return False
-    upd2: Statement = db.prepare(
-        "UPDATE nyx_rate_limits SET count = count + 1 WHERE key = ? AND count < ?"
-    )
-    upd2.bind_str(0, key)
-    upd2.bind_int(1, limit)
-    changed: int = upd2.execute()
-    return changed > 0
+            except:
+                continue
+        count: int = rows[0].get_int(0)
+        start: int = rows[0].get_int(1)
+        if now - start >= window_ms:
+            if try_open_window(db, key, now, start) > 0:
+                return True
+            continue
+        if count >= limit:
+            return False
+        if try_count(db, key, limit, start) > 0:
+            return True
+        continue
+    return False

@@ -1,0 +1,48 @@
+# DB rate limit: expired window opens once. A second writer that still
+# holds the old window_start must not reset the counter again.
+
+import nox.test
+import nox.time
+from nox.sqlite import Connection
+from nox.db import Statement
+from nox.db import Row
+import nyx.db
+import nyx.rate_limit
+
+def count_of(db: Connection, key: str) -> int:
+    stmt: Statement = db.prepare("SELECT count FROM nyx_rate_limits WHERE key = ?")
+    stmt.bind_str(0, key)
+    rows: list[Row] = stmt.query()
+    return rows[0].get_int(0)
+
+db: Connection = nyx.db.open(":memory:")
+nyx.rate_limit.ensure_schema(db)
+db.execute("INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES ('k', 40, 1)")
+
+now: int = nox.time.now_ms()
+first: int = nyx.rate_limit.try_open_window(db, "k", now, 1)
+second: int = nyx.rate_limit.try_open_window(db, "k", now + 1, 1)
+nox.test.assert_true(first > 0, "first open wins")
+nox.test.assert_eq_int(second, 0, "stale window does not open again")
+nox.test.assert_eq_int(count_of(db, "k"), 1, "count stays 1")
+
+bumped: int = nyx.rate_limit.try_count(db, "k", 2, 1)
+nox.test.assert_eq_int(bumped, 0, "old window does not increment")
+live: int = nyx.rate_limit.try_count(db, "k", 2, now)
+nox.test.assert_true(live > 0, "current window increments")
+nox.test.assert_eq_int(count_of(db, "k"), 2, "count is 2")
+blocked: int = nyx.rate_limit.try_count(db, "k", 2, now)
+nox.test.assert_eq_int(blocked, 0, "limit holds")
+
+fresh: Connection = nyx.db.open(":memory:")
+nyx.rate_limit.ensure_schema(fresh)
+fresh.execute("INSERT INTO nyx_rate_limits (key, count, window_start_ms) VALUES ('ip', 99, 1)")
+nox.test.assert_true(nyx.rate_limit.allow_db(fresh, "ip", 3, 1000), "reset 1")
+nox.test.assert_true(nyx.rate_limit.allow_db(fresh, "ip", 3, 1000), "hit 2")
+nox.test.assert_true(nyx.rate_limit.allow_db(fresh, "ip", 3, 1000), "hit 3")
+nox.test.assert_true(not nyx.rate_limit.allow_db(fresh, "ip", 3, 1000), "hit 4 denied")
+nox.test.assert_eq_int(count_of(fresh, "ip"), 3, "window count is the limit")
+
+db.close()
+fresh.close()
+print("rate_limit_db_test ok")

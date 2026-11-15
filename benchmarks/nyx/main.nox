@@ -72,7 +72,7 @@ print(
     + " headers=" + str(want_headers)
 )
 try:
-    if nyx.server.use_ipv6(cfg):
+    if nyx.server.use_listen_fd(cfg):
         fd: int = nyx.server.listen_fd(cfg)
         if want_headers:
             nox.http.serve_fd(fd, handle)
