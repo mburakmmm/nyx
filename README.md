@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.26.0 · **License:** MIT · **Requires Nox ≥ 2.1.80** (CI **2.1.80**)  
+**Version:** 0.27.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.26.0"
+      "ref": "v0.27.0"
     }
   ]
 }
@@ -169,6 +169,11 @@ Default `render` / `render_with_layout` / `render_records` HTML-escape substitut
 ---
 
 ## Changelog
+
+### 0.27.0 — Nox 2.1.186 (not 1.0)
+- Requires **Nox ≥ 2.1.186** (CI installs the official **2.1.186** package)
+- Windows serves HTTP/2, including TLS with ALPN `h2`. `NYX_HTTP2` stays on by default. Signals are still absent there; shutdown is `nox.http.shutdown()`. `ip_family` is still ignored, so multicore stays IPv4
+- `nyx.storage.fetch` and the mail HTTP API receive the decoded body when the server sends `gzip` or `deflate`. Nyx does not call `set_http3`
 
 ### 0.26.0 — Nox 2.1.80 (not 1.0)
 - Requires **Nox ≥ 2.1.80** (CI installs the official **2.1.80** package)
@@ -380,7 +385,7 @@ Query preservation, header tracking, CSRF/session, jobs reclaim, storage/redirec
 
 ## Platform limits (Nox)
 
-- Requires **Nox ≥ 2.1.80** (CI **2.1.80**): stdlib base64, Postgres `sqlstate`/`kind`, `with` transactions, plus the 0.25 IPv6 multicore and `render_blocks` surface
+- Requires **Nox ≥ 2.1.186** (CI **2.1.186**): Windows HTTP/2, decoded `gzip`/`deflate` downloads, plus the 0.26 base64 and Postgres error surface
 - Boot once; `NYX_AUTO_MIGRATE=0` in production; see [docs/DEPLOY.md](docs/DEPLOY.md)
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; `--release` + `NOX_POOL_WORKERS` for shared pool
 - Metrics: process-wide locked SharedBuffer (not module-global `int++`)

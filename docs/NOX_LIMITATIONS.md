@@ -2,7 +2,7 @@
 
 Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sürüm tablosu `docs/NOX_REQUESTS.md` içindedir. Tarihsel repro `docs/repro-p1c-c2/` 1.18.1’de kapandı; güncel bir hatanın repro’su değildir.
 
-**Doğrulama:** 12 Kasım 2026. Yüklü derleyici `noxc 2.1.80` (`noxc --version`). Yayımlanmış en son kararlı etiket budur. Stdlib bu kurulumun `~/.nox-lang/lib/nox/stdlib/nox` ağacı. Nyx **0.26.0**. CI resmi **v2.1.80** paketini kurar.
+**Doğrulama:** 15 Kasım 2026. Kaynak `nox-lang` **2.1.186**. Yayımlanmış en son kararlı etiket budur. Nyx **0.27.0**. CI resmi **v2.1.186** paketini kurar.
 
 Çalıştırma kanıtları `/tmp` altında tek seferlik programlardır; depoya alınmadı. Her birinin komutu ve görülen çıktı aşağıdadır. `nox.test.AssertionError` satırı stdlib `test.nox` içindeki `raise` satırıdır; test dosyasının satırı değildir.
 
@@ -10,7 +10,7 @@ Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sür
 
 ## 1. Bu turda kapanıp Nyx 0.24’e bağlananlar
 
-Bunlar artık Nox sınırı değildir. Pin **≥ 2.1.80** bu satırların hepsini stdlib’e alır; Nyx çağırır.
+Bunlar artık Nox sınırı değildir. Pin **≥ 2.1.186** bu satırların hepsini stdlib’e alır; Nyx çağırır.
 
 | Nox | Ne kapandı | Nyx |
 |---|---|---|
@@ -35,6 +35,8 @@ Bunlar artık Nox sınırı değildir. Pin **≥ 2.1.80** bu satırların hepsin
 | 2.1.17 | Postgres `Connection.set_query_timeout` | `NYX_PG_QUERY_TIMEOUT_MS` (0 kapalı). Boot, migrate’ten önce kurar |
 | 2.1.20 | `serve_multicore*` üst düzey fabrika: her worker kendi closure’ını kurar. Ana runtime’daki closure değeri hâlâ reddedilir. `AtomicRef` değişmez `str` anlık görüntüsü | Nyx handler’ı çıplak ad olarak kalır (modül düzeyi boot worker’da yeniden kurulur). Sayaçlar `SharedBuffer` |
 | 2.1.32 | `configure(..., ip_family)`: 0 IPv4, 1 dual-stack, 2 yalnız IPv6. Windows yok sayar | `nyx.server.ip_family`. `NYX_IPV6` + `NYX_WORKERS>1` artık `ServerError` değildir |
+| 2.1.116 | İstemci `gzip` ve `deflate` gövdeyi açar. `Accept-Encoding` kullanıcı vermediyse istenir | `nyx.storage.fetch`, posta HTTP API’si |
+| 2.1.143 / 2.1.145 / 2.1.147 | Windows HTTP/2 sunucusu, TLS ALPN `h2`, fiber istemci ağı | `NYX_HTTP2` varsayılan açık. Windows’ta da geçer |
 
 Nitelikli tür yazımı bu derleyicide çalışır. Kanıt: `def f(req: nox.http.HttpRequest)` kabul edildi; `f(1)` şu hatayı verdi:
 
@@ -102,16 +104,17 @@ Nyx sayaçları kilitli `SharedBuffer`. `NYX_WORKERS>1` iken rate store `db`. Ca
 
 `Context.query` Nyx parametresi değildir. Nyx yolu router’dan önce keser; form `+` kuralı `nyx.params` içindedir.
 
-### 2.7 HTTP/2 ve sinyal, Windows’ta yok
+### 2.7 Windows: HTTP/2 var, sinyal ve IPv6 multicore yok
 
-Bu madde Windows’ta çalıştırılmadı. Kaynak kapısı:
+15 Kasım 2026 kaynak, Nox 2.1.186:
 
-- `net_dial.zig` 24–26: `enabled` Windows, freestanding ve WASI’de `false`.
-- `http2_server.zig` 23: `supported = fiber_net.enabled` (`fiber_net` aynı kapı).
-- `http_server.zig` 1828: HTTP/2 yolu `h2srv.supported` ister.
-- `http_server.zig` 124–126: SIGTERM/SIGINT kurulumu Windows’ta hemen döner. `nox.http.shutdown()` durur.
+- HTTP/2 sunucusu Windows’ta açıktır. `http2_server.supported`, `fiber_net.enabled` veya Windows’tur. `fiber_net.enabled` 2.1.147’den beri Windows’ta da doğrudur. TLS üzerinde ALPN `h2` 2.1.145’tedir.
+- İstemci ağı fiber içindedir (2.1.147).
+- `configure` Windows’ta `ip_family` yazmaz. Multicore IPv4 kalır.
+- SIGTERM ve SIGINT kurulmaz. `nox.http.shutdown()` durur.
+- `nox.http.set_http3` stdlib’dedir ve varsayılan kapalıdır. Nyx çağırmaz. HTTP/3 isteğinde `peer_addr` boştur.
 
-macOS / Linux pininde HTTP/2 varsayılan açıktır. `NYX_HTTP2=0` kapatır.
+macOS ve Linux’ta HTTP/2 varsayılan açıktır. `NYX_HTTP2=0` kapatır.
 
 ### 2.8 Canlı SSE yanıtı, middleware’den sonra başlık alamaz
 
@@ -149,6 +152,7 @@ Bunlar eksik API değildir.
 - Gövde tavanı derleme sabiti — 2.0.118 `configure`. `NYX_MAX_BODY_BYTES=0` stdlib varsayılanını korur.
 - Nitelikli tür yazımı reddediliyor — 2.0.188’de `nox.http.HttpRequest` parametresi kabul edildi.
 - Multicore yalnız IPv4 — 2.1.32 `ip_family`. Windows hâlâ yok sayar.
+- Windows’ta HTTP/2 yok — 2.1.143 sunucu, 2.1.145 TLS ALPN, 2.1.147 fiber istemci. Sinyal hâlâ yok.
 - `query_decode` `+` boşluk yapmıyor — 2.1.2.
 - Şablonda döngü yok — `render` hâlâ yorumlamaz; `render_blocks` 2.1.7’de var.
 - `nox.jwt` süre bakamıyor — `verify` hâlâ bakmaz; `verify_now` 2.1.7’de bakar.

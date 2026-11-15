@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.26.0 · **Lisans:** MIT · **Nox ≥ 2.1.80** (CI **2.1.80**)  
+**Sürüm:** 0.27.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.26.0"
+      "ref": "v0.27.0"
     }
   ]
 }
@@ -162,6 +162,11 @@ Varsayılan `render` / `render_with_layout` / `render_records` HTML kaçışlar.
 ---
 
 ## Sürüm notları
+
+### 0.27.0 — Nox 2.1.186 (1.0 değil)
+- **Nox ≥ 2.1.186** (CI resmi **2.1.186** paketi)
+- Windows HTTP/2 sunar; TLS üzerinde ALPN `h2` de vardır. `NYX_HTTP2` varsayılan açık kalır. Sinyal orada yoktur; kapanış `nox.http.shutdown()` ile olur. `ip_family` yok sayılır, multicore IPv4 kalır
+- `nyx.storage.fetch` ve posta HTTP API’si, sunucu `gzip` veya `deflate` gönderirse açılmış gövdeyi alır. Nyx `set_http3` çağırmaz
 
 ### 0.26.0 — Nox 2.1.80 (1.0 değil)
 - **Nox ≥ 2.1.80** (CI resmi **2.1.80** paketi)
@@ -338,7 +343,7 @@ Query koruması, header, CSRF/session, jobs reclaim, storage/redirect, `auto_mig
 
 ## Platform sınırları (Nox)
 
-- **Nox ≥ 2.1.80** (CI **2.1.80**): stdlib base64, Postgres `sqlstate`/`kind`, `with` işlemi; 0.25 IPv6 multicore ve `render_blocks` yüzeyi bunun altında kalır
+- **Nox ≥ 2.1.186** (CI **2.1.186**): Windows HTTP/2, açılmış `gzip`/`deflate` indirme; 0.26 base64 ve Postgres hata yüzeyi bunun altında kalır
 - Uygulama scriptinde bir kez boot; production’da `NYX_AUTO_MIGRATE=0`
 - Multicore: `NYX_WORKERS>1` → `serve_multicore*`; metrics SharedBuffer; rate store `db`
 - App ORM: SQLite, Postgres veya MySQL; jobs kuyruğu SQLite

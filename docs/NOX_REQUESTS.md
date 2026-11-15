@@ -1,7 +1,15 @@
 # Nox roadmap requests from Nyx
 #
-# Nyx 0.26+ Nox 2.1.80 kilidini kullanır (sürüm 1.0 değil).
-# Önerilen pin: noxc **2.1.80**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+# Nyx 0.27+ Nox 2.1.186 kilidini kullanır (sürüm 1.0 değil).
+# Önerilen pin: noxc **2.1.186**. `nox.json` adları `parse`/`dump` (1.171 `decode`/`encode*` kaldırdı, 2.0 korur).
+
+## Nyx 0.27’de pin ile gelenler
+
+| Ne | Nox | Nyx |
+|---|---|---|
+| Windows HTTP/2 + TLS ALPN + fiber istemci | **2.1.143** / **2.1.145** / **2.1.147** | `NYX_HTTP2` aynı. Sinyal ve `ip_family` Windows’ta yok |
+| İstemci `gzip` / `deflate` | **2.1.116** | `fetch` ve posta API’si açılmış gövdeyi alır |
+| HTTP/3 `set_http3` | **2.1.115** | Çağrılmaz. `peer_addr` HTTP/3’te boştur |
 
 ## Nyx 0.26’da stdlib’e bırakılanlar
 
@@ -130,4 +138,4 @@ Hâlâ açık olanlar ve kanıtları `docs/NOX_LIMITATIONS.md` içindedir: multi
 | `nox.http.listen_v6(port, v6_only)` | **1.142.10** | `NYX_IPV6` / `NYX_IPV6_ONLY`. Tek worker `serve_fd*`. Multicore IPv4 kalır |
 
 ## İzleme
-`noxc upgrade` (≥2.1.80) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.
+`noxc upgrade` (≥2.1.186) → full `tests/*.nox` → blog dogfood → PG CI smoke → multicore smoke.

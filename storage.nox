@@ -141,6 +141,7 @@ def store_http_file(method: str, url: str, path: str, content_type: str) -> int:
 
 # GET the URL onto disk under root. Non-2xx does not leave a blob.
 # Checksum is a second read of the saved file.
+# Sunucu gzip veya deflate gonderirse istemci acilmis govdeyi yazar (Nox >= 2.1.116).
 def fetch(root: str, filename: str, url: str) -> str:
     if len(url) == 0:
         raise StorageError("indirme adresi bos olamaz")
