@@ -22,7 +22,7 @@ import nyx.config
 from nox.http import HttpResponse, HttpError, HttpTimeoutError
 from nox.os import OsError
 from nox.path import PathError
-from nox.fs import FsError
+from nox.fs import FsError, FileMetadata
 from nox.process import ProcessError, Command, Output
 
 class StorageError(Exception):
@@ -120,14 +120,79 @@ def _fsutil_bin() -> str:
         root = "C:\\Windows"
     return _win_path(root) + "\\System32\\fsutil.exe"
 
+class _ReparseSeen:
+    path: str
+    modified_ms: int
+    size: int
+    hit: bool
+
+    def __init__(self: _ReparseSeen, path: str, modified_ms: int, size: int, hit: bool) -> None:
+        self.path = path
+        self.modified_ms = modified_ms
+        self.size = size
+        self.hit = hit
+
+_reparse_cache: list[_ReparseSeen] = []
+_reparse_queries: int = 0
+_REPARSE_CAP: int = 64
+
+def reparse_query_count() -> int:
+    return _reparse_queries
+
+def clear_reparse_cache() -> None:
+    _reparse_cache = []
+    _reparse_queries = 0
+
+def _remember_reparse(path: str, modified_ms: int, size: int, hit: bool) -> None:
+    fresh: _ReparseSeen = _ReparseSeen(path, modified_ms, size, hit)
+    kept: list[_ReparseSeen] = []
+    i: int = 0
+    replaced: bool = False
+    while i < len(_reparse_cache):
+        old: _ReparseSeen = _reparse_cache[i]
+        if old.path == path:
+            kept.append(fresh)
+            replaced = True
+        else:
+            kept.append(old)
+        i = i + 1
+    if not replaced:
+        kept.append(fresh)
+    while len(kept) > _REPARSE_CAP:
+        trimmed: list[_ReparseSeen] = []
+        j: int = 1
+        while j < len(kept):
+            trimmed.append(kept[j])
+            j = j + 1
+        kept = trimmed
+    _reparse_cache = kept
+
 # Windows canonicalize sembolik bagi her zaman cozmez. Acilan dosya ise
 # bagi izler. fsutil son bileseni izlemeden reparse noktasini sorar:
 # 0 bag, 4390 (veya 1) normal dosya/dizin. Diger kodlar kapali kalir.
+# Ayni yol ve mtime ikinci kez süreç acmaz. Nox lstat sunmaz.
 def _reparse_point(path: str) -> bool:
     if not _on_windows():
         return False
     if not nox.fs.exists(path):
         return False
+    modified_ms: int = 0
+    size: int = 0
+    try:
+        meta: FileMetadata = nox.fs.metadata(path)
+        modified_ms = meta.modified_ms
+        size = meta.size
+    except FsError:
+        modified_ms = -1
+        size = -1
+    if modified_ms >= 0:
+        c: int = 0
+        while c < len(_reparse_cache):
+            seen: _ReparseSeen = _reparse_cache[c]
+            if seen.path == path and seen.modified_ms == modified_ms and seen.size == size:
+                return seen.hit
+            c = c + 1
+    hit: bool = True
     try:
         cmd: Command = Command(_fsutil_bin())
         cmd.arg("reparsepoint")
@@ -135,13 +200,20 @@ def _reparse_point(path: str) -> bool:
         cmd.arg(_win_path(path))
         cmd.set_timeout(5000)
         out: Output = cmd.run()
+        _reparse_queries = _reparse_queries + 1
         if out.status == 0:
-            return True
-        if out.status == 1 or out.status == 4390:
-            return False
-        return True
+            hit = True
+        else:
+            if out.status == 1 or out.status == 4390:
+                hit = False
+            else:
+                hit = True
     except ProcessError:
-        return True
+        hit = True
+        _reparse_queries = _reparse_queries + 1
+    if modified_ms >= 0:
+        _remember_reparse(path, modified_ms, size, hit)
+    return hit
 
 # Her bilesen ayri canonicalize edilir. Windows, 'link/secret' gibi cok
 # parcali goreli yolu sembolik bagi cozmeden birakabiliyor; tek parca

@@ -97,7 +97,28 @@ def worker_slot_count() -> int:
     return _MAX_WORKERS
 
 def worker_stale_ms() -> int:
-    return 5000
+    raw: str = ""
+    try:
+        raw = nox.os.getenv("NYX_METRICS_STALE_MS")
+    except OsError:
+        return 5000
+    if len(raw) == 0:
+        return 5000
+    n: int = 0
+    i: int = 0
+    while i < len(raw):
+        b: int = nox.strings.byte_at(raw, i)
+        if b < 48 or b > 57:
+            return 5000
+        n = n * 10 + (b - 48)
+        i = i + 1
+    if n < 1000:
+        return 1000
+    return n
+
+def release_claim() -> None:
+    _worker_claimed = False
+    _worker_index = 0
 
 def bind_shared(key: str) -> None:
     # serve_multicore her worker'a taze modul kopyasi verir. Ayni port ve

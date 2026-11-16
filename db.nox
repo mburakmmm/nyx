@@ -22,11 +22,13 @@ import nox.sqlite
 import nox.postgres
 import nox.mysql
 import nox.fs
+import nox.os
 import nox.path
 import nox.strings
 import nox.url
 import nox.time
 import nox.uuid
+from nox.os import OsError
 from nox.sqlite import Connection, SqliteError
 from nox.fs import FsError, FileMetadata
 from nox.postgres import Connection as PgConnection, PostgresError
@@ -319,7 +321,43 @@ def _record_applied(db: Connection, version: str) -> None:
     stmt.execute()
 
 _LOCK_WAIT_MS: int = 180000
-_LOCK_LEASE_MS: int = 120000
+_LOCK_LEASE_DEFAULT_MS: int = 120000
+
+def _env_ms(name: str, default: int, floor: int) -> int:
+    raw: str = ""
+    try:
+        raw = nox.os.getenv(name)
+    except OsError:
+        return default
+    if len(raw) == 0:
+        return default
+    n: int = 0
+    i: int = 0
+    while i < len(raw):
+        b: int = nox.strings.byte_at(raw, i)
+        if b < 48 or b > 57:
+            return default
+        n = n * 10 + (b - 48)
+        i = i + 1
+    if n < floor:
+        return floor
+    return n
+
+def lock_lease_ms() -> int:
+    return _env_ms("NYX_MIGRATE_LOCK_LEASE_MS", _LOCK_LEASE_DEFAULT_MS, 200)
+
+def _lock_pause_ms() -> int:
+    return _env_ms("NYX_MIGRATE_LOCK_PAUSE_MS", 0, 0)
+
+def _lock_heartbeat_ms() -> int:
+    lease: int = lock_lease_ms()
+    if lease <= 150:
+        return 50
+    if lease <= 1000:
+        return 100
+    if lease <= 10000:
+        return 1000
+    return 5000
 
 def _sqlite_db_file(db: Connection) -> str:
     try:
@@ -343,13 +381,6 @@ def _sqlite_release_read(db: Connection) -> None:
         db.execute("ROLLBACK")
     except SqliteError:
         return
-
-def _lock_table_sql(dialect: str) -> str:
-    if dialect == "postgres":
-        return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner TEXT NOT NULL, until_ms BIGINT NOT NULL)"
-    if dialect == "mysql":
-        return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner VARCHAR(64) NOT NULL, until_ms BIGINT NOT NULL)"
-    return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner TEXT NOT NULL, until_ms INTEGER NOT NULL)"
 
 # SQLite kilidi ayri bir veritabaninda tutulmaz. Ikinci baglanti uzerindeki
 # UPDATE, tek OS ipligini sqlite icinde bekletip fiberi kilitler.
@@ -404,7 +435,7 @@ def _break_stale_lock(dir_path: str, now: int) -> None:
     if len(text) == 0:
         try:
             meta: FileMetadata = nox.fs.metadata(dir_path)
-            stale = (now - meta.modified_ms) > _LOCK_LEASE_MS
+            stale = (now - meta.modified_ms) > lock_lease_ms()
         except FsError:
             stale = False
     else:
@@ -426,7 +457,7 @@ def _try_create_lock(dir_path: str, token: str, now: int) -> bool:
         nox.fs.create_dir(dir_path)
     except FsError:
         return False
-    nox.fs.write_string(dir_path + "/owner", token + "\n" + str(now + _LOCK_LEASE_MS))
+    nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
     written: str = _read_owner(dir_path)
     if _owner_token(written) != token:
         return False
@@ -466,106 +497,174 @@ def _release_sqlite(db: Connection, token: str) -> None:
         return
     nox.fs.remove_dir_all(trash)
 
-def _refresh_sqlite(db: Connection, token: str) -> None:
+def _refresh_sqlite(db: Connection, token: str) -> bool:
     if len(token) == 0:
-        return
+        return True
     dir_path: str = _lock_dir(db)
     if len(dir_path) == 0:
-        return
+        return True
     if _owner_token(_read_owner(dir_path)) != token:
-        return
+        return False
     now: int = nox.time.now_ms()
-    nox.fs.write_string(dir_path + "/owner", token + "\n" + str(now + _LOCK_LEASE_MS))
+    nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
+    return _owner_token(_read_owner(dir_path)) == token
 
-def _ensure_lock_row_pg(conn: PgConnection) -> None:
-    conn.execute(_lock_table_sql("postgres"))
-    conn.execute(
-        "INSERT INTO nyx_migrate_lock (id, owner, until_ms) " +
-        "SELECT 1, '', 0 WHERE NOT EXISTS (SELECT 1 FROM nyx_migrate_lock WHERE id = 1)"
-    )
+class _LockBeat:
+    stop: bool
+    lost: bool
+    done: bool
+    live: bool
 
-def _take_pg_lock(conn: PgConnection, token: str, now: int) -> bool:
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET owner = $1, until_ms = $2 WHERE id = 1 AND (owner = '' OR until_ms < $3)"
-    )
-    stmt.bind_str(0, token)
-    stmt.bind_int(1, now + _LOCK_LEASE_MS)
-    stmt.bind_int(2, now)
-    return stmt.execute() > 0
+    def __init__(self: _LockBeat) -> None:
+        self.stop = True
+        self.lost = False
+        self.done = True
+        self.live = False
 
-def _acquire_pg(conn: PgConnection) -> str:
-    _ensure_lock_row_pg(conn)
-    token: str = nox.uuid.uuid4()
+_sqlite_beat: _LockBeat = _LockBeat()
+
+# Kalp atisi dosyayi yeniler. Uzun sqlite deyimi OS ipligini birakmaz;
+# o pencerede lease duserse sonraki dosyada sahiplik kontrolu durur.
+async def _beat_sqlite(db: Connection, token: str, beat: _LockBeat) -> None:
+    try:
+        waited: int = 0
+        while not beat.stop:
+            nox.time.sleep_ms(50)
+            if beat.stop:
+                break
+            waited = waited + 50
+            if waited >= _lock_heartbeat_ms():
+                waited = 0
+                if not _refresh_sqlite(db, token):
+                    beat.lost = True
+                    break
+    finally:
+        beat.done = True
+
+def _start_sqlite_beat(db: Connection, token: str) -> None:
+    if len(token) == 0:
+        return
+    _stop_sqlite_beat()
+    _sqlite_beat.stop = False
+    _sqlite_beat.lost = False
+    _sqlite_beat.done = False
+    _sqlite_beat.live = True
+    spawn _beat_sqlite(db, token, _sqlite_beat)
+
+def _stop_sqlite_beat() -> None:
+    if not _sqlite_beat.live:
+        return
+    _sqlite_beat.stop = True
+    spins: int = 0
+    while not _sqlite_beat.done and spins < 15000:
+        nox.time.sleep_ms(1)
+        spins = spins + 1
+    _sqlite_beat.live = False
+
+def _pause_for_lock() -> None:
+    pause: int = _lock_pause_ms()
+    if pause > 0:
+        nox.time.sleep_ms(pause)
+
+def _guard_sqlite(db: Connection, token: str) -> None:
+    _pause_for_lock()
+    if len(token) == 0:
+        return
+    if _sqlite_beat.lost or not _refresh_sqlite(db, token):
+        raise DbError("migration kilidi kaybedildi")
+
+# Oturum kilidi lease kullanmaz. Uzun sorgu surerken sunucu kilidi tutar.
+# Baglanti dusunce kilit birakilir. Satir INSERT yarisi yoktur.
+def _pg_lock_flag(conn: PgConnection, sql: str) -> bool:
+    rows: list[PgRow] = conn.query(sql)
+    if len(rows) == 0:
+        return False
+    return rows[0].get_int(0) == 1
+
+def _acquire_pg(conn: PgConnection) -> None:
     started: int = nox.time.now_ms()
     while True:
         now: int = nox.time.now_ms()
-        if _take_pg_lock(conn, token, now):
-            return token
+        if _pg_lock_flag(
+            conn,
+            "SELECT CASE WHEN pg_try_advisory_lock(hashtext(current_database()), 831194108) THEN 1 ELSE 0 END"
+        ):
+            return
         if now - started > _LOCK_WAIT_MS:
             raise DbError("migration kilidi alinamadi")
         nox.time.sleep_ms(20)
-    return ""
 
-def _release_pg(conn: PgConnection, token: str) -> None:
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET owner = '', until_ms = 0 WHERE id = 1 AND owner = $1"
-    )
-    stmt.bind_str(0, token)
-    stmt.execute()
+def _release_pg(conn: PgConnection) -> None:
+    try:
+        conn.query("SELECT pg_advisory_unlock(hashtext(current_database()), 831194108)")
+    except PostgresError:
+        return
 
-def _refresh_pg(conn: PgConnection, token: str) -> None:
-    now: int = nox.time.now_ms()
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET until_ms = $1 WHERE id = 1 AND owner = $2"
+def _guard_pg(conn: PgConnection) -> None:
+    _pause_for_lock()
+    held: bool = _pg_lock_flag(
+        conn,
+        "SELECT CASE WHEN pg_advisory_lock_held(hashtext(current_database()), 831194108) THEN 1 ELSE 0 END"
     )
-    stmt.bind_int(0, now + _LOCK_LEASE_MS)
-    stmt.bind_str(1, token)
-    stmt.execute()
+    if not held:
+        raise DbError("migration kilidi kaybedildi")
 
-def _ensure_lock_row_mysql(conn: MysqlConnection) -> None:
-    conn.execute(_lock_table_sql("mysql"))
-    conn.execute(
-        "INSERT INTO nyx_migrate_lock (id, owner, until_ms) " +
-        "SELECT 1, '', 0 WHERE NOT EXISTS (SELECT 1 FROM nyx_migrate_lock WHERE id = 1)"
-    )
+def _fnv_name(text: str) -> str:
+    h: int = 2166136261
+    i: int = 0
+    while i < len(text):
+        h = (h * 131 + nox.strings.byte_at(text, i)) % 1000000007
+        i = i + 1
+    return "nyx_" + str(h)
 
-def _take_mysql_lock(conn: MysqlConnection, token: str, now: int) -> bool:
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET owner = ?, until_ms = ? WHERE id = 1 AND (owner = '' OR until_ms < ?)"
-    )
-    stmt.bind_str(0, token)
-    stmt.bind_int(1, now + _LOCK_LEASE_MS)
-    stmt.bind_int(2, now)
-    return stmt.execute() > 0
+def _mysql_lock_name(conn: MysqlConnection) -> str:
+    rows: list[Row] = conn.query("SELECT DATABASE()")
+    dbn: str = ""
+    if len(rows) > 0:
+        dbn = rows[0].get_str(0)
+    return _fnv_name(dbn)
+
+def _mysql_flag(conn: MysqlConnection, sql: str, name: str) -> bool:
+    stmt: Statement = conn.prepare(sql)
+    stmt.bind_str(0, name)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return False
+    return rows[0].get_int(0) == 1
 
 def _acquire_mysql(conn: MysqlConnection) -> str:
-    _ensure_lock_row_mysql(conn)
-    token: str = nox.uuid.uuid4()
+    name: str = _mysql_lock_name(conn)
     started: int = nox.time.now_ms()
     while True:
         now: int = nox.time.now_ms()
-        if _take_mysql_lock(conn, token, now):
-            return token
+        if _mysql_flag(conn, "SELECT CASE WHEN GET_LOCK(?, 0) = 1 THEN 1 ELSE 0 END", name):
+            return name
         if now - started > _LOCK_WAIT_MS:
             raise DbError("migration kilidi alinamadi")
         nox.time.sleep_ms(20)
     return ""
 
-def _release_mysql(conn: MysqlConnection, token: str) -> None:
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET owner = '', until_ms = 0 WHERE id = 1 AND owner = ?"
-    )
-    stmt.bind_str(0, token)
-    stmt.execute()
+def _release_mysql(conn: MysqlConnection, name: str) -> None:
+    if len(name) == 0:
+        return
+    try:
+        stmt: Statement = conn.prepare("SELECT RELEASE_LOCK(?)")
+        stmt.bind_str(0, name)
+        stmt.query()
+    except MysqlError:
+        return
 
-def _refresh_mysql(conn: MysqlConnection, token: str) -> None:
-    now: int = nox.time.now_ms()
-    stmt: Statement = conn.prepare(
-        "UPDATE nyx_migrate_lock SET until_ms = ? WHERE id = 1 AND owner = ?"
+def _guard_mysql(conn: MysqlConnection, name: str) -> None:
+    _pause_for_lock()
+    if len(name) == 0:
+        return
+    held: bool = _mysql_flag(
+        conn,
+        "SELECT CASE WHEN IS_USED_LOCK(?) = CONNECTION_ID() THEN 1 ELSE 0 END",
+        name
     )
-    stmt.bind_int(0, now + _LOCK_LEASE_MS)
-    stmt.bind_str(1, token)
-    stmt.execute()
+    if not held:
+        raise DbError("migration kilidi kaybedildi")
 
 def migrate(db: Connection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
@@ -574,6 +673,7 @@ def migrate(db: Connection, dir_path: str) -> int:
         raise DbError("migration yolu dizin degil: " + dir_path)
     _sqlite_busy(db)
     token: str = _acquire_sqlite(db)
+    _start_sqlite_beat(db, token)
     applied: int = 0
     try:
         _ensure_migrations_table(db)
@@ -581,7 +681,7 @@ def migrate(db: Connection, dir_path: str) -> int:
         ordered: list[str] = select_up_migrations(entries, "sqlite")
         j: int = 0
         while j < len(ordered):
-            _refresh_sqlite(db, token)
+            _guard_sqlite(db, token)
             version: str = ordered[j]
             if not _already_applied(db, version):
                 full: str = nox.path.join(dir_path, version)
@@ -597,6 +697,7 @@ def migrate(db: Connection, dir_path: str) -> int:
                 applied = applied + 1
             j = j + 1
     finally:
+        _stop_sqlite_beat()
         _release_sqlite(db, token)
     return applied
 
@@ -617,9 +718,11 @@ def down_migration_name(version: str) -> str:
 def rollback(db: Connection, dir_path: str) -> str:
     _sqlite_busy(db)
     token: str = _acquire_sqlite(db)
+    _start_sqlite_beat(db, token)
     version: str = ""
     try:
         _ensure_migrations_table(db)
+        _guard_sqlite(db, token)
         stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
         rows: list[Row] = stmt.query()
         if len(rows) == 0:
@@ -641,6 +744,7 @@ def rollback(db: Connection, dir_path: str) -> str:
             raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
         db.execute("COMMIT")
     finally:
+        _stop_sqlite_beat()
         _release_sqlite(db, token)
     return version
 
@@ -681,7 +785,7 @@ def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
         raise DbError("migration dizini yok: " + dir_path)
     if not nox.fs.is_dir(dir_path):
         raise DbError("migration yolu dizin degil: " + dir_path)
-    token: str = _acquire_pg(conn)
+    _acquire_pg(conn)
     applied: int = 0
     try:
         _ensure_migrations_table_pg(conn)
@@ -689,7 +793,7 @@ def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
         ordered: list[str] = select_up_migrations(entries, "postgres")
         j: int = 0
         while j < len(ordered):
-            _refresh_pg(conn, token)
+            _guard_pg(conn)
             version: str = ordered[j]
             if not _already_applied_pg(conn, version):
                 full: str = nox.path.join(dir_path, version)
@@ -705,14 +809,15 @@ def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
                 applied = applied + 1
             j = j + 1
     finally:
-        _release_pg(conn, token)
+        _release_pg(conn)
     return applied
 
 def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
-    token: str = _acquire_pg(conn)
+    _acquire_pg(conn)
     version: str = ""
     try:
         _ensure_migrations_table_pg(conn)
+        _guard_pg(conn)
         rows: list[PgRow] = conn.query(
             "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
         )
@@ -735,7 +840,7 @@ def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
             conn.execute("ROLLBACK")
             raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
     finally:
-        _release_pg(conn, token)
+        _release_pg(conn)
     return version
 
 def _ensure_migrations_table_mysql(conn: MysqlConnection) -> None:
@@ -778,7 +883,7 @@ def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
         ordered: list[str] = select_up_migrations(entries, "mysql")
         j: int = 0
         while j < len(ordered):
-            _refresh_mysql(conn, token)
+            _guard_mysql(conn, token)
             version: str = ordered[j]
             if not _already_applied_mysql(conn, version):
                 full: str = nox.path.join(dir_path, version)
@@ -805,6 +910,7 @@ def rollback_mysql(conn: MysqlConnection, dir_path: str) -> str:
     version: str = ""
     try:
         _ensure_migrations_table_mysql(conn)
+        _guard_mysql(conn, token)
         rows: list[Row] = conn.query(
             "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
         )

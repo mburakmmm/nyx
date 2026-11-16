@@ -3,6 +3,7 @@
 # is not idempotent: a second run of the file fails the test.
 
 import nox.fs
+import nox.os
 import nox.test
 import nox.path
 import nyx.db
@@ -48,4 +49,43 @@ version_rows: list[Row] = a.query("SELECT COUNT(*) FROM schema_migrations")
 nox.test.assert_eq_int(version_rows[0].get_int(0), 1, "one migration row")
 a.close()
 b.close()
+
+nox.os.set_var("NYX_MIGRATE_LOCK_LEASE_MS", "300")
+nox.os.set_var("NYX_MIGRATE_LOCK_PAUSE_MS", "900")
+nox.test.assert_eq_int(nyx.db.lock_lease_ms(), 300, "short lease is visible")
+hold_dir: str = nyx.testing.scratch("nyx_lock_hold_mig")
+if nox.fs.exists(hold_dir):
+    nox.fs.remove_dir_all(hold_dir)
+nox.fs.create_dir(hold_dir)
+nox.fs.write_string(
+    nox.path.join(hold_dir, "001_hold.sql"),
+    "CREATE TABLE nyx_lock_hold (id INTEGER PRIMARY KEY);\n"
+)
+hold_db: str = nyx.testing.scratch("nyx_lock_hold.sqlite")
+if nox.fs.exists(hold_db):
+    nox.fs.remove_file(hold_db)
+hold_lock: str = hold_db + ".nyx-migrate-lock"
+if nox.fs.is_file(hold_lock):
+    nox.fs.remove_file(hold_lock)
+if nox.fs.is_dir(hold_lock):
+    nox.fs.remove_dir_all(hold_lock)
+hold_a: Connection = nyx.db.open(hold_db)
+hold_b: Connection = nyx.db.open(hold_db)
+
+async def hold_mig() -> int:
+    return nyx.db.migrate(hold_a, hold_dir)
+
+async def wait_mig() -> int:
+    return nyx.db.migrate(hold_b, hold_dir)
+
+held_task: Task[int] = spawn hold_mig()
+wait_task: Task[int] = spawn wait_mig()
+held_n: int = await held_task
+wait_n: int = await wait_task
+print("hold " + str(held_n) + " " + str(wait_n))
+nox.test.assert_eq_int(held_n + wait_n, 1, "heartbeat keeps the lease through a long pause")
+hold_rows: list[Row] = hold_a.query("SELECT COUNT(*) FROM nyx_lock_hold")
+nox.test.assert_eq_int(hold_rows[0].get_int(0), 0, "held migration created the table")
+hold_a.close()
+hold_b.close()
 print("v277_migrate_lock_test ok")

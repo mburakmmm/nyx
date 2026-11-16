@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.30.8 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.30.9 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.8"
+      "ref": "v0.30.9"
     }
   ]
 }
@@ -172,6 +172,12 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 ---
 
 ## Changelog
+
+### 0.30.9 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- Postgres migrations hold a session advisory lock. MySQL uses `GET_LOCK`. Both stay held for a long statement and drop when the connection does. SQLite refreshes its directory lease from a heartbeat and stops if it loses ownership
+- `nyx.orm` CRUD and transactions run on Postgres and MySQL when `DATABASE_URL` selects that dialect
+- The template source cache keeps at most 64 entries. Windows reparse checks are remembered by path, mtime, and size. `NYX_METRICS_STALE_MS` defaults to 5000 and floors at 1000
 
 ### 0.30.8 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off

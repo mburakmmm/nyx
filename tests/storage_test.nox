@@ -14,6 +14,11 @@ else:
 key: str = nyx.storage.store(root, "avatar.png", "binary-icerik-verisi")
 nox.test.assert_true(len(key) > 0, "store bos olmayan key doner")
 nox.test.assert_true(nyx.storage.exists(root, key), "store sonrasi dosya var olmali")
+nyx.storage.clear_reparse_cache()
+nyx.storage.path_for(root, key)
+reparse_once: int = nyx.storage.reparse_query_count()
+nyx.storage.path_for(root, key)
+nox.test.assert_eq_int(nyx.storage.reparse_query_count(), reparse_once, "reparse check is cached")
 
 content: str = nyx.storage.read(root, key)
 nox.test.assert_eq_str(content, "binary-icerik-verisi", "read yazilan icerigi doner")

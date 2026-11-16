@@ -175,6 +175,8 @@ jobs:
           noxc test tests/v271_migrate_dialect_test.nox
           noxc test tests/v272_db_pool_test.nox
           noxc test tests/v273_db_pool_race_test.nox
+          noxc test tests/v278_orm_test.nox
+          noxc test tests/v280_migrate_lock_race_test.nox
 
   mysql-smoke:
     runs-on: ubuntu-24.04
@@ -269,6 +271,8 @@ jobs:
           noxc test tests/v273_db_pool_race_test.nox
           noxc test tests/v275_mysql_ddl_test.nox
           noxc test tests/v276_mysql_pool_stress_test.nox
+          noxc test tests/v278_orm_test.nox
+          noxc test tests/v280_migrate_lock_race_test.nox
 
   test-macos:
     runs-on: macos-latest

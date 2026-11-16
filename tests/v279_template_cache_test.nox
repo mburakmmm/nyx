@@ -18,4 +18,19 @@ nox.fs.write_string(path, "Hello {{ name }}!")
 third: str = nyx.view.render(path, ctx)
 nox.test.assert_eq_str(third, "Hello Ada!", "size change drops the cache")
 nox.test.assert_true(nyx.view.template_disk_reads() > reads, "changed template is read again")
+
+nyx.view.clear_template_cache()
+cap_ctx: dict[str, str] = {}
+cap_i: int = 0
+cap_path: str = ""
+while cap_i < nyx.view.template_cache_cap() + 1:
+    cap_path = nyx.testing.scratch("nyx_tpl_cap_" + str(cap_i) + ".html")
+    nox.fs.write_string(cap_path, "n " + str(cap_i))
+    nyx.view.render(cap_path, cap_ctx)
+    cap_i = cap_i + 1
+nox.test.assert_eq_int(nyx.view.template_cache_size(), nyx.view.template_cache_cap(), "template cache is capped")
+evicted: str = nyx.testing.scratch("nyx_tpl_cap_0.html")
+before_evict: int = nyx.view.template_disk_reads()
+nyx.view.render(evicted, cap_ctx)
+nox.test.assert_true(nyx.view.template_disk_reads() > before_evict, "evicted template is read again")
 print("v279_template_cache_test ok")

@@ -19,22 +19,56 @@ class _CachedTemplate:
     modified_ms: int
     size: int
     body: str
+    used: int
 
-    def __init__(self: _CachedTemplate, path: str, modified_ms: int, size: int, body: str) -> None:
+    def __init__(self: _CachedTemplate, path: str, modified_ms: int, size: int, body: str, used: int) -> None:
         self.path = path
         self.modified_ms = modified_ms
         self.size = size
         self.body = body
+        self.used = used
 
+# nox.template yalnizca kaynak metni render eder; derlenmis sablon tutaci yok.
+# exists ve metadata her render'da kalir, degisen dosya eski govdeyi sunmasin.
+# Kapasite asilinca en eski kayit duser.
+_TEMPLATE_CAP: int = 64
 _templates: list[_CachedTemplate] = []
 _disk_reads: int = 0
+_template_tick: int = 0
 
 def template_disk_reads() -> int:
     return _disk_reads
 
+def template_cache_size() -> int:
+    return len(_templates)
+
+def template_cache_cap() -> int:
+    return _TEMPLATE_CAP
+
 def clear_template_cache() -> None:
     _templates = []
     _disk_reads = 0
+    _template_tick = 0
+
+def _touch_template(item: _CachedTemplate) -> None:
+    _template_tick = _template_tick + 1
+    item.used = _template_tick
+
+def _evict_templates() -> None:
+    while len(_templates) > _TEMPLATE_CAP:
+        oldest: int = 0
+        k: int = 1
+        while k < len(_templates):
+            if _templates[k].used < _templates[oldest].used:
+                oldest = k
+            k = k + 1
+        kept: list[_CachedTemplate] = []
+        n: int = 0
+        while n < len(_templates):
+            if n != oldest:
+                kept.append(_templates[n])
+            n = n + 1
+        _templates = kept
 
 # mtime ve boyut ayniysa dosya yeniden okunmaz. Boyut degisirse ayni saniyedeki
 # yazma da onbellegi dusurur.
@@ -46,25 +80,28 @@ def _cached_source(path: str) -> str:
     while i < len(_templates):
         item: _CachedTemplate = _templates[i]
         if item.path == path and item.modified_ms == meta.modified_ms and item.size == meta.size:
+            _touch_template(item)
             return item.body
         i = i + 1
     body: str = nox.fs.read_to_string(path)
     _disk_reads = _disk_reads + 1
-    fresh: _CachedTemplate = _CachedTemplate(path, meta.modified_ms, meta.size, body)
-    kept: list[_CachedTemplate] = []
+    _template_tick = _template_tick + 1
+    fresh: _CachedTemplate = _CachedTemplate(path, meta.modified_ms, meta.size, body, _template_tick)
+    kept_new: list[_CachedTemplate] = []
     j: int = 0
     replaced: bool = False
     while j < len(_templates):
         old: _CachedTemplate = _templates[j]
         if old.path == path:
-            kept.append(fresh)
+            kept_new.append(fresh)
             replaced = True
         else:
-            kept.append(old)
+            kept_new.append(old)
         j = j + 1
     if not replaced:
-        kept.append(fresh)
-    _templates = kept
+        kept_new.append(fresh)
+    _templates = kept_new
+    _evict_templates()
     return body
 
 def render(path: str, context: dict[str, str]) -> str:

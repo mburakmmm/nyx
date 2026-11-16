@@ -131,7 +131,7 @@ else:
 Pin Nyx in `nox.json`:
 
 ```json
-{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.30.8" }
+{ "alias": "nyx", "repo": "github.com/mburakmmm/nyx", "ref": "v0.30.9" }
 ```
 
 Requires **noxc ≥ 2.1.186** (CI pin **2.1.186**). `NYX_TRUSTED_PROXIES` bağlanan IP allowlist’idir (`HttpRequest.peer_addr`); liste boşken `NYX_TRUST_X_FORWARDED_FOR=1` kenarın XFF’ini olduğu gibi kullanır. IPv6 allowlist girdisi köşeli parantezsizdir (`::1`). Depolama anahtarı `nox.path.safe_join` ile çözülür; kök dışına çıkan `..` ve symlink `StorageError` olur. `nyx.storage.fetch` tam 2xx gövdeyi diske indirir. Sunucu `gzip` veya `deflate` gönderirse diske açılmış bayt yazılır. `store_http_file` dosyayı akar. HTTP/2 Windows’ta da açıktır. HTTP/3 çağrılmaz.

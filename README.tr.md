@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.30.8 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.9 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.8"
+      "ref": "v0.30.9"
     }
   ]
 }
@@ -165,6 +165,12 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 ---
 
 ## Sürüm notları
+
+### 0.30.9 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Postgres migration oturum advisory lock tutar. MySQL `GET_LOCK` kullanır. İkisi de uzun deyim boyunca durur ve bağlantı düşünce bırakılır. SQLite dizin kilidini kalp atışı uzatır; sahiplik giderse durur
+- `nyx.orm` CRUD ve transaction, `DATABASE_URL` o lehçeyi seçince Postgres ve MySQL’de de çalışır
+- Şablon kaynak önbelleği en fazla 64 kayıt tutar. Windows reparse sonucu yol, mtime ve boyutla hatırlanır. `NYX_METRICS_STALE_MS` varsayılan 5000, taban 1000
 
 ### 0.30.8 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı

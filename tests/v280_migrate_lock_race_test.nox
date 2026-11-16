@@ -1,0 +1,105 @@
+# Two migrators start together on an empty Postgres or MySQL database.
+# The lock is a session advisory lock or GET_LOCK, so the first insert
+# cannot lose a race and a pause longer than the old lease cannot steal it.
+
+import nox.fs
+import nox.os
+import nox.test
+import nox.uuid
+from nox.os import OsError
+from nox.postgres import Connection as PgConnection
+from nox.mysql import Connection as MysqlConnection
+from nox.db import Statement, Row
+import nyx.db
+import nyx.testing
+
+def database_url() -> str:
+    try:
+        return nox.os.getenv("DATABASE_URL")
+    except OsError:
+        return ""
+
+def token() -> str:
+    raw: str = nox.uuid.uuid4()
+    out: str = ""
+    i: int = 0
+    while i < len(raw) and len(out) < 12:
+        ch: str = raw[i]
+        if ch != "-":
+            out = out + ch
+        i = i + 1
+    return out
+
+race_url: str = ""
+race_dir: str = ""
+race_dialect: str = ""
+
+async def mig_one() -> int:
+    if race_dialect == "postgres":
+        conn: PgConnection = nyx.db.open_postgres(race_url)
+        try:
+            return nyx.db.migrate_postgres(conn, race_dir)
+        finally:
+            conn.close()
+    conn_my: MysqlConnection = nyx.db.open_mysql(race_url)
+    try:
+        return nyx.db.migrate_mysql(conn_my, race_dir)
+    finally:
+        conn_my.close()
+
+url: str = database_url()
+dialect: str = nyx.db.dialect_of_url(url)
+if dialect != "postgres" and dialect != "mysql":
+    print("v280_migrate_lock_race_test skipped (no postgres or mysql DATABASE_URL)")
+else:
+    nox.os.set_var("NYX_MIGRATE_LOCK_PAUSE_MS", "800")
+    stamp: str = token()
+    table: str = "nyx_lock_" + stamp
+    dir_path: str = nyx.testing.scratch("nyx_lock_race_" + stamp)
+    nox.fs.create_dir(dir_path)
+    race_url = url
+    race_dir = dir_path
+    race_dialect = dialect
+    version: str = "001_" + stamp + ".pg.sql"
+    if dialect == "mysql":
+        version = "001_" + stamp + ".mysql.sql"
+        nox.fs.write_string(
+            dir_path + "/" + version,
+            "CREATE TABLE " + table + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY);\n"
+        )
+    else:
+        nox.fs.write_string(
+            dir_path + "/" + version,
+            "CREATE TABLE " + table + " (id BIGSERIAL PRIMARY KEY);\n"
+        )
+    task_left: Task[int] = spawn mig_one()
+    task_right: Task[int] = spawn mig_one()
+    n_left: int = await task_left
+    n_right: int = await task_right
+    print(dialect + " lock " + str(n_left) + " " + str(n_right))
+    nox.test.assert_eq_int(n_left + n_right, 1, "one migrator applies the file")
+    if dialect == "postgres":
+        check: PgConnection = nyx.db.open_postgres(url)
+        seen: list[Row] = check.query("SELECT COUNT(*) FROM " + table)
+        nox.test.assert_eq_int(seen[0].get_int(0), 0, "postgres table exists")
+        versions: list[Row] = check.query("SELECT COUNT(*) FROM schema_migrations WHERE version = '" + version + "'")
+        nox.test.assert_eq_int(versions[0].get_int(0), 1, "one postgres migration row")
+        check.execute("DROP TABLE IF EXISTS " + table)
+        drop_pg: Statement = check.prepare("DELETE FROM schema_migrations WHERE version = $1")
+        drop_pg.bind_str(0, version)
+        drop_pg.execute()
+        check.close()
+    else:
+        check_my: MysqlConnection = nyx.db.open_mysql(url)
+        seen_my: list[Row] = check_my.query("SELECT COUNT(*) FROM " + table)
+        nox.test.assert_eq_int(seen_my[0].get_int(0), 0, "mysql table exists")
+        versions_my: list[Row] = check_my.query(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = '" + version + "'"
+        )
+        nox.test.assert_eq_int(versions_my[0].get_int(0), 1, "one mysql migration row")
+        check_my.execute("DROP TABLE IF EXISTS " + table)
+        drop_my: Statement = check_my.prepare("DELETE FROM schema_migrations WHERE version = ?")
+        drop_my.bind_str(0, version)
+        drop_my.execute()
+        check_my.close()
+    print("v280_migrate_lock_race_test ok")

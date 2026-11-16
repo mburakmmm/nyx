@@ -1,5 +1,6 @@
 # Pool counters and gauge text. No database.
 
+import nox.os
 import nox.test
 import nox.strings
 import nyx.metrics
@@ -66,4 +67,26 @@ after: int = nyx.metrics.refresh_generation()
 nox.test.assert_true(after != before, "a stale generation is replaced")
 nox.test.assert_eq_int(nyx.metrics.db_pool_checkouts(), 0, "a new generation starts at zero")
 nox.test.assert_eq_str(nyx.metrics.pool_series_text(), "", "a new generation has no workers")
+
+nox.os.set_var("NYX_METRICS_STALE_MS", "1000")
+nox.test.assert_eq_int(nyx.metrics.worker_stale_ms(), 1000, "stale window is configurable")
+nyx.metrics.reset()
+filled_again: int = 0
+while filled_again < nyx.metrics.worker_slot_count():
+    nyx.metrics.record_pool_worker(filled_again, 1, 1, 0)
+    if filled_again % 2 == 0:
+        nyx.metrics.stamp_worker(filled_again, 1)
+    filled_again = filled_again + 1
+reclaimed: int = 0
+again_slot: int = 0
+while reclaimed < 32:
+    nyx.metrics.release_claim()
+    again_slot = nyx.metrics.claim_worker()
+    nox.test.assert_true(again_slot >= 0, "a stale worker is claimed again")
+    nox.test.assert_eq_int(again_slot % 2, 0, "a live worker is not taken")
+    reclaimed = reclaimed + 1
+nyx.metrics.release_claim()
+blocked: int = nyx.metrics.claim_worker()
+nox.test.assert_eq_int(blocked, -1, "live workers stay registered")
+nox.os.set_var("NYX_METRICS_STALE_MS", "")
 print("v274_pool_metrics_test ok")
