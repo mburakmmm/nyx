@@ -102,6 +102,7 @@ def open_postgres(conninfo: str) -> PgConnection:
     try:
         return nox.postgres.open(conninfo)
     except PostgresError as e:
+        print("postgres open: " + e.message)
         raise DbError("postgres open failed: " + e.message)
 
 # mysql://[user[:pass]@]host[:port]/db - prepare/bind + last_insert_rowid.
@@ -109,6 +110,7 @@ def open_mysql(conn_url: str) -> MysqlConnection:
     try:
         return nox.mysql.open_url(conn_url)
     except MysqlError as e:
+        print("mysql open: " + e.message)
         raise DbError("mysql open failed: " + e.message)
 
 # sqlite / mysql: "?". postgres: "$1" (index 0-based).
@@ -575,20 +577,27 @@ def _guard_sqlite(db: Connection, token: str) -> None:
 
 # Oturum kilidi lease kullanmaz. Uzun sorgu surerken sunucu kilidi tutar.
 # Baglanti dusunce kilit birakilir. Satir INSERT yarisi yoktur.
+# current_database() name tipindedir. hashtext yalnizca text alir.
+def _pg_lock_keys() -> str:
+    return "hashtext(current_database()::text), 831194108"
+
 def _pg_lock_flag(conn: PgConnection, sql: str) -> bool:
-    rows: list[PgRow] = conn.query(sql)
+    rows: list[PgRow] = []
+    try:
+        rows = conn.query(sql)
+    except PostgresError as e:
+        print("pg lock: " + e.message)
+        raise DbError("migration kilidi sorgusu basarisiz: " + e.message)
     if len(rows) == 0:
         return False
     return rows[0].get_int(0) == 1
 
 def _acquire_pg(conn: PgConnection) -> None:
     started: int = nox.time.now_ms()
+    try_sql: str = "SELECT CASE WHEN pg_try_advisory_lock(" + _pg_lock_keys() + ") THEN 1 ELSE 0 END"
     while True:
         now: int = nox.time.now_ms()
-        if _pg_lock_flag(
-            conn,
-            "SELECT CASE WHEN pg_try_advisory_lock(hashtext(current_database()), 831194108) THEN 1 ELSE 0 END"
-        ):
+        if _pg_lock_flag(conn, try_sql):
             return
         if now - started > _LOCK_WAIT_MS:
             raise DbError("migration kilidi alinamadi")
@@ -596,7 +605,7 @@ def _acquire_pg(conn: PgConnection) -> None:
 
 def _release_pg(conn: PgConnection) -> None:
     try:
-        conn.query("SELECT pg_advisory_unlock(hashtext(current_database()), 831194108)")
+        conn.query("SELECT pg_advisory_unlock(" + _pg_lock_keys() + ")")
     except PostgresError:
         return
 
@@ -604,7 +613,7 @@ def _guard_pg(conn: PgConnection) -> None:
     _pause_for_lock()
     held: bool = _pg_lock_flag(
         conn,
-        "SELECT CASE WHEN pg_advisory_lock_held(hashtext(current_database()), 831194108) THEN 1 ELSE 0 END"
+        "SELECT CASE WHEN pg_advisory_lock_held(" + _pg_lock_keys() + ") THEN 1 ELSE 0 END"
     )
     if not held:
         raise DbError("migration kilidi kaybedildi")

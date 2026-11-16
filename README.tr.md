@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.30.9 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.10 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.9"
+      "ref": "v0.30.10"
     }
   ]
 }
@@ -165,6 +165,12 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 ---
 
 ## Sürüm notları
+
+### 0.30.10 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Postgres advisory lock `current_database()` değerini text’e çevirir. `hashtext` Postgres 16’da çözülür. Başarısız kilit sorgusu sunucu mesajını yazar ve `DbError` olur
+- İki migrator yarışı bağlantıları üst fiberde açar. libmysqlclient aynı iş parçacığında iki bağlantıyı aynı anda açamaz
+- Windows reparse önbelleği `fsutil` sonrasındaki metadata’yı saklar. Araç mtime değiştirirse ikinci okuma yeniden süreç açmaz
 
 ### 0.30.9 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı

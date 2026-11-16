@@ -1,6 +1,6 @@
 # Two migrators start together on an empty Postgres or MySQL database.
-# The lock is a session advisory lock or GET_LOCK, so the first insert
-# cannot lose a race and a pause longer than the old lease cannot steal it.
+# Connections are opened on the parent fiber. libmysqlclient is not
+# reentrant on one OS thread, so the two fibers must not call open.
 
 import nox.fs
 import nox.os
@@ -30,22 +30,41 @@ def token() -> str:
         i = i + 1
     return out
 
+class PgHold:
+    left: PgConnection
+    right: PgConnection
+
+    def __init__(self: PgHold, left: PgConnection, right: PgConnection) -> None:
+        self.left = left
+        self.right = right
+
+class MyHold:
+    left: MysqlConnection
+    right: MysqlConnection
+
+    def __init__(self: MyHold, left: MysqlConnection, right: MysqlConnection) -> None:
+        self.left = left
+        self.right = right
+
 race_url: str = ""
 race_dir: str = ""
 race_dialect: str = ""
+slot_pick: int = 0
+pg_hold: list[PgHold] = []
+my_hold: list[MyHold] = []
 
 async def mig_one() -> int:
-    if race_dialect == "postgres":
-        conn: PgConnection = nyx.db.open_postgres(race_url)
-        try:
-            return nyx.db.migrate_postgres(conn, race_dir)
-        finally:
-            conn.close()
-    conn_my: MysqlConnection = nyx.db.open_mysql(race_url)
-    try:
-        return nyx.db.migrate_mysql(conn_my, race_dir)
-    finally:
-        conn_my.close()
+    picked: int = slot_pick
+    slot_pick = slot_pick + 1
+    if race_dialect == "mysql":
+        mine: MysqlConnection = my_hold[0].left
+        if picked != 0:
+            mine = my_hold[0].right
+        return nyx.db.migrate_mysql(mine, race_dir)
+    theirs: PgConnection = pg_hold[0].left
+    if picked != 0:
+        theirs = pg_hold[0].right
+    return nyx.db.migrate_postgres(theirs, race_dir)
 
 url: str = database_url()
 dialect: str = nyx.db.dialect_of_url(url)
@@ -67,11 +86,13 @@ else:
             dir_path + "/" + version,
             "CREATE TABLE " + table + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY);\n"
         )
+        my_hold.append(MyHold(nyx.db.open_mysql(url), nyx.db.open_mysql(url)))
     else:
         nox.fs.write_string(
             dir_path + "/" + version,
             "CREATE TABLE " + table + " (id BIGSERIAL PRIMARY KEY);\n"
         )
+        pg_hold.append(PgHold(nyx.db.open_postgres(url), nyx.db.open_postgres(url)))
     task_left: Task[int] = spawn mig_one()
     task_right: Task[int] = spawn mig_one()
     n_left: int = await task_left
@@ -89,6 +110,8 @@ else:
         drop_pg.bind_str(0, version)
         drop_pg.execute()
         check.close()
+        pg_hold[0].left.close()
+        pg_hold[0].right.close()
     else:
         check_my: MysqlConnection = nyx.db.open_mysql(url)
         seen_my: list[Row] = check_my.query("SELECT COUNT(*) FROM " + table)
@@ -102,4 +125,6 @@ else:
         drop_my.bind_str(0, version)
         drop_my.execute()
         check_my.close()
+        my_hold[0].left.close()
+        my_hold[0].right.close()
     print("v280_migrate_lock_race_test ok")

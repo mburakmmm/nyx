@@ -185,6 +185,13 @@ def _reparse_point(path: str) -> bool:
     except FsError:
         modified_ms = -1
         size = -1
+    if modified_ms < 0:
+        c0: int = 0
+        while c0 < len(_reparse_cache):
+            missed: _ReparseSeen = _reparse_cache[c0]
+            if missed.path == path and missed.modified_ms < 0:
+                return missed.hit
+            c0 = c0 + 1
     if modified_ms >= 0:
         c: int = 0
         while c < len(_reparse_cache):
@@ -211,8 +218,13 @@ def _reparse_point(path: str) -> bool:
     except ProcessError:
         hit = True
         _reparse_queries = _reparse_queries + 1
-    if modified_ms >= 0:
-        _remember_reparse(path, modified_ms, size, hit)
+    # fsutil dizinin mtime degerini degistirebilir. Onbellek anahtari
+    # sorgudan sonraki metadata olmali, yoksa ikinci okuma yeniden surec acar.
+    try:
+        after: FileMetadata = nox.fs.metadata(path)
+        _remember_reparse(path, after.modified_ms, after.size, hit)
+    except FsError:
+        _remember_reparse(path, -1, -1, hit)
     return hit
 
 # Her bilesen ayri canonicalize edilir. Windows, 'link/secret' gibi cok

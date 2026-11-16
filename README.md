@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.30.9 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.30.10 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.9"
+      "ref": "v0.30.10"
     }
   ]
 }
@@ -172,6 +172,12 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 ---
 
 ## Changelog
+
+### 0.30.10 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- The Postgres advisory lock casts `current_database()` to text so `hashtext` resolves on Postgres 16. A failed lock query becomes `DbError` and prints the server message
+- The two-migrator race opens both connections on the parent fiber. libmysqlclient cannot open two connections at once on one OS thread
+- The Windows reparse cache stores the metadata read after `fsutil`, so a tool that updates mtime does not force another query
 
 ### 0.30.9 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
