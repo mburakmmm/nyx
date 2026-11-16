@@ -2,6 +2,7 @@ import nox.fs
 import nox.strings
 import nox.test
 import nyx.cli_gen
+import nyx.testing
 
 nox.test.assert_eq_str(nyx.cli_gen.snake("BlogPost"), "blog_post", "snake")
 nox.test.assert_eq_str(nyx.cli_gen.pluralize("Post"), "posts", "plural post")
@@ -11,7 +12,7 @@ nox.test.assert_eq_str(nyx.cli_gen.sql_type("integer"), "INTEGER", "sql int")
 nox.test.assert_eq_str(nyx.cli_gen.sql_type("float"), "REAL", "sql float")
 nox.test.assert_eq_str(nyx.cli_gen.sql_type("string"), "TEXT", "sql string")
 
-root: str = "/tmp/nyx_cli_gen_test"
+root: str = nyx.testing.scratch("nyx_cli_gen_test")
 if nox.fs.exists(root):
     nox.fs.remove_dir_all(root)
 

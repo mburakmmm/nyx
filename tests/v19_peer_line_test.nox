@@ -30,6 +30,7 @@ empty: dict[str, str] = {}
 p1: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.1:4000"))
 p2: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.2:4000"))
 p1b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", empty, "10.0.0.1:4001"))
+print("peer a " + str(p1.status) + " " + p1.body)
 nox.test.assert_eq_int(p1.status, 200, "peer a")
 nox.test.assert_eq_int(p2.status, 200, "peer b other ip")
 nox.test.assert_eq_int(p1b.status, 429, "peer a limited")

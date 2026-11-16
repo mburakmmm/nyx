@@ -13,6 +13,7 @@ import nyx.response
 import nyx.server
 from nyx.cable import Hub
 from nyx.config import Config
+import nyx.testing
 
 headers: dict[str, str] = {}
 headers["X-Csrf-Token"] = "title-case"
@@ -50,7 +51,7 @@ nox.test.assert_eq_int(tuned.max_body_bytes, 1024, "body limit")
 nox.test.assert_eq_int(tuned.http_pool_idle, 0, "pool off")
 nyx.server.apply(tuned)
 
-root: str = "/tmp/nyx_v24_safe"
+root: str = nyx.testing.scratch("nyx_v24_safe")
 if not nox.fs.exists(root):
     nox.fs.create_dir(root)
 escaped: bool = False

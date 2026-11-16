@@ -22,6 +22,7 @@ from nyx.config import Config
 from nyx.model import Attributes, Record
 from nyx.rate_limit import MemoryStore
 from nyx.storage import StorageError
+import nyx.testing
 
 store: MemoryStore = nyx.rate_limit.open_memory()
 nox.test.assert_true(nyx.rate_limit.allow(store, "k", 2, 60000), "rl1")
@@ -72,7 +73,7 @@ nox.test.assert_true(row != None, "post exists")
 if row != None:
     nox.test.assert_eq_int(row.get_int("deleted_at"), 123, "soft delete")
 
-root: str = "/tmp/nyx_storage_v15_test"
+root: str = nyx.testing.scratch("nyx_storage_v15_test")
 if not nox.fs.exists(root):
     nox.fs.create_dir(root)
 hit_limit: bool = False
@@ -82,7 +83,7 @@ except StorageError:
     hit_limit = True
 nox.test.assert_true(hit_limit, "size limit")
 
-tpl: str = "/tmp/nyx_mail_tpl.txt"
+tpl: str = nyx.testing.scratch("nyx_mail_tpl.txt")
 nox.fs.write_string(tpl, "Hi {{name}}")
 ctxm: dict[str, str] = {}
 ctxm["name"] = "Ada"

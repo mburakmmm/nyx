@@ -11,6 +11,7 @@ from nox.sqlite import Connection
 import nyx.db
 import nyx.job
 from nyx.job import JobRegistry
+import nyx.testing
 
 def fence_of(job_json: str) -> int:
     parsed: JsonValue = nox.json.parse(job_json)
@@ -66,7 +67,7 @@ legacy_id: int = nyx.job.enqueue(legacy, "Legacy", "{}", nox.time.now_ms())
 nox.test.assert_true(legacy_id > 0, "legacy table accepts enqueue")
 
 # Two workers, one file. Crash, reclaim once, old fence cannot finish.
-path: str = "/tmp/nyx_job_fence.sqlite"
+path: str = nyx.testing.scratch("nyx_job_fence.sqlite")
 if nox.fs.exists(path):
     nox.fs.remove_file(path)
 owner: Connection = nyx.db.open(path)
@@ -112,7 +113,7 @@ file_id: int = nyx.job.enqueue(file_db, "FileAuto", "{}", nox.time.now_ms())
 nox.test.assert_true(nyx.job.process_one(file_db, file_reg), "file auto job ran")
 nox.test.assert_eq_str(status_of(file_db, file_id), "completed", "file auto job completed")
 
-par_path: str = "/tmp/nyx_job_parallel.sqlite"
+par_path: str = nyx.testing.scratch("nyx_job_parallel.sqlite")
 if nox.fs.exists(par_path):
     nox.fs.remove_file(par_path)
 if nox.fs.exists(par_path + "-wal"):
@@ -152,6 +153,7 @@ par_ok_b: bool = await par_task_b
 nox.test.assert_true(par_ok_a, "parallel job a ran")
 nox.test.assert_true(par_ok_b, "parallel job b ran")
 nox.test.assert_eq_int(nyx.job.active_id(), 0, "parallel jobs clear the active id")
+nox.test.assert_eq_int(nyx.job.lease_tasks_open(), 0, "heartbeat tasks have finished")
 par_a.close()
 par_b.close()
 

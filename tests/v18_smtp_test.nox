@@ -7,6 +7,7 @@ import nox.time
 from nox.process import Command, Output
 import nyx.config
 import nyx.mailer
+import nyx.testing
 from nyx.config import Config
 from nyx.mailer import Mail, MailerError
 
@@ -20,18 +21,21 @@ off_cfg: Config = nyx.config.from_env()
 nox.test.assert_true(not off_cfg.mail_smtp_starttls, "NYX_MAIL_SMTP_STARTTLS=0 aninda TLS")
 
 port: int = 18025
-if nox.fs.exists("/tmp/nyx-fake-smtp.ready"):
-    nox.fs.remove_file("/tmp/nyx-fake-smtp.ready")
-bg: Command = Command("python3")
-bg.arg("-c")
-bg.arg("import subprocess,sys; subprocess.Popen(['python3','tests/fake_smtp.py',sys.argv[1]], start_new_session=True, stdout=open('/tmp/nyx-fake-smtp.log','w'), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)")
+ready_path: str = nyx.testing.scratch("nyx-fake-smtp.ready")
+log_path: str = nyx.testing.scratch("nyx-fake-smtp.log")
+if nox.fs.exists(ready_path):
+    nox.fs.remove_file(ready_path)
+bg: Command = Command(nyx.testing.python_bin())
+bg.arg("tests/start_fake_smtp.py")
 bg.arg(str(port))
+bg.arg(ready_path)
+bg.arg(log_path)
 out: Output = bg.run()
 nox.test.assert_true(out.success(), "sahte SMTP basladi")
 ready: bool = False
 wait_i: int = 0
 while wait_i < 50:
-    if nox.fs.exists("/tmp/nyx-fake-smtp.ready"):
+    if nox.fs.exists(ready_path):
         ready = True
         wait_i = 50
     else:

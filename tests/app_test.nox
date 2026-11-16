@@ -10,8 +10,9 @@ from nyx.app import Application, AppError
 from nyx.config import Config
 from nyx.db import DbError
 import nyx.db
+import nyx.testing
 
-dir_path: str = "/tmp/nyx_app_mig_test"
+dir_path: str = nyx.testing.scratch("nyx_app_mig_test")
 if not nox.fs.exists(dir_path):
     nox.fs.create_dir(dir_path)
 nox.fs.write_string(dir_path + "/001_t.sql", "CREATE TABLE IF NOT EXISTS t_app (id INTEGER PRIMARY KEY);")
@@ -47,7 +48,7 @@ nyx.app.shutdown(application)
 cfg2: Config = nyx.config.defaults("test")
 cfg2.secret_key = "nyx-test-secret-change-me-32bytes!"
 cfg2.db_path = ":memory:"
-cfg2.migrate_path = "/tmp/nyx_missing_migrate_dir_xyz"
+cfg2.migrate_path = nyx.testing.scratch("nyx_missing_migrate_dir_xyz")
 cfg2.auto_migrate = False
 cfg2.csrf_enabled = False
 cfg2.log_requests = False

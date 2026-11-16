@@ -33,6 +33,7 @@ r_b: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx, ""))
 hx2: dict[str, str] = {}
 hx2["X-Forwarded-For"] = "9.9.9.9"
 r_c: HttpResponse = nyx.app.dispatch(app, HttpRequest("GET", "/", "", hx2, ""))
+print("rl a " + str(r_a.status) + " " + r_a.body)
 nox.test.assert_eq_int(r_a.status, 200, "rl a")
 nox.test.assert_eq_int(r_b.status, 200, "rl b")
 nox.test.assert_eq_int(r_c.status, 429, "xff ignored without trust")

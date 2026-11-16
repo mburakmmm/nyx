@@ -25,7 +25,10 @@ import nox.fs
 import nox.path
 import nox.strings
 import nox.url
+import nox.time
+import nox.uuid
 from nox.sqlite import Connection, SqliteError
+from nox.fs import FsError, FileMetadata
 from nox.postgres import Connection as PgConnection, PostgresError
 from nox.db import Statement
 from nox.mysql import Connection as MysqlConnection, MysqlError
@@ -315,31 +318,286 @@ def _record_applied(db: Connection, version: str) -> None:
     stmt.bind_str(0, version)
     stmt.execute()
 
+_LOCK_WAIT_MS: int = 180000
+_LOCK_LEASE_MS: int = 120000
+
+def _sqlite_db_file(db: Connection) -> str:
+    try:
+        rows: list[Row] = db.query("PRAGMA database_list")
+        if len(rows) > 0:
+            return rows[0].get_str(2)
+    except SqliteError:
+        return ""
+    return ""
+
+def _sqlite_busy(db: Connection) -> None:
+    try:
+        db.query("PRAGMA busy_timeout = 30000")
+    except SqliteError:
+        return
+
+# PRAGMA bir okuma islemi birakirsa diger baglantinin BEGIN IMMEDIATE
+# cagrisi tek OS ipligini kilitler. Migration kendi islemini acmadan once birakilir.
+def _sqlite_release_read(db: Connection) -> None:
+    try:
+        db.execute("ROLLBACK")
+    except SqliteError:
+        return
+
+def _lock_table_sql(dialect: str) -> str:
+    if dialect == "postgres":
+        return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner TEXT NOT NULL, until_ms BIGINT NOT NULL)"
+    if dialect == "mysql":
+        return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner VARCHAR(64) NOT NULL, until_ms BIGINT NOT NULL)"
+    return "CREATE TABLE IF NOT EXISTS nyx_migrate_lock (id INTEGER PRIMARY KEY NOT NULL, owner TEXT NOT NULL, until_ms INTEGER NOT NULL)"
+
+# SQLite kilidi ayri bir veritabaninda tutulmaz. Ikinci baglanti uzerindeki
+# UPDATE, tek OS ipligini sqlite icinde bekletip fiberi kilitler.
+# mkdir atomiktir: dizini olusturan instance kilidi alir, bekleyen uyur.
+def _lock_dir(db: Connection) -> str:
+    path: str = _sqlite_db_file(db)
+    if len(path) == 0:
+        return ""
+    return path + ".nyx-migrate-lock"
+
+def _parse_u64(text: str) -> int:
+    n: int = 0
+    i: int = 0
+    while i < len(text):
+        b: int = nox.strings.byte_at(text, i)
+        if b < 48 or b > 57:
+            return n
+        n = n * 10 + (b - 48)
+        i = i + 1
+    return n
+
+def _owner_token(text: str) -> str:
+    i: int = 0
+    while i < len(text):
+        if nox.strings.byte_at(text, i) == 10:
+            return text[0:i]
+        i = i + 1
+    return ""
+
+def _owner_until(text: str) -> int:
+    i: int = 0
+    while i < len(text):
+        if nox.strings.byte_at(text, i) == 10:
+            return _parse_u64(text[i + 1:len(text)])
+        i = i + 1
+    return 0
+
+def _read_owner(dir_path: str) -> str:
+    owner_path: str = dir_path + "/owner"
+    if not nox.fs.is_file(owner_path):
+        return ""
+    try:
+        return nox.fs.read_to_string(owner_path)
+    except FsError:
+        return ""
+
+def _break_stale_lock(dir_path: str, now: int) -> None:
+    if not nox.fs.is_dir(dir_path):
+        return
+    text: str = _read_owner(dir_path)
+    stale: bool = False
+    if len(text) == 0:
+        try:
+            meta: FileMetadata = nox.fs.metadata(dir_path)
+            stale = (now - meta.modified_ms) > _LOCK_LEASE_MS
+        except FsError:
+            stale = False
+    else:
+        stale = _owner_until(text) < now
+    if not stale:
+        return
+    again: str = _read_owner(dir_path)
+    if again != text:
+        return
+    trash: str = dir_path + ".stale." + nox.uuid.uuid4()
+    try:
+        nox.fs.rename(dir_path, trash)
+    except FsError:
+        return
+    nox.fs.remove_dir_all(trash)
+
+def _try_create_lock(dir_path: str, token: str, now: int) -> bool:
+    try:
+        nox.fs.create_dir(dir_path)
+    except FsError:
+        return False
+    nox.fs.write_string(dir_path + "/owner", token + "\n" + str(now + _LOCK_LEASE_MS))
+    written: str = _read_owner(dir_path)
+    if _owner_token(written) != token:
+        return False
+    return True
+
+def _acquire_sqlite(db: Connection) -> str:
+    dir_path: str = _lock_dir(db)
+    if len(dir_path) == 0:
+        return ""
+    _sqlite_release_read(db)
+    if nox.fs.is_file(dir_path):
+        nox.fs.remove_file(dir_path)
+    token: str = nox.uuid.uuid4()
+    started: int = nox.time.now_ms()
+    while True:
+        now: int = nox.time.now_ms()
+        _break_stale_lock(dir_path, now)
+        if _try_create_lock(dir_path, token, now):
+            return token
+        if now - started > _LOCK_WAIT_MS:
+            raise DbError("migration kilidi alinamadi")
+        nox.time.sleep_ms(20)
+    return ""
+
+def _release_sqlite(db: Connection, token: str) -> None:
+    if len(token) == 0:
+        return
+    dir_path: str = _lock_dir(db)
+    if len(dir_path) == 0:
+        return
+    if _owner_token(_read_owner(dir_path)) != token:
+        return
+    trash: str = dir_path + ".done." + token
+    try:
+        nox.fs.rename(dir_path, trash)
+    except FsError:
+        return
+    nox.fs.remove_dir_all(trash)
+
+def _refresh_sqlite(db: Connection, token: str) -> None:
+    if len(token) == 0:
+        return
+    dir_path: str = _lock_dir(db)
+    if len(dir_path) == 0:
+        return
+    if _owner_token(_read_owner(dir_path)) != token:
+        return
+    now: int = nox.time.now_ms()
+    nox.fs.write_string(dir_path + "/owner", token + "\n" + str(now + _LOCK_LEASE_MS))
+
+def _ensure_lock_row_pg(conn: PgConnection) -> None:
+    conn.execute(_lock_table_sql("postgres"))
+    conn.execute(
+        "INSERT INTO nyx_migrate_lock (id, owner, until_ms) " +
+        "SELECT 1, '', 0 WHERE NOT EXISTS (SELECT 1 FROM nyx_migrate_lock WHERE id = 1)"
+    )
+
+def _take_pg_lock(conn: PgConnection, token: str, now: int) -> bool:
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET owner = $1, until_ms = $2 WHERE id = 1 AND (owner = '' OR until_ms < $3)"
+    )
+    stmt.bind_str(0, token)
+    stmt.bind_int(1, now + _LOCK_LEASE_MS)
+    stmt.bind_int(2, now)
+    return stmt.execute() > 0
+
+def _acquire_pg(conn: PgConnection) -> str:
+    _ensure_lock_row_pg(conn)
+    token: str = nox.uuid.uuid4()
+    started: int = nox.time.now_ms()
+    while True:
+        now: int = nox.time.now_ms()
+        if _take_pg_lock(conn, token, now):
+            return token
+        if now - started > _LOCK_WAIT_MS:
+            raise DbError("migration kilidi alinamadi")
+        nox.time.sleep_ms(20)
+    return ""
+
+def _release_pg(conn: PgConnection, token: str) -> None:
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET owner = '', until_ms = 0 WHERE id = 1 AND owner = $1"
+    )
+    stmt.bind_str(0, token)
+    stmt.execute()
+
+def _refresh_pg(conn: PgConnection, token: str) -> None:
+    now: int = nox.time.now_ms()
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET until_ms = $1 WHERE id = 1 AND owner = $2"
+    )
+    stmt.bind_int(0, now + _LOCK_LEASE_MS)
+    stmt.bind_str(1, token)
+    stmt.execute()
+
+def _ensure_lock_row_mysql(conn: MysqlConnection) -> None:
+    conn.execute(_lock_table_sql("mysql"))
+    conn.execute(
+        "INSERT INTO nyx_migrate_lock (id, owner, until_ms) " +
+        "SELECT 1, '', 0 WHERE NOT EXISTS (SELECT 1 FROM nyx_migrate_lock WHERE id = 1)"
+    )
+
+def _take_mysql_lock(conn: MysqlConnection, token: str, now: int) -> bool:
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET owner = ?, until_ms = ? WHERE id = 1 AND (owner = '' OR until_ms < ?)"
+    )
+    stmt.bind_str(0, token)
+    stmt.bind_int(1, now + _LOCK_LEASE_MS)
+    stmt.bind_int(2, now)
+    return stmt.execute() > 0
+
+def _acquire_mysql(conn: MysqlConnection) -> str:
+    _ensure_lock_row_mysql(conn)
+    token: str = nox.uuid.uuid4()
+    started: int = nox.time.now_ms()
+    while True:
+        now: int = nox.time.now_ms()
+        if _take_mysql_lock(conn, token, now):
+            return token
+        if now - started > _LOCK_WAIT_MS:
+            raise DbError("migration kilidi alinamadi")
+        nox.time.sleep_ms(20)
+    return ""
+
+def _release_mysql(conn: MysqlConnection, token: str) -> None:
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET owner = '', until_ms = 0 WHERE id = 1 AND owner = ?"
+    )
+    stmt.bind_str(0, token)
+    stmt.execute()
+
+def _refresh_mysql(conn: MysqlConnection, token: str) -> None:
+    now: int = nox.time.now_ms()
+    stmt: Statement = conn.prepare(
+        "UPDATE nyx_migrate_lock SET until_ms = ? WHERE id = 1 AND owner = ?"
+    )
+    stmt.bind_int(0, now + _LOCK_LEASE_MS)
+    stmt.bind_str(1, token)
+    stmt.execute()
+
 def migrate(db: Connection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
     if not nox.fs.is_dir(dir_path):
         raise DbError("migration yolu dizin degil: " + dir_path)
-    _ensure_migrations_table(db)
-    entries: list[str] = nox.fs.read_dir(dir_path)
-    ordered: list[str] = select_up_migrations(entries, "sqlite")
+    _sqlite_busy(db)
+    token: str = _acquire_sqlite(db)
     applied: int = 0
-    j: int = 0
-    while j < len(ordered):
-        version: str = ordered[j]
-        if not _already_applied(db, version):
-            full: str = nox.path.join(dir_path, version)
-            sql: str = nox.fs.read_to_string(full)
-            db.execute("BEGIN IMMEDIATE")
-            try:
-                db.execute(sql)
-                _record_applied(db, version)
-            except SqliteError as e:
-                db.execute("ROLLBACK")
-                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
-            db.execute("COMMIT")
-            applied = applied + 1
-        j = j + 1
+    try:
+        _ensure_migrations_table(db)
+        entries: list[str] = nox.fs.read_dir(dir_path)
+        ordered: list[str] = select_up_migrations(entries, "sqlite")
+        j: int = 0
+        while j < len(ordered):
+            _refresh_sqlite(db, token)
+            version: str = ordered[j]
+            if not _already_applied(db, version):
+                full: str = nox.path.join(dir_path, version)
+                sql: str = nox.fs.read_to_string(full)
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    db.execute(sql)
+                    _record_applied(db, version)
+                except SqliteError as e:
+                    db.execute("ROLLBACK")
+                    raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+                db.execute("COMMIT")
+                applied = applied + 1
+            j = j + 1
+    finally:
+        _release_sqlite(db, token)
     return applied
 
 def _drop_last_n(s: str, n: int) -> str:
@@ -357,27 +615,33 @@ def down_migration_name(version: str) -> str:
     return version + ".down.sql"
 
 def rollback(db: Connection, dir_path: str) -> str:
-    _ensure_migrations_table(db)
-    stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
-    rows: list[Row] = stmt.query()
-    if len(rows) == 0:
-        raise DbError("geri alinacak migration yok")
-    version: str = rows[0].get_str(0)
-    down_name: str = down_migration_name(version)
-    down_path: str = nox.path.join(dir_path, down_name)
-    if not nox.fs.exists(down_path):
-        raise DbError("down migration dosyasi yok: " + down_path)
-    sql: str = nox.fs.read_to_string(down_path)
-    db.execute("BEGIN IMMEDIATE")
+    _sqlite_busy(db)
+    token: str = _acquire_sqlite(db)
+    version: str = ""
     try:
-        db.execute(sql)
-        del_stmt: Statement = db.prepare("DELETE FROM schema_migrations WHERE version = ?")
-        del_stmt.bind_str(0, version)
-        del_stmt.execute()
-    except SqliteError as e:
-        db.execute("ROLLBACK")
-        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
-    db.execute("COMMIT")
+        _ensure_migrations_table(db)
+        stmt: Statement = db.prepare("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1")
+        rows: list[Row] = stmt.query()
+        if len(rows) == 0:
+            raise DbError("geri alinacak migration yok")
+        version = rows[0].get_str(0)
+        down_name: str = down_migration_name(version)
+        down_path: str = nox.path.join(dir_path, down_name)
+        if not nox.fs.exists(down_path):
+            raise DbError("down migration dosyasi yok: " + down_path)
+        sql: str = nox.fs.read_to_string(down_path)
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            db.execute(sql)
+            del_stmt: Statement = db.prepare("DELETE FROM schema_migrations WHERE version = ?")
+            del_stmt.bind_str(0, version)
+            del_stmt.execute()
+        except SqliteError as e:
+            db.execute("ROLLBACK")
+            raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+        db.execute("COMMIT")
+    finally:
+        _release_sqlite(db, token)
     return version
 
 def schema_dump(db: Connection, path: str) -> None:
@@ -417,51 +681,61 @@ def migrate_postgres(conn: PgConnection, dir_path: str) -> int:
         raise DbError("migration dizini yok: " + dir_path)
     if not nox.fs.is_dir(dir_path):
         raise DbError("migration yolu dizin degil: " + dir_path)
-    _ensure_migrations_table_pg(conn)
-    entries: list[str] = nox.fs.read_dir(dir_path)
-    ordered: list[str] = select_up_migrations(entries, "postgres")
+    token: str = _acquire_pg(conn)
     applied: int = 0
-    j: int = 0
-    while j < len(ordered):
-        version: str = ordered[j]
-        if not _already_applied_pg(conn, version):
-            full: str = nox.path.join(dir_path, version)
-            sql: str = nox.fs.read_to_string(full)
-            conn.execute("BEGIN")
-            try:
-                conn.execute(sql)
-                _record_applied_pg(conn, version)
-                conn.execute("COMMIT")
-            except PostgresError as e:
-                conn.execute("ROLLBACK")
-                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
-            applied = applied + 1
-        j = j + 1
+    try:
+        _ensure_migrations_table_pg(conn)
+        entries: list[str] = nox.fs.read_dir(dir_path)
+        ordered: list[str] = select_up_migrations(entries, "postgres")
+        j: int = 0
+        while j < len(ordered):
+            _refresh_pg(conn, token)
+            version: str = ordered[j]
+            if not _already_applied_pg(conn, version):
+                full: str = nox.path.join(dir_path, version)
+                sql: str = nox.fs.read_to_string(full)
+                conn.execute("BEGIN")
+                try:
+                    conn.execute(sql)
+                    _record_applied_pg(conn, version)
+                    conn.execute("COMMIT")
+                except PostgresError as e:
+                    conn.execute("ROLLBACK")
+                    raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+                applied = applied + 1
+            j = j + 1
+    finally:
+        _release_pg(conn, token)
     return applied
 
 def rollback_postgres(conn: PgConnection, dir_path: str) -> str:
-    _ensure_migrations_table_pg(conn)
-    rows: list[PgRow] = conn.query(
-        "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
-    )
-    if len(rows) == 0:
-        raise DbError("geri alinacak migration yok")
-    version: str = rows[0].get_str(0)
-    down_name: str = down_migration_name(version)
-    down_path: str = nox.path.join(dir_path, down_name)
-    if not nox.fs.exists(down_path):
-        raise DbError("down migration dosyasi yok: " + down_path)
-    sql: str = nox.fs.read_to_string(down_path)
-    conn.execute("BEGIN")
+    token: str = _acquire_pg(conn)
+    version: str = ""
     try:
-        conn.execute(sql)
-        del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = $1")
-        del_stmt.bind_str(0, version)
-        del_stmt.execute()
-        conn.execute("COMMIT")
-    except PostgresError as e:
-        conn.execute("ROLLBACK")
-        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+        _ensure_migrations_table_pg(conn)
+        rows: list[PgRow] = conn.query(
+            "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+        )
+        if len(rows) == 0:
+            raise DbError("geri alinacak migration yok")
+        version = rows[0].get_str(0)
+        down_name: str = down_migration_name(version)
+        down_path: str = nox.path.join(dir_path, down_name)
+        if not nox.fs.exists(down_path):
+            raise DbError("down migration dosyasi yok: " + down_path)
+        sql: str = nox.fs.read_to_string(down_path)
+        conn.execute("BEGIN")
+        try:
+            conn.execute(sql)
+            del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = $1")
+            del_stmt.bind_str(0, version)
+            del_stmt.execute()
+            conn.execute("COMMIT")
+        except PostgresError as e:
+            conn.execute("ROLLBACK")
+            raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+    finally:
+        _release_pg(conn, token)
     return version
 
 def _ensure_migrations_table_mysql(conn: MysqlConnection) -> None:
@@ -496,57 +770,67 @@ def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
         raise DbError("migration dizini yok: " + dir_path)
     if not nox.fs.is_dir(dir_path):
         raise DbError("migration yolu dizin degil: " + dir_path)
-    _ensure_migrations_table_mysql(conn)
-    entries: list[str] = nox.fs.read_dir(dir_path)
-    ordered: list[str] = select_up_migrations(entries, "mysql")
+    token: str = _acquire_mysql(conn)
     applied: int = 0
-    j: int = 0
-    while j < len(ordered):
-        version: str = ordered[j]
-        if not _already_applied_mysql(conn, version):
-            full: str = nox.path.join(dir_path, version)
-            sql: str = nox.fs.read_to_string(full)
-            conn.execute("START TRANSACTION")
-            try:
-                conn.execute(sql)
-                _record_applied_mysql(conn, version)
-                conn.execute("COMMIT")
-            except MysqlError as e:
-                conn.execute("ROLLBACK")
-                raise DbError(
-                    "migration basarisiz: " + version + ": " + e.message +
-                    " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
-                )
-            applied = applied + 1
-        j = j + 1
+    try:
+        _ensure_migrations_table_mysql(conn)
+        entries: list[str] = nox.fs.read_dir(dir_path)
+        ordered: list[str] = select_up_migrations(entries, "mysql")
+        j: int = 0
+        while j < len(ordered):
+            _refresh_mysql(conn, token)
+            version: str = ordered[j]
+            if not _already_applied_mysql(conn, version):
+                full: str = nox.path.join(dir_path, version)
+                sql: str = nox.fs.read_to_string(full)
+                conn.execute("START TRANSACTION")
+                try:
+                    conn.execute(sql)
+                    _record_applied_mysql(conn, version)
+                    conn.execute("COMMIT")
+                except MysqlError as e:
+                    conn.execute("ROLLBACK")
+                    raise DbError(
+                        "migration basarisiz: " + version + ": " + e.message +
+                        " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
+                    )
+                applied = applied + 1
+            j = j + 1
+    finally:
+        _release_mysql(conn, token)
     return applied
 
 def rollback_mysql(conn: MysqlConnection, dir_path: str) -> str:
-    _ensure_migrations_table_mysql(conn)
-    rows: list[Row] = conn.query(
-        "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
-    )
-    if len(rows) == 0:
-        raise DbError("geri alinacak migration yok")
-    version: str = rows[0].get_str(0)
-    down_name: str = down_migration_name(version)
-    down_path: str = nox.path.join(dir_path, down_name)
-    if not nox.fs.exists(down_path):
-        raise DbError("down migration dosyasi yok: " + down_path)
-    sql: str = nox.fs.read_to_string(down_path)
-    conn.execute("START TRANSACTION")
+    token: str = _acquire_mysql(conn)
+    version: str = ""
     try:
-        conn.execute(sql)
-        del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = ?")
-        del_stmt.bind_str(0, version)
-        del_stmt.execute()
-        conn.execute("COMMIT")
-    except MysqlError as e:
-        conn.execute("ROLLBACK")
-        raise DbError(
-            "rollback basarisiz: " + version + ": " + e.message +
-            " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
+        _ensure_migrations_table_mysql(conn)
+        rows: list[Row] = conn.query(
+            "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
         )
+        if len(rows) == 0:
+            raise DbError("geri alinacak migration yok")
+        version = rows[0].get_str(0)
+        down_name: str = down_migration_name(version)
+        down_path: str = nox.path.join(dir_path, down_name)
+        if not nox.fs.exists(down_path):
+            raise DbError("down migration dosyasi yok: " + down_path)
+        sql: str = nox.fs.read_to_string(down_path)
+        conn.execute("START TRANSACTION")
+        try:
+            conn.execute(sql)
+            del_stmt: Statement = conn.prepare("DELETE FROM schema_migrations WHERE version = ?")
+            del_stmt.bind_str(0, version)
+            del_stmt.execute()
+            conn.execute("COMMIT")
+        except MysqlError as e:
+            conn.execute("ROLLBACK")
+            raise DbError(
+                "rollback basarisiz: " + version + ": " + e.message +
+                " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
+            )
+    finally:
+        _release_mysql(conn, token)
     return version
 
 # Dialect'e gore migrate - sqlite, postgres veya mysql URL.

@@ -5,8 +5,9 @@ import nyx.db
 from nyx.db import DbError
 from nox.sqlite import Connection
 from nox.db import Row
+import nyx.testing
 
-dir_path: str = "/tmp/nyx_migrate_test"
+dir_path: str = nyx.testing.scratch("nyx_migrate_test")
 if nox.fs.exists(dir_path):
     # onceki kosudan kalmis olabilir
     x: int = 0
@@ -73,7 +74,7 @@ nox.test.assert_eq_int(len(remaining), 1, "rollback sonrasi tek migration kaydi 
 n3: int = nyx.db.migrate(db, dir_path)
 nox.test.assert_eq_int(n3, 1, "rollback sonrasi tekrar migrate 1 uygulamali")
 
-dump_path: str = "/tmp/nyx_migrate_test_schema_dump.sql"
+dump_path: str = nyx.testing.scratch("nyx_migrate_test_schema_dump.sql")
 nyx.db.schema_dump(db, dump_path)
 dump_content: str = nox.fs.read_to_string(dump_path)
 nox.test.assert_true(nox.strings.contains(dump_content, "t_a"), "schema_dump t_a tablosunu icermeli")
@@ -82,14 +83,14 @@ nox.test.assert_true(nox.strings.contains(dump_content, "CREATE TABLE"), "schema
 
 threw: bool = False
 try:
-    nyx.db.rollback(db, "/tmp/nyx_migrate_test_bos_dizin_yok")
+    nyx.db.rollback(db, nyx.testing.scratch("nyx_migrate_test_bos_dizin_yok"))
 except DbError:
     threw = True
 nox.test.assert_true(threw, "olmayan down dosyasi DbError firlatir")
 
 # --- migration atomiklik (BEGIN IMMEDIATE / COMMIT / ROLLBACK) ---
 
-atomic_dir: str = "/tmp/nyx_migrate_atomic_test"
+atomic_dir: str = nyx.testing.scratch("nyx_migrate_atomic_test")
 if nox.fs.exists(atomic_dir):
     y: int = 0
 else:
@@ -118,7 +119,7 @@ atomic_db.close()
 
 # Eski damga 010_legacy.pg.sql, sqlite'in sececegi 010_legacy.sql ile ayni kimlik.
 # Ikizi yeniden calismamali ve ikinci bir satir yazmamali.
-ident_dir: str = "/tmp/nyx_mig_identity"
+ident_dir: str = nyx.testing.scratch("nyx_mig_identity")
 if nox.fs.exists(ident_dir):
     nox.fs.remove_dir_all(ident_dir)
 nox.fs.create_dir(ident_dir)

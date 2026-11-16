@@ -2,8 +2,9 @@ import nox.test
 import nox.fs
 import nyx.i18n
 from nyx.i18n import I18nError
+import nyx.testing
 
-dir_path: str = "/tmp/nyx_i18n_test"
+dir_path: str = nyx.testing.scratch("nyx_i18n_test")
 if nox.fs.exists(dir_path):
     x: int = 0
 else:

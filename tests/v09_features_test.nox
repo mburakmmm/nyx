@@ -19,6 +19,7 @@ from nyx.config import Config
 from nyx.model import Attributes
 from nyx.html import SafeHtml
 from nyx.cable import Store
+import nyx.testing
 
 nox.test.assert_eq_str(nyx.db.dialect_of_url("db/app.sqlite"), "sqlite", "sqlite path")
 nox.test.assert_eq_str(nyx.db.dialect_of_url("postgres://u@h/db"), "postgres", "pg url")
@@ -51,7 +52,7 @@ nox.test.assert_eq_int(nyx.job.count_dead(jdb), 1, "dead count")
 dead: list[str] = nyx.job.list_dead(jdb, 10)
 nox.test.assert_eq_int(len(dead), 1, "list_dead")
 
-store_path: str = "/tmp/nyx_cable_store_test.sqlite"
+store_path: str = nyx.testing.scratch("nyx_cable_store_test.sqlite")
 if nox.fs.exists(store_path):
     nox.fs.remove_file(store_path)
 store: Store = nyx.cable.open_store(store_path)

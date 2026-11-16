@@ -1,0 +1,21 @@
+import nox.fs
+import nox.test
+import nyx.testing
+import nyx.view
+
+path: str = nyx.testing.scratch("nyx_tpl_cache.html")
+nox.fs.write_string(path, "Hello {{ name }}")
+nyx.view.clear_template_cache()
+ctx: dict[str, str] = {}
+ctx["name"] = "Ada"
+first: str = nyx.view.render(path, ctx)
+reads: int = nyx.view.template_disk_reads()
+second: str = nyx.view.render(path, ctx)
+nox.test.assert_eq_str(first, "Hello Ada", "first render")
+nox.test.assert_eq_str(second, first, "cached render")
+nox.test.assert_eq_int(nyx.view.template_disk_reads(), reads, "second render does not read the file")
+nox.fs.write_string(path, "Hello {{ name }}!")
+third: str = nyx.view.render(path, ctx)
+nox.test.assert_eq_str(third, "Hello Ada!", "size change drops the cache")
+nox.test.assert_true(nyx.view.template_disk_reads() > reads, "changed template is read again")
+print("v279_template_cache_test ok")

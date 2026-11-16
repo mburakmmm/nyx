@@ -122,6 +122,29 @@ def where_int(db: MysqlConnection, table: str, col: str, value: int) -> list[Rec
     stmt.bind_int(0, value)
     return _rows_to_records(stmt.query())
 
+def _record_rows(recs: list[Record]) -> list[Row]:
+    out: list[Row] = []
+    i: int = 0
+    while i < len(recs):
+        out.append(recs[i].row)
+        i = i + 1
+    return out
+
+def find_row(db: MysqlConnection, table: str, id: int) -> Row | None:
+    got: Record | None = find(db, table, id)
+    if got == None:
+        return None
+    return got.row
+
+def all_rows(db: MysqlConnection, table: str) -> list[Row]:
+    return _record_rows(all(db, table))
+
+def where_rows(db: MysqlConnection, table: str, col: str, value: str) -> list[Row]:
+    return _record_rows(where(db, table, col, value))
+
+def where_int_rows(db: MysqlConnection, table: str, col: str, value: int) -> list[Row]:
+    return _record_rows(where_int(db, table, col, value))
+
 def destroy(db: MysqlConnection, table: str, id: int) -> None:
     _check_ident(table)
     sql: str = "DELETE FROM " + _quote_ident(table) + " WHERE `id` = ?"

@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.30.4 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.5 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.4"
+      "ref": "v0.30.5"
     }
   ]
 }
@@ -166,6 +166,13 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 
 ## Sürüm notları
 
+### 0.30.5 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Paylaşılan havuz metrikleri bir kuşak taşır. Yeniden başlatma eski worker slotlarını düşürür; 64 üstü worker başka bir worker’ın sayacına yazmaz
+- Job lease kalbi, satır tamamlanmadan veya başarısız sayılmadan önce bitene kadar beklenir
+- Migration’ı tek kazanan uygular. SQLite dizin kilidi, Postgres ve MySQL kira satırı kullanır. `nyx.orm` boot edilen lehçeyi çalıştırır ve `nyx.model.Record` döndürür. Şablonlar yol, değişiklik zamanı ve boyuta göre önbelleğe alınır
+- Testler sürecin temp dizinini kullanır. MySQL CI Ubuntu 24.04’te kalır ve o sürümün `libmysqlclient21` paketini kurar
+
 ### 0.30.4 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
 - MySQL havuzu bağlantı açılışını ve sağlık kontrolünü teker teker yapar. Aynı iş parçacığında iç içe iki `mysql_init` ikinci tutamacı boş döndürür
@@ -193,7 +200,7 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 - MySQL DDL kendi kendine commit olur. Başarısız migration artık semanın geri alındığını söylemez. `v275`, DML’in geri alındığını ve `CREATE TABLE`’ın durduğunu kontrol eder
 - Çalışan işin kimliği task üzerindedir. Aynı süreçteki iki iş birbirinin kimliğini okumaz. Yield etmeyen iş beş dakikada reclaim edilir
 - Havuz size, open ve idle gauge’leri worker etiketlidir. Etiketsiz seri toplamdır. Aynı port ve veritabanındaki worker’lar tek metrik tamponunu paylaşır
-- Auth derleme testi Windows’ta `cmd`, diğerlerinde `/bin/sh` ile `noxc` çalıştırır. CI macOS’ta paketi, Windows’ta `/tmp` kullanmayan testleri koşar
+- Auth derleme testi Windows’ta `cmd`, diğerlerinde `/bin/sh` ile `noxc` çalıştırır. CI macOS ve Windows’ta paketi koşar. Testler geçici dosyayı sürecin temp dizinine yazar.
 
 ### 0.29.0 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı

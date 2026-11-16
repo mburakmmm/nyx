@@ -1,0 +1,53 @@
+# One model surface over the booted application. SQLite runs here.
+# Postgres and MySQL use the same functions when that dialect is booted.
+
+import nox.test
+from nox.http import HttpResponse
+from nox.router import Context
+import nyx.app
+import nyx.config
+import nyx.ctrl
+import nyx.model
+import nyx.orm
+from nyx.app import Application
+from nyx.config import Config
+from nyx.model import Attributes, Record
+
+def setup(application: Application) -> None:
+    def home(ctx: Context) -> HttpResponse:
+        return nyx.ctrl.text(200, "ok")
+    application.router.get("/", home)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-test-secret-change-me-32bytes!"
+cfg.csrf_enabled = False
+cfg.session_store = "cookie"
+cfg.metrics_enabled = False
+cfg.log_requests = False
+application: Application = nyx.app.boot(cfg, setup)
+application.db.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL)")
+
+attrs: Attributes = nyx.model.attributes()
+nyx.model.set_str(attrs, "title", "hello")
+id: int = nyx.orm.create(application, "posts", attrs)
+found: Record | None = nyx.orm.find(application, "posts", id)
+nox.test.assert_true(found != None, "orm find")
+opened: list[Record] = nyx.orm.where(application, "posts", "title", "hello")
+nox.test.assert_eq_int(len(opened), 1, "created row is visible")
+nox.test.assert_eq_str(opened[0].get("title"), "hello", "orm title")
+
+def rename(app: Application) -> None:
+    changed: Attributes = nyx.model.attributes()
+    nyx.model.set_str(changed, "title", "there")
+    nyx.orm.update(app, "posts", id, changed)
+
+nyx.orm.transaction(application, rename)
+matched: list[Record] = nyx.orm.where(application, "posts", "title", "there")
+nox.test.assert_eq_int(len(matched), 1, "orm where")
+everyone: list[Record] = nyx.orm.all_rows(application, "posts")
+nox.test.assert_eq_int(len(everyone), 1, "orm all")
+nyx.orm.destroy(application, "posts", id)
+gone: Record | None = nyx.orm.find(application, "posts", id)
+nox.test.assert_true(gone == None, "orm destroy")
+nyx.app.shutdown(application)
+print("v278_orm_test ok")

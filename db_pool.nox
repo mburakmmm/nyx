@@ -255,7 +255,10 @@ class MysqlPool:
         self._unlock()
         if not healthy:
             _mysql_api_enter()
-            conn.close()
+            try:
+                conn.close()
+            except MysqlError:
+                healthy = False
             _mysql_api_leave()
 
     def close(self: MysqlPool) -> None:

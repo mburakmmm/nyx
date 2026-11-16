@@ -19,19 +19,15 @@ from nyx.model import ModelError, Attributes
 class Record:
     def __init__(self: Record, row: Row) -> None:
         self.row = row
-        indices: dict[str, int] = {}
-        i: int = 0
-        n: int = row.column_count()
-        while i < n:
-            indices[row.column_name(i)] = i
-            i = i + 1
-        self._indices = indices
 
     def _col_index(self: Record, name: str) -> int:
-        try:
-            return self._indices[name]
-        except KeyError:
-            raise ModelError("sutun yok: " + name)
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                return i
+            i = i + 1
+        raise ModelError("sutun yok: " + name)
 
     def get(self: Record, name: str) -> str:
         i: int = self._col_index(name)
@@ -58,11 +54,13 @@ class Record:
         return self.row.get_int(i)
 
     def has(self: Record, name: str) -> bool:
-        try:
-            skip: int = self._indices[name]
-            return True
-        except KeyError:
-            return False
+        i: int = 0
+        n: int = self.row.column_count()
+        while i < n:
+            if self.row.column_name(i) == name:
+                return True
+            i = i + 1
+        return False
 
 def _check_ident(name: str) -> None:
     if len(name) == 0:
@@ -129,6 +127,29 @@ def where_int(db: PgConnection, table: str, col: str, value: int) -> list[Record
     stmt: Statement = db.prepare(sql)
     stmt.bind_int(0, value)
     return _rows_to_records(stmt.query())
+
+def _record_rows(recs: list[Record]) -> list[Row]:
+    out: list[Row] = []
+    i: int = 0
+    while i < len(recs):
+        out.append(recs[i].row)
+        i = i + 1
+    return out
+
+def find_row(db: PgConnection, table: str, id: int) -> Row | None:
+    got: Record | None = find(db, table, id)
+    if got == None:
+        return None
+    return got.row
+
+def all_rows(db: PgConnection, table: str) -> list[Row]:
+    return _record_rows(all(db, table))
+
+def where_rows(db: PgConnection, table: str, col: str, value: str) -> list[Row]:
+    return _record_rows(where(db, table, col, value))
+
+def where_int_rows(db: PgConnection, table: str, col: str, value: int) -> list[Row]:
+    return _record_rows(where_int(db, table, col, value))
 
 def destroy(db: PgConnection, table: str, id: int) -> None:
     _check_ident(table)
@@ -221,15 +242,18 @@ def create_attrs_valid(db: PgConnection, table: str, attrs: Attributes, required
         raise ModelError("dogrulama basarisiz: " + nox.strings.join(errors, "; "))
     return create_attrs(db, table, attrs)
 
-# with db.transaction(): commit edilmeden cikilirsa stdlib ROLLBACK yapar.
-# ModelError ve PostgresError alanlari (sqlstate, kind) korunur.
-# Diger hatalar geri alindiktan sonra oldugu gibi yukari cikar.
+# Commit edilmeden cikilirsa ROLLBACK. ModelError ve PostgresError alanlari korunur.
 def transaction(db: PgConnection, fn: (PgConnection) -> None) -> None:
-    with db.transaction() as tx:
-        try:
-            fn(db)
-            tx.commit()
-        except ModelError as e:
-            raise ModelError(e.message, e.sqlstate, e.kind)
-        except PostgresError as e:
-            raise ModelError(e.message, e.sqlstate, e.kind)
+    db.execute("BEGIN")
+    try:
+        fn(db)
+        db.execute("COMMIT")
+    except ModelError as e:
+        db.execute("ROLLBACK")
+        raise ModelError(e.message, e.sqlstate, e.kind)
+    except PostgresError as e:
+        db.execute("ROLLBACK")
+        raise ModelError(e.message, e.sqlstate, e.kind)
+    except:
+        db.execute("ROLLBACK")
+        raise ModelError("transaction failed")

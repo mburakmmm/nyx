@@ -10,6 +10,7 @@ from nox.postgres import Connection as PgConnection, PostgresError
 from nox.mysql import Connection as MysqlConnection, MysqlError
 from nox.db import Statement
 import nyx.db
+import nyx.testing
 
 def database_url() -> str:
     try:
@@ -39,7 +40,7 @@ if dialect != "postgres" and dialect != "mysql":
 else:
     stamp: str = token()
     table: str = "nyx_mig_" + stamp
-    dir_path: str = "/tmp/nyx_mig_" + stamp
+    dir_path: str = nyx.testing.scratch("nyx_mig_" + stamp)
     nox.fs.create_dir(dir_path)
     nox.fs.write_string(
         dir_path + "/001_" + stamp + ".sql",

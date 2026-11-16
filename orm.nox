@@ -1,10 +1,19 @@
 # nyx.orm - ORM helpers (validations, soft delete, preload index).
-# Dialect PG calls stay on nyx.pg_model directly until shared Row protocol lands.
+# find/create/update/destroy/transaction lehceyi Application uzerinden secer
+# ve nyx.model.Record dondurur. Lehceye ozel cagrilar pg_model ve mysql_model'de kalir.
 
 import nox.strings
-from nox.sqlite import Connection
+from nox.sqlite import Connection, SqliteError
+from nox.postgres import Connection as PgConnection, PostgresError
+from nox.mysql import Connection as MysqlConnection, MysqlError
+from nox.json import JsonError
+from nox.db import Row
 import nyx.model
-from nyx.model import Attributes, Record
+import nyx.app
+import nyx.pg_model
+import nyx.mysql_model
+from nyx.model import Attributes, ModelError, Record
+from nyx.app import Application
 
 class OrmError(Exception):
     pass
@@ -39,6 +48,164 @@ def index_records_by_id(rows: list[Record]) -> dict[int, Record]:
         out[rows[i].get_int("id")] = rows[i]
         i = i + 1
     return out
+
+def _one(row: Row) -> Record:
+    return Record(row)
+
+def _from_rows(rows: list[Row]) -> list[Record]:
+    out: list[Record] = []
+    i: int = 0
+    while i < len(rows):
+        out.append(_one(rows[i]))
+        i = i + 1
+    return out
+
+def _unsupported(application: Application) -> None:
+    raise OrmError("desteklenmeyen lehce: " + application.dialect)
+
+# Tek Record tipi. Lehce, boot edilmis uygulamanin baglantisindan secilir.
+def find(application: Application, table: str, id: int) -> Record | None:
+    if application.dialect == "postgres":
+        got: Row | None = nyx.pg_model.find_row(nyx.app.pg(application), table, id)
+        if got == None:
+            return None
+        return _one(got)
+    if application.dialect == "mysql":
+        got_my: Row | None = nyx.mysql_model.find_row(nyx.app.mysql(application), table, id)
+        if got_my == None:
+            return None
+        return _one(got_my)
+    if application.dialect == "sqlite":
+        return nyx.model.find(application.db, table, id)
+    _unsupported(application)
+    return None
+
+def all_rows(application: Application, table: str) -> list[Record]:
+    if application.dialect == "postgres":
+        return _from_rows(nyx.pg_model.all_rows(nyx.app.pg(application), table))
+    if application.dialect == "mysql":
+        return _from_rows(nyx.mysql_model.all_rows(nyx.app.mysql(application), table))
+    if application.dialect == "sqlite":
+        return nyx.model.all(application.db, table)
+    _unsupported(application)
+    return []
+
+def where(application: Application, table: str, col: str, value: str) -> list[Record]:
+    if application.dialect == "postgres":
+        return _from_rows(nyx.pg_model.where_rows(nyx.app.pg(application), table, col, value))
+    if application.dialect == "mysql":
+        return _from_rows(nyx.mysql_model.where_rows(nyx.app.mysql(application), table, col, value))
+    if application.dialect == "sqlite":
+        return nyx.model.where(application.db, table, col, value)
+    _unsupported(application)
+    return []
+
+def where_int(application: Application, table: str, col: str, value: int) -> list[Record]:
+    if application.dialect == "postgres":
+        return _from_rows(nyx.pg_model.where_int_rows(nyx.app.pg(application), table, col, value))
+    if application.dialect == "mysql":
+        return _from_rows(nyx.mysql_model.where_int_rows(nyx.app.mysql(application), table, col, value))
+    if application.dialect == "sqlite":
+        return nyx.model.where_int(application.db, table, col, value)
+    _unsupported(application)
+    return []
+
+def create(application: Application, table: str, attrs: Attributes) -> int:
+    if application.dialect == "postgres":
+        return nyx.pg_model.create_attrs(nyx.app.pg(application), table, attrs)
+    if application.dialect == "mysql":
+        return nyx.mysql_model.create_attrs(nyx.app.mysql(application), table, attrs)
+    if application.dialect == "sqlite":
+        return nyx.model.create_attrs(application.db, table, attrs)
+    _unsupported(application)
+    return 0
+
+def update(application: Application, table: str, id: int, attrs: Attributes) -> None:
+    if application.dialect == "postgres":
+        nyx.pg_model.update_attrs(nyx.app.pg(application), table, id, attrs)
+        return
+    if application.dialect == "mysql":
+        nyx.mysql_model.update_attrs(nyx.app.mysql(application), table, id, attrs)
+        return
+    if application.dialect == "sqlite":
+        nyx.model.update_attrs(application.db, table, id, attrs)
+        return
+    _unsupported(application)
+
+def destroy(application: Application, table: str, id: int) -> None:
+    if application.dialect == "postgres":
+        nyx.pg_model.destroy(nyx.app.pg(application), table, id)
+        return
+    if application.dialect == "mysql":
+        nyx.mysql_model.destroy(nyx.app.mysql(application), table, id)
+        return
+    if application.dialect == "sqlite":
+        nyx.model.destroy(application.db, table, id)
+        return
+    _unsupported(application)
+
+def transaction(application: Application, fn: (Application) -> None) -> None:
+    if application.dialect == "postgres":
+        conn: PgConnection = nyx.app.pg(application)
+        conn.execute("BEGIN")
+        try:
+            fn(application)
+            conn.execute("COMMIT")
+        except ModelError as e:
+            conn.execute("ROLLBACK")
+            raise ModelError(e.message, e.sqlstate, e.kind)
+        except PostgresError as e:
+            conn.execute("ROLLBACK")
+            raise ModelError(e.message, e.sqlstate, e.kind)
+        except:
+            conn.execute("ROLLBACK")
+            raise ModelError("transaction failed")
+        return
+    if application.dialect == "mysql":
+        my: MysqlConnection = nyx.app.mysql(application)
+        my.execute("START TRANSACTION")
+        try:
+            fn(application)
+            my.execute("COMMIT")
+        except ModelError as e:
+            my.execute("ROLLBACK")
+            raise ModelError(e.message, e.sqlstate, e.kind)
+        except MysqlError as e:
+            my.execute("ROLLBACK")
+            raise ModelError(e.message)
+        except:
+            my.execute("ROLLBACK")
+            raise ModelError("transaction failed")
+        return
+    if application.dialect == "sqlite":
+        db: Connection = application.db
+        db.execute("BEGIN")
+        try:
+            fn(application)
+            db.execute("COMMIT")
+        except ModelError as e:
+            db.execute("ROLLBACK")
+            raise ModelError(e.message, e.sqlstate, e.kind)
+        except SqliteError as e:
+            db.execute("ROLLBACK")
+            raise SqliteError(e.message)
+        except JsonError as e:
+            db.execute("ROLLBACK")
+            raise JsonError(e.message)
+        except ValueError as e:
+            db.execute("ROLLBACK")
+            raise ValueError(e.message)
+        except KeyError as e:
+            db.execute("ROLLBACK")
+            raise KeyError(e.message)
+        except IndexError as e:
+            db.execute("ROLLBACK")
+            raise IndexError(e.message)
+        except:
+            db.execute("ROLLBACK")
+            raise ModelError("transaction failed")
+        return
+    _unsupported(application)
 
 # Geriye donuk: str anahtar isteyen kod icin.
 def index_records_by_id_str(rows: list[Record]) -> dict[str, int]:

@@ -55,8 +55,6 @@ from nyx.rate_limit import MemoryStore
 class AppError(Exception):
     pass
 
-_rate_store: MemoryStore = nyx.rate_limit.open_memory()
-
 class Application:
     def __init__(
         self: Application,
@@ -69,7 +67,8 @@ class Application:
         my_list: list[MysqlConnection],
         hooks: list[() -> None],
         pg_pools: list[PgPool],
-        my_pools: list[MysqlPool]
+        my_pools: list[MysqlPool],
+        rate_memory: MemoryStore
     ) -> None:
         self.config = cfg
         self.db = conn
@@ -82,6 +81,7 @@ class Application:
         self._closed = False
         self._pg_pool = pg_pools
         self._my_pool = my_pools
+        self.rate_memory = rate_memory
 
 def db(application: Application) -> Connection:
     return application.db
@@ -121,14 +121,18 @@ def mysql(application: Application) -> MysqlConnection:
 def _publish_pool(application: Application) -> None:
     if application.dialect == "postgres" and len(application._pg_pool) > 0:
         if not nyx.metrics.worker_claimed():
-            nyx.metrics.claim_worker()
+            if nyx.metrics.claim_worker() < 0:
+                return
         pool: PgPool = application._pg_pool[0]
         nyx.metrics.record_pool_worker(nyx.metrics.worker_index(), pool.size, pool.open_count(), pool.idle_count())
+        nyx.metrics.ensure_pulse()
     elif application.dialect == "mysql" and len(application._my_pool) > 0:
         if not nyx.metrics.worker_claimed():
-            nyx.metrics.claim_worker()
+            if nyx.metrics.claim_worker() < 0:
+                return
         my_pool: MysqlPool = application._my_pool[0]
         nyx.metrics.record_pool_worker(nyx.metrics.worker_index(), my_pool.size, my_pool.open_count(), my_pool.idle_count())
+        nyx.metrics.ensure_pulse()
 
 def _pool_gauge(application: Application) -> str:
     _publish_pool(application)
@@ -152,6 +156,7 @@ def shutdown(application: Application) -> None:
     if application._closed:
         return
     application._closed = True
+    nyx.metrics.stop_pulse()
     i: int = len(application._shutdown_hooks) - 1
     while i >= 0:
         try:
@@ -284,7 +289,7 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
         raise AppError("unsupported db dialect: " + dialect)
     jobs: Connection = nyx.db.open(cfg.jobs_db_path)
     hooks: list[() -> None] = []
-    application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, my_list, hooks, pg_pools, my_pools)
+    application: Application = Application(cfg, conn, Router(), dialect, jobs, pg_list, my_list, hooks, pg_pools, my_pools, nyx.rate_limit.open_memory())
     if cfg.session_store == "db":
         if dialect == "postgres":
             nyx.session_store_pg.ensure_schema(pg_list[0])
@@ -424,9 +429,10 @@ def _rate_limit_before(application: Application) -> (Context) -> HttpResponse | 
                 application.jobs_db, key, limit, cfg.rate_limit_window_ms
             )
         else:
-            allowed = nyx.rate_limit.allow(_rate_store, key, limit, cfg.rate_limit_window_ms)
-        if not allowed:
-            nyx.metrics.inc_rate_limited()
+            allowed = nyx.rate_limit.allow(application.rate_memory, key, limit, cfg.rate_limit_window_ms)
+        if allowed == False:
+            if cfg.metrics_enabled:
+                nyx.metrics.inc_rate_limited()
             return nyx.ctrl.json(429, "{\"error\":\"rate_limited\"}")
         return None
     return handler

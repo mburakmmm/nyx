@@ -1,0 +1,51 @@
+# Two fibers migrate the same sqlite file. The lock row lives in a side
+# database so the waiter yields instead of blocking the thread. The INSERT
+# is not idempotent: a second run of the file fails the test.
+
+import nox.fs
+import nox.test
+import nox.path
+import nyx.db
+import nyx.testing
+from nox.sqlite import Connection
+from nox.db import Row
+
+dir_path: str = nyx.testing.scratch("nyx_lock_mig")
+if nox.fs.exists(dir_path):
+    nox.fs.remove_dir_all(dir_path)
+nox.fs.create_dir(dir_path)
+nox.fs.write_string(
+    nox.path.join(dir_path, "001_once.sql"),
+    "CREATE TABLE nyx_lock_probe (id INTEGER PRIMARY KEY);\n"
+)
+db_path: str = nyx.testing.scratch("nyx_lock.sqlite")
+if nox.fs.exists(db_path):
+    nox.fs.remove_file(db_path)
+lock_path: str = db_path + ".nyx-migrate-lock"
+if nox.fs.is_file(lock_path):
+    nox.fs.remove_file(lock_path)
+if nox.fs.is_dir(lock_path):
+    nox.fs.remove_dir_all(lock_path)
+
+a: Connection = nyx.db.open(db_path)
+b: Connection = nyx.db.open(db_path)
+
+async def mig_a() -> int:
+    return nyx.db.migrate(a, dir_path)
+
+async def mig_b() -> int:
+    return nyx.db.migrate(b, dir_path)
+
+task_a: Task[int] = spawn mig_a()
+task_b: Task[int] = spawn mig_b()
+n_a: int = await task_a
+n_b: int = await task_b
+print("lock " + str(n_a) + " " + str(n_b))
+nox.test.assert_eq_int(n_a + n_b, 1, "one fiber applies the migration")
+count_rows: list[Row] = a.query("SELECT COUNT(*) FROM nyx_lock_probe")
+nox.test.assert_eq_int(count_rows[0].get_int(0), 0, "the table was created once")
+version_rows: list[Row] = a.query("SELECT COUNT(*) FROM schema_migrations")
+nox.test.assert_eq_int(version_rows[0].get_int(0), 1, "one migration row")
+a.close()
+b.close()
+print("v277_migrate_lock_test ok")

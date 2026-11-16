@@ -8,21 +8,71 @@
 import nox.fs
 import nox.template
 import nox.strings
+from nox.fs import FileMetadata
 from nyx.model import Record
 
 class ViewError(Exception):
     pass
 
-def render(path: str, context: dict[str, str]) -> str:
+class _CachedTemplate:
+    path: str
+    modified_ms: int
+    size: int
+    body: str
+
+    def __init__(self: _CachedTemplate, path: str, modified_ms: int, size: int, body: str) -> None:
+        self.path = path
+        self.modified_ms = modified_ms
+        self.size = size
+        self.body = body
+
+_templates: list[_CachedTemplate] = []
+_disk_reads: int = 0
+
+def template_disk_reads() -> int:
+    return _disk_reads
+
+def clear_template_cache() -> None:
+    _templates = []
+    _disk_reads = 0
+
+# mtime ve boyut ayniysa dosya yeniden okunmaz. Boyut degisirse ayni saniyedeki
+# yazma da onbellegi dusurur.
+def _cached_source(path: str) -> str:
     if not nox.fs.exists(path):
         raise ViewError("sablon yok: " + path)
-    tmpl: str = nox.fs.read_to_string(path)
+    meta: FileMetadata = nox.fs.metadata(path)
+    i: int = 0
+    while i < len(_templates):
+        item: _CachedTemplate = _templates[i]
+        if item.path == path and item.modified_ms == meta.modified_ms and item.size == meta.size:
+            return item.body
+        i = i + 1
+    body: str = nox.fs.read_to_string(path)
+    _disk_reads = _disk_reads + 1
+    fresh: _CachedTemplate = _CachedTemplate(path, meta.modified_ms, meta.size, body)
+    kept: list[_CachedTemplate] = []
+    j: int = 0
+    replaced: bool = False
+    while j < len(_templates):
+        old: _CachedTemplate = _templates[j]
+        if old.path == path:
+            kept.append(fresh)
+            replaced = True
+        else:
+            kept.append(old)
+        j = j + 1
+    if not replaced:
+        kept.append(fresh)
+    _templates = kept
+    return body
+
+def render(path: str, context: dict[str, str]) -> str:
+    tmpl: str = _cached_source(path)
     return nox.template.render(tmpl, context)
 
 def render_unescaped(path: str, context: dict[str, str]) -> str:
-    if not nox.fs.exists(path):
-        raise ViewError("sablon yok: " + path)
-    tmpl: str = nox.fs.read_to_string(path)
+    tmpl: str = _cached_source(path)
     return nox.template.render_unescaped(tmpl, context)
 
 # Nox >= 2.1.7: {% for %} / {% if %} / {% else %}. `render` bu etiketleri yorumlamaz.
@@ -32,9 +82,7 @@ def render_blocks(
     scalars: dict[str, str],
     lists: dict[str, list[dict[str, str]]]
 ) -> str:
-    if not nox.fs.exists(path):
-        raise ViewError("sablon yok: " + path)
-    tmpl: str = nox.fs.read_to_string(path)
+    tmpl: str = _cached_source(path)
     return nox.template.render_blocks(tmpl, scalars, lists)
 
 def render_blocks_unescaped(
@@ -42,9 +90,7 @@ def render_blocks_unescaped(
     scalars: dict[str, str],
     lists: dict[str, list[dict[str, str]]]
 ) -> str:
-    if not nox.fs.exists(path):
-        raise ViewError("sablon yok: " + path)
-    tmpl: str = nox.fs.read_to_string(path)
+    tmpl: str = _cached_source(path)
     return nox.template.render_blocks_unescaped(tmpl, scalars, lists)
 
 def partial(path: str, context: dict[str, str]) -> str:
@@ -136,7 +182,7 @@ def render_with_layout(layout_path: str, view_path: str, context: dict[str, str]
     body: str = render(view_path, context)
     if not nox.fs.exists(layout_path):
         raise ViewError("layout yok: " + layout_path)
-    layout_tmpl: str = nox.fs.read_to_string(layout_path)
+    layout_tmpl: str = _cached_source(layout_path)
     slot: str = _yield_slot()
     prepared: str = nox.strings.replace(layout_tmpl, "{{ yield }}", slot)
     prepared = nox.strings.replace(prepared, "{{yield}}", slot)
@@ -147,7 +193,7 @@ def render_with_layout_unescaped(layout_path: str, view_path: str, context: dict
     body: str = render_unescaped(view_path, context)
     if not nox.fs.exists(layout_path):
         raise ViewError("layout yok: " + layout_path)
-    layout_tmpl: str = nox.fs.read_to_string(layout_path)
+    layout_tmpl: str = _cached_source(layout_path)
     slot: str = _yield_slot()
     prepared: str = nox.strings.replace(layout_tmpl, "{{ yield }}", slot)
     prepared = nox.strings.replace(prepared, "{{yield}}", slot)

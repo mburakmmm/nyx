@@ -6,6 +6,7 @@ import nyx.config
 import nyx.metrics
 import nyx.server
 from nyx.config import Config
+import nyx.testing
 
 # --- serve_mode matrix ---
 cfg: Config = nyx.config.defaults("test")
@@ -20,8 +21,8 @@ nox.test.assert_eq_int(nyx.server.workers(cfg), 4, "workers()")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "multicore", "mc")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "multicore_ws", "mc_ws")
 
-cfg.tls_cert_path = "/tmp/nyx-fake.crt"
-cfg.tls_key_path = "/tmp/nyx-fake.key"
+cfg.tls_cert_path = nyx.testing.scratch("nyx-fake.crt")
+cfg.tls_key_path = nyx.testing.scratch("nyx-fake.key")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "multicore_tls", "mc_tls")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "multicore_ws_tls", "mc_ws_tls")
 

@@ -40,4 +40,30 @@ nox.test.assert_true(nox.strings.contains(series, "nyx_db_pool_size 8"), "size s
 nyx.metrics.reset()
 nox.test.assert_eq_int(nyx.metrics.db_pool_checkouts(), 0, "reset checkouts")
 nox.test.assert_eq_int(nyx.metrics.db_pool_exhausted(), 0, "reset exhausted")
+
+nyx.metrics.record_pool_worker(0, 4, 1, 3)
+nyx.metrics.record_pool_worker(1, 4, 2, 2)
+nyx.metrics.stamp_worker(1, 1)
+stale: str = nyx.metrics.pool_series_text()
+nox.test.assert_true(nox.strings.contains(stale, "nyx_db_pool_open{worker=\"0\"} 1"), "live worker stays")
+nox.test.assert_true(nox.strings.contains(stale, "worker=\"1\"") == False, "stale worker is dropped")
+nox.test.assert_true(nox.strings.contains(stale, "nyx_db_pool_open 1"), "stale worker is not summed")
+reused: int = nyx.metrics.claim_worker()
+nox.test.assert_eq_int(reused, 1, "stale slot is reused")
+
+nyx.metrics.reset()
+filled: int = 0
+while filled < nyx.metrics.worker_slot_count():
+    nyx.metrics.record_pool_worker(filled, 1, 0, 0)
+    filled = filled + 1
+overflow: int = nyx.metrics.claim_worker()
+nox.test.assert_eq_int(overflow, -1, "a full generation does not alias the last slot")
+
+before: int = nyx.metrics.generation()
+nyx.metrics.record_db_checkout(3)
+nyx.metrics.stamp_generation(1)
+after: int = nyx.metrics.refresh_generation()
+nox.test.assert_true(after != before, "a stale generation is replaced")
+nox.test.assert_eq_int(nyx.metrics.db_pool_checkouts(), 0, "a new generation starts at zero")
+nox.test.assert_eq_str(nyx.metrics.pool_series_text(), "", "a new generation has no workers")
 print("v274_pool_metrics_test ok")

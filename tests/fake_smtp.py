@@ -7,6 +7,7 @@ import ssl
 import sys
 
 port = int(sys.argv[1])
+ready_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get("TEMP") or os.environ.get("TMP") or "/tmp", "nyx-fake-smtp.ready")
 here = os.path.dirname(os.path.abspath(__file__))
 cert = os.path.join(here, "fixtures", "smtp.crt")
 key = os.path.join(here, "fixtures", "smtp.key")
@@ -16,7 +17,7 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", port))
 srv.listen(1)
 srv.settimeout(8)
-open("/tmp/nyx-fake-smtp.ready", "w").write("1")
+open(ready_path, "w").write("1")
 
 try:
     conn, _addr = srv.accept()

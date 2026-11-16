@@ -177,7 +177,7 @@ def server_error_detail_for(
     message: str,
     line: int
 ) -> HttpResponse:
-    if not cfg.is_development():
+    if cfg.is_production():
         return server_error_for(ctx)
     rid: str = nyx.runtime.request_id()
     target: str = ctx.request.target

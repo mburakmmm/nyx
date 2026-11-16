@@ -9,8 +9,9 @@ import nyx.ctrl
 import nyx.params
 from nyx.app import Application
 from nyx.config import Config
+import nyx.testing
 
-dir_path: str = "/tmp/nyx_dispatch_query_mig"
+dir_path: str = nyx.testing.scratch("nyx_dispatch_query_mig")
 if not nox.fs.exists(dir_path):
     nox.fs.create_dir(dir_path)
 nox.fs.write_string(dir_path + "/001_t.sql", "CREATE TABLE IF NOT EXISTS t_q (id INTEGER PRIMARY KEY);")

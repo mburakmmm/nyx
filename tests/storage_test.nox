@@ -4,7 +4,8 @@ import nox.strings
 import nyx.storage
 from nyx.storage import StorageError
 
-root: str = "/tmp/nyx_storage_test"
+import nyx.testing
+root: str = nyx.testing.scratch("nyx_storage_test")
 if nox.fs.exists(root):
     x: int = 0
 else:
@@ -103,21 +104,28 @@ except StorageError:
     bad_method = True
 nox.test.assert_true(bad_method, "GET store_http reddedilir")
 
+import nox.path
 import nox.process
 from nox.process import Command, Output
 
-link_root: str = "/tmp/nyx_storage_link_root"
-outside: str = "/tmp/nyx_storage_link_out"
+link_root: str = nyx.testing.scratch("nyx_storage_link_root")
+outside: str = nyx.testing.scratch("nyx_storage_link_out")
 if not nox.fs.exists(link_root):
     nox.fs.create_dir(link_root)
 if not nox.fs.exists(outside):
     nox.fs.create_dir(outside)
-nox.fs.write_string(outside + "/secret.txt", "nope")
-ln: Command = Command("ln")
-ln.arg("-sfn")
+nox.fs.write_string(nox.path.join(outside, "secret.txt"), "nope")
+link_path: str = nox.path.join(link_root, "link")
+if nox.fs.exists(link_path):
+    nox.fs.remove_file(link_path)
+ln: Command = Command(nyx.testing.python_bin())
+ln.arg("-c")
+ln.arg("import os,sys; os.symlink(sys.argv[1], sys.argv[2], target_is_directory=True)")
 ln.arg(outside)
-ln.arg(link_root + "/link")
+ln.arg(link_path)
 ln_out: Output = ln.run()
+if not ln_out.success():
+    print(ln_out.stdout)
 nox.test.assert_eq_int(ln_out.status, 0, "symlink fixture")
 escaped: bool = False
 try:

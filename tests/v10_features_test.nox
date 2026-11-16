@@ -13,6 +13,7 @@ import nyx.websocket
 import nyx.cable
 from nyx.app import Application
 from nyx.config import Config
+import nyx.testing
 
 hook_ran: list[int] = []
 
@@ -43,8 +44,8 @@ app: Application = nyx.app.boot(cfg, setup)
 nox.test.assert_eq_str(app.dialect, "sqlite", "dialect sqlite")
 nox.test.assert_true(not nyx.app.has_pg(app), "no pg")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, False), "plain", "serve plain")
-cfg.tls_cert_path = "/tmp/nyx-missing-cert.pem"
-cfg.tls_key_path = "/tmp/nyx-missing-key.pem"
+cfg.tls_cert_path = nyx.testing.scratch("nyx-missing-cert.pem")
+cfg.tls_key_path = nyx.testing.scratch("nyx-missing-key.pem")
 nox.test.assert_eq_str(nyx.server.serve_mode(cfg, True), "ws_tls", "serve ws_tls")
 
 headers: dict[str, str] = {}

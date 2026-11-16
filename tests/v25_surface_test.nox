@@ -7,6 +7,7 @@ import nyx.params
 import nyx.server
 import nyx.view
 from nyx.config import Config
+import nyx.testing
 
 cfg: Config = nyx.config.defaults("test")
 nox.test.assert_eq_int(cfg.pg_query_timeout_ms, 0, "pg timeout default off")
@@ -20,7 +21,7 @@ nox.test.assert_eq_int(nyx.server.ip_family(cfg), 2, "ipv6 only")
 plus: dict[str, str] = nyx.params.parse_qs("a+b=c%2Bd")
 nox.test.assert_eq_str(plus["a b"], "c+d", "query plus is space, %2B stays plus")
 
-path: str = "/tmp/nyx_v25_blocks.html"
+path: str = nyx.testing.scratch("nyx_v25_blocks.html")
 nox.fs.write_string_atomic(path, "{% for u in users %}<li>{{ u.name }}</li>{% endfor %}{% if title %}{{ title }}{% endif %}")
 scalars: dict[str, str] = {}
 scalars["title"] = "Merhaba"

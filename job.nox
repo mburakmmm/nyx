@@ -250,13 +250,29 @@ class _LeaseConn:
         self.db = db
         self.owned = owned
 
+_lease_open: int = 0
+
+def lease_tasks_open() -> int:
+    return _lease_open
+
 class _LeaseRun:
     stop: bool
+    done: bool
     handle: Task[None]
 
     def __init__(self: _LeaseRun, db: Connection, id: int, fence: int, owned: bool) -> None:
         self.stop = False
+        self.done = False
+        _lease_open = _lease_open + 1
         self.handle = spawn _renew_lease(db, id, fence, self, owned)
+
+def _wait_lease(run: _LeaseRun) -> None:
+    spins: int = 0
+    while not run.done and spins < 15000:
+        nox.time.sleep_ms(1)
+        spins = spins + 1
+    if not run.done:
+        raise JobError("lease heartbeat did not stop")
 
 def _lease_conn(db: Connection) -> _LeaseConn:
     path: str = ""
@@ -280,21 +296,29 @@ def _lease_conn(db: Connection) -> _LeaseConn:
 async def _renew_lease(db: Connection, id: int, fence: int, run: _LeaseRun, owned: bool) -> None:
     # Dilim sayısı duvar saatini tutmaz. Yavaş bir zamanlayıcıda 20 dilim
     # dolmadan handler uyanırsa lease yenilenmez. Karar saate bakar.
-    step: int = _lease_slice_ms()
-    every: int = heartbeat_interval_ms()
-    started: int = nox.time.now_ms()
-    while not run.stop:
-        nox.time.sleep_ms(step)
-        if run.stop:
-            break
-        if nox.time.now_ms() - started >= every:
-            started = nox.time.now_ms()
+    # done, cagiran fiber uyusa bile kapanisin bu gorevi bitirdigini soyler.
+    try:
+        step: int = _lease_slice_ms()
+        every: int = heartbeat_interval_ms()
+        started: int = nox.time.now_ms()
+        while not run.stop:
+            nox.time.sleep_ms(step)
+            if run.stop:
+                break
+            if nox.time.now_ms() - started >= every:
+                started = nox.time.now_ms()
+                try:
+                    heartbeat(db, id, fence)
+                except SqliteError:
+                    started = nox.time.now_ms()
+        if owned:
             try:
-                heartbeat(db, id, fence)
+                db.close()
             except SqliteError:
                 started = nox.time.now_ms()
-    if owned:
-        db.close()
+    finally:
+        run.done = True
+        _lease_open = _lease_open - 1
 
 def complete(db: Connection, id: int, fence: int) -> bool:
     now: int = nox.time.now_ms()
@@ -456,26 +480,27 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
         return True
 
     handler: (str) -> None = registry.get(job_name)
-    finished: bool = False
+    outcome: str = "ok"
     lease_db: _LeaseConn = _lease_conn(db)
     renewal: _LeaseRun = _LeaseRun(lease_db.db, id, fence, lease_db.owned)
     try:
-        try:
-            handler(payload_json)
-            complete(db, id, fence)
-            finished = True
-        except (ModelError, MailerError, SqliteError, DbError, JsonError, HttpError, ValueError, JobError) as e:
-            fail_owned(db, id, fence, e.message)
-            finished = True
-        except:
-            # Nox >= 1.9 bare except: bilinmeyen handler hatalari job'u fail eder.
-            fail_owned(db, id, fence, "unhandled handler error")
-            finished = True
-    finally:
-        renewal.stop = True
-        if not finished:
-            fail_owned(db, id, fence, "handler aborted without completion")
-        _clear_active()
+        handler(payload_json)
+    except (ModelError, MailerError, SqliteError, DbError, JsonError, HttpError, ValueError, JobError) as e:
+        outcome = e.message
+    except:
+        # Nox >= 1.9 bare except: bilinmeyen handler hatalari job'u fail eder.
+        outcome = "unhandled handler error"
+    renewal.stop = True
+    try:
+        _wait_lease(renewal)
+    except JobError as e:
+        if outcome == "ok":
+            outcome = e.message
+    if outcome == "ok":
+        complete(db, id, fence)
+    else:
+        fail_owned(db, id, fence, outcome)
+    _clear_active()
     return True
 
 # Re-queue jobs stuck in 'running' longer than 'stale_ms'.

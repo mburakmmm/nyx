@@ -177,7 +177,7 @@ jobs:
           noxc test tests/v273_db_pool_race_test.nox
 
   mysql-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       mysql:
         image: mysql:8.4
@@ -199,22 +199,8 @@ jobs:
       - name: Install MySQL client library
         run: |
           set -euo pipefail
-          if ldconfig -p | grep -q 'libmysqlclient.so.21'; then
-            exit 0
-          fi
-          # Ubuntu 26 does not ship libmysqlclient.so.21. Nox dlopens that
-          # SONAME, so the library comes from the Ubuntu 24.04 archive.
-          echo "deb http://archive.ubuntu.com/ubuntu noble main universe" | sudo tee /etc/apt/sources.list.d/noble-mysql.list
-          echo "deb http://security.ubuntu.com/ubuntu noble-security main universe" | sudo tee -a /etc/apt/sources.list.d/noble-mysql.list
-          printf '%s\n' \
-            'Package: *' \
-            'Pin: release n=noble' \
-            'Pin-Priority: 100' \
-            '' \
-            'Package: libmysqlclient21 mysql-common' \
-            'Pin: release n=noble*' \
-            'Pin-Priority: 990' \
-            | sudo tee /etc/apt/preferences.d/noble-mysql >/dev/null
+          # The job is pinned to Ubuntu 24.04 because Nox dlopens
+          # libmysqlclient.so.21 and that SONAME ships with this release.
           sudo apt-get update
           sudo apt-get install -y libmysqlclient21
           ldconfig -p | grep 'libmysqlclient.so.21'
@@ -281,6 +267,8 @@ jobs:
           noxc test tests/v271_migrate_dialect_test.nox
           noxc test tests/v272_db_pool_test.nox
           noxc test tests/v273_db_pool_race_test.nox
+          noxc test tests/v275_mysql_ddl_test.nox
+          noxc test tests/v276_mysql_pool_stress_test.nox
 
   test-macos:
     runs-on: macos-latest
@@ -406,10 +394,7 @@ jobs:
           noxc --version
           noxc fetch
           $script:fail = 0
-          # v19 and v152 key rate limits by the peer address. On this runner
-          # those assertions fail; Linux still runs them in the main job.
-          $skip = @('v19_peer_line_test.nox', 'v152_rate_limit_test.nox')
-          Get-ChildItem tests/*.nox | Where-Object { -not (Select-String -Path $_.FullName -Pattern '/tmp' -Quiet) -and $skip -notcontains $_.Name } | ForEach-Object {
+          Get-ChildItem tests/*.nox | ForEach-Object {
             Write-Host "==> $($_.FullName)"
             noxc test $_.FullName
             if ($LASTEXITCODE -ne 0) { $script:fail = 1 }

@@ -8,6 +8,7 @@
 # body: str = nyx.metrics.prometheus_text()
 
 import nox.os
+import nox.time
 import nox.uuid
 import nox.strings
 import nox.sharedmem
@@ -16,7 +17,11 @@ from nox.sharedmem import SharedBuffer
 
 # Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited,
 # 40 pool checkouts, 48 pool wait ms, 56 pool exhausted.
-# 64 worker count. 72 + i*24: that worker's size, open, idle.
+# 64 generation, 72 generation heartbeat.
+# 80 + i*32: that worker's size, open, idle, seen_ms.
+# A new process whose generation heartbeat is stale zeroes the segment
+# before it publishes. A dead worker's slot is reused; it is not aliased
+# onto the last live slot. 64 is the published cap.
 _SLOT_REQ: int = 0
 _SLOT_5XX: int = 8
 _SLOT_JOB: int = 16
@@ -25,11 +30,12 @@ _SLOT_RL: int = 32
 _SLOT_POOL_OUT: int = 40
 _SLOT_POOL_WAIT: int = 48
 _SLOT_POOL_FAIL: int = 56
-_SLOT_WORKERS: int = 64
-_WORKER_ORIGIN: int = 72
-_WORKER_STRIDE: int = 24
-_MAX_WORKERS: int = 16
-_SIZE: int = 456
+_SLOT_EPOCH: int = 64
+_SLOT_EPOCH_SEEN: int = 72
+_WORKER_ORIGIN: int = 80
+_WORKER_STRIDE: int = 32
+_MAX_WORKERS: int = 64
+_SIZE: int = 2128
 
 # POSIX shm_open adı `/` ile başlar. Windows temp dosyası `/` görünce yol bozulur.
 def _shm_prefix() -> str:
@@ -80,13 +86,26 @@ class _MetricsBag:
 _store: _MetricsBag = _MetricsBag()
 _worker_claimed: bool = False
 _worker_index: int = 0
+_local_epoch: int = 0
+_pulse_stop: bool = False
+_pulse_running: bool = False
+_gauge_size: int = 0
+_gauge_open: int = 0
+_gauge_idle: int = 0
+
+def worker_slot_count() -> int:
+    return _MAX_WORKERS
+
+def worker_stale_ms() -> int:
+    return 5000
 
 def bind_shared(key: str) -> None:
     # serve_multicore her worker'a taze modul kopyasi verir. Ayni port ve
-    # veritabani yolu ayni paylasilan bellek adini uretir.
+    # veritabani yolu ayni paylasilan bellek adini uretir. ":m2" eski, kucuk
+    # segmenti buyutmeye calismaz; macOS boyutlu shm'yi yeniden truncate etmez.
     if _store.buf != None:
         return
-    _store.name = _name_from_key(key)
+    _store.name = _name_from_key(key + ":m2")
 
 def _name_from_key(key: str) -> str:
     h: int = 2166136261
@@ -104,7 +123,74 @@ def _name_from_key(key: str) -> str:
         return short
     return name
 
+def _mix_epoch() -> int:
+    u: str = nox.uuid.uuid4()
+    h: int = 2166136261
+    i: int = 0
+    while i < len(u):
+        h = (h * 131 + nox.strings.byte_at(u, i)) % 2000000000
+        i = i + 1
+    if h == 0:
+        h = 1
+    return h
+
+def _zero_locked(buf: SharedBuffer) -> None:
+    buf.write_int(_SLOT_REQ, 0)
+    buf.write_int(_SLOT_5XX, 0)
+    buf.write_int(_SLOT_JOB, 0)
+    buf.write_int(_SLOT_MAIL, 0)
+    buf.write_int(_SLOT_RL, 0)
+    buf.write_int(_SLOT_POOL_OUT, 0)
+    buf.write_int(_SLOT_POOL_WAIT, 0)
+    buf.write_int(_SLOT_POOL_FAIL, 0)
+    buf.write_int(_SLOT_EPOCH, 0)
+    buf.write_int(_SLOT_EPOCH_SEEN, 0)
+    w: int = 0
+    while w < _MAX_WORKERS:
+        base: int = _WORKER_ORIGIN + w * _WORKER_STRIDE
+        buf.write_int(base, 0)
+        buf.write_int(base + 8, 0)
+        buf.write_int(base + 16, 0)
+        buf.write_int(base + 24, 0)
+        w = w + 1
+
+def _remember_epoch(epoch: int) -> None:
+    if _local_epoch != epoch:
+        _worker_claimed = False
+        _worker_index = 0
+        _local_epoch = epoch
+
+# Ilk cagri, ya da nesil kalp atisi worker_stale_ms'den eskiyse, sayaclari ve
+# worker slotlarini sifirlar. Yasayan bir nesilde yalnizca kalp atisini yeniler.
+def refresh_generation() -> int:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    now: int = nox.time.now_ms()
+    epoch: int = buf.read_int(_SLOT_EPOCH)
+    seen: int = buf.read_int(_SLOT_EPOCH_SEEN)
+    fresh: bool = epoch != 0 and seen != 0 and now >= seen and now - seen <= worker_stale_ms()
+    if not fresh:
+        _zero_locked(buf)
+        epoch = _mix_epoch()
+        buf.write_int(_SLOT_EPOCH, epoch)
+        buf.write_int(_SLOT_EPOCH_SEEN, now)
+    else:
+        buf.write_int(_SLOT_EPOCH_SEEN, now)
+    buf.unlock()
+    _remember_epoch(epoch)
+    return epoch
+
+def generation() -> int:
+    return refresh_generation()
+
+def stamp_generation(seen_ms: int) -> None:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    buf.write_int(_SLOT_EPOCH_SEEN, seen_ms)
+    buf.unlock()
+
 def _bump(offset: int) -> None:
+    refresh_generation()
     buf: SharedBuffer = _store.ensure()
     buf.lock()
     cur: int = buf.read_int(offset)
@@ -112,6 +198,7 @@ def _bump(offset: int) -> None:
     buf.unlock()
 
 def _get(offset: int) -> int:
+    refresh_generation()
     buf: SharedBuffer = _store.ensure()
     buf.lock()
     v: int = buf.read_int(offset)
@@ -121,25 +208,17 @@ def _get(offset: int) -> int:
 def reset() -> None:
     buf: SharedBuffer = _store.ensure()
     buf.lock()
-    buf.write_int(_SLOT_REQ, 0)
-    buf.write_int(_SLOT_5XX, 0)
-    buf.write_int(_SLOT_JOB, 0)
-    buf.write_int(_SLOT_MAIL, 0)
-    buf.write_int(_SLOT_RL, 0)
-    buf.write_int(_SLOT_POOL_OUT, 0)
-    buf.write_int(_SLOT_POOL_WAIT, 0)
-    buf.write_int(_SLOT_POOL_FAIL, 0)
-    buf.write_int(_SLOT_WORKERS, 0)
-    w: int = 0
-    while w < _MAX_WORKERS:
-        base: int = _WORKER_ORIGIN + w * _WORKER_STRIDE
-        buf.write_int(base, 0)
-        buf.write_int(base + 8, 0)
-        buf.write_int(base + 16, 0)
-        w = w + 1
+    _zero_locked(buf)
+    epoch: int = _mix_epoch()
+    buf.write_int(_SLOT_EPOCH, epoch)
+    buf.write_int(_SLOT_EPOCH_SEEN, nox.time.now_ms())
     buf.unlock()
     _worker_claimed = False
     _worker_index = 0
+    _local_epoch = epoch
+    _gauge_size = 0
+    _gauge_open = 0
+    _gauge_idle = 0
 
 def inc_requests() -> None:
     _bump(_SLOT_REQ)
@@ -194,20 +273,30 @@ def db_pool_exhausted() -> int:
     return _get(_SLOT_POOL_FAIL)
 
 def claim_worker() -> int:
-    if _worker_claimed:
+    epoch: int = refresh_generation()
+    if _worker_claimed and _local_epoch == epoch:
         return _worker_index
     buf: SharedBuffer = _store.ensure()
     buf.lock()
-    n: int = buf.read_int(_SLOT_WORKERS)
-    claimed: int = n
-    if claimed >= _MAX_WORKERS:
-        claimed = _MAX_WORKERS - 1
-    else:
-        buf.write_int(_SLOT_WORKERS, n + 1)
+    now: int = nox.time.now_ms()
+    found: int = -1
+    i: int = 0
+    while i < _MAX_WORKERS and found < 0:
+        seen: int = buf.read_int(_WORKER_ORIGIN + i * _WORKER_STRIDE + 24)
+        if seen == 0 or now < seen or now - seen > worker_stale_ms():
+            found = i
+        i = i + 1
+    if found >= 0:
+        base: int = _WORKER_ORIGIN + found * _WORKER_STRIDE
+        buf.write_int(base, 0)
+        buf.write_int(base + 8, 0)
+        buf.write_int(base + 16, 0)
+        buf.write_int(base + 24, now)
+        _worker_claimed = True
+        _worker_index = found
+        _local_epoch = epoch
     buf.unlock()
-    _worker_claimed = True
-    _worker_index = claimed
-    return claimed
+    return found
 
 def worker_index() -> int:
     return _worker_index
@@ -215,55 +304,80 @@ def worker_index() -> int:
 def worker_claimed() -> bool:
     return _worker_claimed
 
-def record_pool_worker(index: int, size: int, opened: int, idle: int) -> None:
+def stamp_worker(index: int, seen_ms: int) -> None:
     if index < 0 or index >= _MAX_WORKERS:
         return
     buf: SharedBuffer = _store.ensure()
     buf.lock()
-    n: int = buf.read_int(_SLOT_WORKERS)
-    if index + 1 > n and n < _MAX_WORKERS:
-        buf.write_int(_SLOT_WORKERS, index + 1)
+    buf.write_int(_WORKER_ORIGIN + index * _WORKER_STRIDE + 24, seen_ms)
+    buf.unlock()
+
+def record_pool_worker(index: int, size: int, opened: int, idle: int) -> None:
+    if index < 0 or index >= _MAX_WORKERS:
+        return
+    epoch: int = refresh_generation()
+    if _local_epoch != epoch:
+        return
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
     base: int = _WORKER_ORIGIN + index * _WORKER_STRIDE
     buf.write_int(base, size)
     buf.write_int(base + 8, opened)
     buf.write_int(base + 16, idle)
+    buf.write_int(base + 24, nox.time.now_ms())
     buf.unlock()
+    _gauge_size = size
+    _gauge_open = opened
+    _gauge_idle = idle
+
+def _worker_live(seen: int, now: int) -> bool:
+    if seen == 0:
+        return False
+    if now < seen:
+        return False
+    if now - seen > worker_stale_ms():
+        return False
+    return True
 
 def pool_series_text() -> str:
+    refresh_generation()
     buf: SharedBuffer = _store.ensure()
     buf.lock()
-    n: int = buf.read_int(_SLOT_WORKERS)
-    if n > _MAX_WORKERS:
-        n = _MAX_WORKERS
     sizes: list[int] = []
     opens: list[int] = []
     idles: list[int] = []
+    seens: list[int] = []
     i: int = 0
-    while i < n:
+    while i < _MAX_WORKERS:
         base: int = _WORKER_ORIGIN + i * _WORKER_STRIDE
         sizes.append(buf.read_int(base))
         opens.append(buf.read_int(base + 8))
         idles.append(buf.read_int(base + 16))
+        seens.append(buf.read_int(base + 24))
         i = i + 1
     buf.unlock()
-    if n == 0:
-        return ""
+    now: int = nox.time.now_ms()
     size_sum: int = 0
     open_sum: int = 0
     idle_sum: int = 0
     size_lines: str = ""
     open_lines: str = ""
     idle_lines: str = ""
+    n: int = 0
     k: int = 0
-    while k < n:
-        size_sum = size_sum + sizes[k]
-        open_sum = open_sum + opens[k]
-        idle_sum = idle_sum + idles[k]
-        label: str = "{worker=\"" + str(k) + "\"} "
-        size_lines = size_lines + "nyx_db_pool_size" + label + str(sizes[k]) + "\n"
-        open_lines = open_lines + "nyx_db_pool_open" + label + str(opens[k]) + "\n"
-        idle_lines = idle_lines + "nyx_db_pool_idle" + label + str(idles[k]) + "\n"
+    while k < _MAX_WORKERS:
+        if _worker_live(seens[k], now):
+            n = n + 1
+            size_sum = size_sum + sizes[k]
+            open_sum = open_sum + opens[k]
+            idle_sum = idle_sum + idles[k]
+            label: str = "{worker=\"" + str(k) + "\"} "
+            size_lines = size_lines + "nyx_db_pool_size" + label + str(sizes[k]) + "\n"
+            open_lines = open_lines + "nyx_db_pool_open" + label + str(opens[k]) + "\n"
+            idle_lines = idle_lines + "nyx_db_pool_idle" + label + str(idles[k]) + "\n"
         k = k + 1
+    if n == 0:
+        return ""
     out: str = ""
     out = out + "# HELP nyx_db_pool_size Checkout slots. Unlabeled value is the sum across workers.\n"
     out = out + "# TYPE nyx_db_pool_size gauge\n"
@@ -288,7 +402,36 @@ def pool_gauge_text(size: int, opened: int, idle: int) -> str:
     out = out + "nyx_db_pool_idle " + str(idle) + "\n"
     return out
 
+async def _pulse() -> None:
+    try:
+        while not _pulse_stop:
+            nox.time.sleep_ms(1000)
+            if _pulse_stop:
+                break
+            if _worker_claimed:
+                record_pool_worker(_worker_index, _gauge_size, _gauge_open, _gauge_idle)
+    finally:
+        _pulse_running = False
+
+# Bos kalan worker'in slotu stale sanilmasin. Olunce fiber de olur; slot susar.
+def ensure_pulse() -> None:
+    if _pulse_running:
+        return
+    _pulse_stop = False
+    _pulse_running = True
+    spawn _pulse()
+
+def stop_pulse() -> None:
+    if not _pulse_running:
+        return
+    _pulse_stop = True
+    spins: int = 0
+    while _pulse_running and spins < 15000:
+        nox.time.sleep_ms(1)
+        spins = spins + 1
+
 def prometheus_text() -> str:
+    refresh_generation()
     buf: SharedBuffer = _store.ensure()
     buf.lock()
     r: int = buf.read_int(_SLOT_REQ)

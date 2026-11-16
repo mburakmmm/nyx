@@ -9,9 +9,46 @@
 # nyx.testing.assert_status(resp, 200)
 # nyx.testing.assert_body_contains(resp, "Merhaba")
 
-import nox.test
+import nox.fs
+import nox.os
+import nox.path
 import nox.strings
+import nox.tempfile
+import nox.test
+from nox.os import OsError
 from nox.http import HttpRequest, HttpResponse
+
+def scratch(name: str) -> str:
+    return nox.path.join(nox.tempfile.gettempdir(), name)
+
+def python_bin() -> str:
+    path_env: str = ""
+    try:
+        path_env = nox.os.getenv("PATH")
+    except OsError:
+        path_env = ""
+    sep: str = ":"
+    names: list[str] = ["python3", "python"]
+    try:
+        spec: str = nox.os.getenv("COMSPEC")
+        if len(spec) > 0:
+            sep = ";"
+            names = ["python.exe", "python3.exe"]
+    except OsError:
+        sep = ":"
+    dirs: list[str] = nox.strings.split(path_env, sep)
+    i: int = 0
+    while i < len(dirs):
+        j: int = 0
+        while j < len(names):
+            candidate: str = nox.path.join(dirs[i], names[j])
+            if len(dirs[i]) > 0 and nox.fs.exists(candidate):
+                return candidate
+            j = j + 1
+        i = i + 1
+    if sep == ";":
+        return "python"
+    return "python3"
 
 def _copy_headers(src: dict[str, str]) -> dict[str, str]:
     out: dict[str, str] = {}
