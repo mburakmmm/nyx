@@ -1,0 +1,62 @@
+import nox.fs
+import nox.test
+import nyx.ui
+from nyx.ui import UiError, Node
+
+def sample() -> Node:
+    page: Node = nyx.ui.root()
+    nyx.ui.heading(page, "Merhaba", 1, "")
+    nyx.ui.text(page, "a b", "")
+    nyx.ui.button(page, "Tamam", "ok", "save")
+    card: Node = nyx.ui.box(page, "")
+    nyx.ui.text(card, "<script>alert(1)</script>", "")
+    return page
+
+page: Node = sample()
+wire: str = nyx.ui.render(page)
+again: str = nyx.ui.render(page)
+print(wire)
+nox.test.assert_eq_str(again, wire, "render is stable")
+nox.test.assert_eq_str(nyx.ui.wire_version(), "nyx-ui 1", "wire")
+nox.test.assert_true(nyx.ui.wire_version() != nox.fs.read_to_string("VERSION"), "wire is not the package version")
+nox.test.assert_eq_str(
+    wire,
+    "nyx-ui 1\n"
+    + "N root box root - - 0\n"
+    + "N root/n0 heading n0 root - 1\n"
+    + "T root/n0 Merhaba\n"
+    + "N root/n1 text n1 root - 0\n"
+    + "T root/n1 a\\sb\n"
+    + "N root/save button save root ok 0\n"
+    + "T root/save Tamam\n"
+    + "N root/n3 box n3 root - 0\n"
+    + "N root/n3/n0 text n0 root/n3 - 0\n"
+    + "T root/n3/n0 <script>alert(1)</script>\n"
+    + ".\n",
+    "wire shape"
+)
+
+slash: Node = nyx.ui.root()
+nyx.ui.text(slash, "x\\y\nz", "body")
+escaped: str = nyx.ui.render(slash)
+print(escaped)
+nox.test.assert_true(escaped.find("x\\\\y\\nz") > 0, "backslash and newline are escaped")
+
+dup: Node = nyx.ui.root()
+nyx.ui.text(dup, "a", "same")
+rejected: bool = False
+try:
+    nyx.ui.text(dup, "b", "same")
+except UiError:
+    rejected = True
+print("duplicate " + str(rejected))
+nox.test.assert_true(rejected, "duplicate sibling key")
+
+bad_level: bool = False
+try:
+    nyx.ui.heading(nyx.ui.root(), "X", 0, "")
+except UiError:
+    bad_level = True
+print("level " + str(bad_level))
+nox.test.assert_true(bad_level, "heading level")
+print("tree_test ok")

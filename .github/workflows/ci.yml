@@ -404,3 +404,95 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $script:fail = 1 }
           }
           exit $script:fail
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
+
+      - name: Cache Nox toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.nox-lang
+          key: nox-v2.1.186-linux-x64-qbe
+
+      - name: Install Nox
+        run: |
+          if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then
+            bash ci/install_nox.sh
+          fi
+          echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
+
+      - name: Point package at checkout
+        run: |
+          python3 - <<'PY'
+          import json, os
+          ws = os.environ["GITHUB_WORKSPACE"]
+          sha = os.environ["GITHUB_SHA"]
+          data = {
+            "name": "nyx",
+            "source": "nox",
+            "entry": "examples/blog/main.nox",
+            "bin": {"name": "nyx", "path": "cli.nox"},
+            "requires": [
+              {"alias": "nyx", "repo": ws, "ref": "master"},
+              {"alias": "rune", "repo": "github.com/mburakmmm/rune", "ref": "v2.0.1"},
+            ],
+          }
+          with open("nox.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+          lock = {
+            "packages": [
+              {"alias": "nyx", "repo": ws, "ref": "master", "resolved": sha},
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+                "resolved": "a4c5434563a7415cc45df687af4ac51f51085912",
+              },
+            ]
+          }
+          with open("nox.lock", "w", encoding="utf-8") as f:
+            json.dump(lock, f, indent=2)
+            f.write("\n")
+          PY
+
+      - name: Fetch, test, and compile hello
+        run: |
+          noxc --version
+          noxc fetch
+          fail=0
+          for t in tests/ui/*.nox; do
+            echo "==> $t"
+            if ! noxc test "$t"; then
+              echo "FAILED: $t"
+              fail=1
+            fi
+          done
+          noxc build --target wasm32-freestanding examples/ui/hello.nox -o examples/ui/hello.wasm
+          python3 - <<'PY'
+          data = open("examples/ui/hello.wasm", "rb").read()
+          for banned in (b"nyx.db", b"nyx.auth", b"nyx-ui-notes-secret", b"ada-pass-9"):
+              if banned in data:
+                  raise SystemExit(banned.decode())
+          PY
+          exit "$fail"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright Chromium
+        run: |
+          mkdir -p "$RUNNER_TEMP/nyx-browser"
+          npm init -y --prefix "$RUNNER_TEMP/nyx-browser"
+          npm install --prefix "$RUNNER_TEMP/nyx-browser" playwright
+          npm exec --prefix "$RUNNER_TEMP/nyx-browser" -- playwright install --with-deps chromium
+
+      - name: Browser
+        run: |
+          NYX_PLAYWRIGHT="$RUNNER_TEMP/nyx-browser/node_modules/playwright/index.mjs" node examples/ui-spike/ci-browser.mjs

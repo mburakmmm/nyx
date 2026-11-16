@@ -1,0 +1,65 @@
+# Sayaç. Yazar HTML, CSS ve JS yazmaz.
+# Durum main içindedir. Her oturum ayrı wasm örneğidir.
+
+import nyx.ui
+import nyx.ui_session
+from nyx.ui import Node
+from nyx.ui_session import Event
+
+class Counter:
+    n: int
+    name: str
+    shown: bool
+    order: int
+
+    def __init__(self: Counter) -> None:
+        self.n = 0
+        self.name = ""
+        self.shown = True
+        self.order = 0
+
+def view(state: Counter) -> Node:
+    page: Node = nyx.ui.root()
+    nyx.ui.heading(page, "Sayaç " + str(state.n), 1, "title")
+    nyx.ui.text(page, state.name, "echo")
+    nyx.ui.field(page, state.name, "name", "field")
+    nyx.ui.button(page, "Artır", "inc", "plus")
+    nyx.ui.button(page, "Gizle", "toggle", "toggle")
+    if state.shown:
+        nyx.ui.text(page, "görünür", "extra")
+    row: Node = nyx.ui.box(page, "row")
+    if state.order == 0:
+        nyx.ui.text(row, "A", "a")
+        nyx.ui.text(row, "B", "b")
+    else:
+        nyx.ui.text(row, "B", "b")
+        nyx.ui.text(row, "A", "a")
+    nyx.ui.button(page, "Sırala", "swap", "swap")
+    return page
+
+def apply(state: Counter, ev: Event) -> None:
+    if ev.kind == "click" and ev.name == "inc":
+        state.n = state.n + 1
+    if ev.kind == "click" and ev.name == "toggle":
+        if state.shown:
+            state.shown = False
+        else:
+            state.shown = True
+    if ev.kind == "click" and ev.name == "swap":
+        if state.order == 0:
+            state.order = 1
+        else:
+            state.order = 0
+    if ev.kind == "input" and ev.name == "name":
+        state.name = ev.value
+
+def run() -> None:
+    state: Counter = Counter()
+    while True:
+        nyx.ui.frame(view(state))
+        ev: Event = nyx.ui_session.poll_event()
+        if ev.kind == "stop":
+            return
+        apply(state, ev)
+
+run()

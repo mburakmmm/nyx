@@ -1,0 +1,56 @@
+# Ağır hesap. Sonuç wasm'dedir.
+# İşçi açıkken bu döngü DOM iş parçacığını tutmaz.
+
+import nyx.ui
+import nyx.ui_session
+from nyx.ui import Node
+from nyx.ui_session import Event
+
+class Load:
+    label: str
+    total: int
+    done: int
+
+    def __init__(self: Load) -> None:
+        self.label = "hazır"
+        self.total = 0
+        self.done = 0
+
+def burn() -> int:
+    x: int = 1
+    i: int = 0
+    while i < 48000000:
+        x = x * 1103515245 + 12345
+        if x < 0:
+            x = 0 - x
+        i = i + 1
+    return x
+
+def view(state: Load) -> Node:
+    page: Node = nyx.ui.root()
+    nyx.ui.heading(page, "Yük", 1, "title")
+    nyx.ui.text(page, state.label, "label")
+    if state.done == 1:
+        nyx.ui.text(page, str(state.total), "total")
+    nyx.ui.button(page, "Hesapla", "work", "work")
+    return page
+
+def apply(state: Load, ev: Event) -> None:
+    if ev.kind == "click" and ev.name == "work":
+        state.label = "hesap"
+        state.done = 0
+        nyx.ui.frame(view(state))
+        state.total = burn()
+        state.done = 1
+        state.label = "bitti"
+
+def run() -> None:
+    state: Load = Load()
+    while True:
+        nyx.ui.frame(view(state))
+        ev: Event = nyx.ui_session.poll_event()
+        if ev.kind == "stop":
+            return
+        apply(state, ev)
+
+run()

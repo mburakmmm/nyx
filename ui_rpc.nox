@@ -1,0 +1,337 @@
+# Kayıtlı RPC. İstemci işlem adı bu listedeyse çalışır.
+# Başka bir ad, fonksiyon olarak çağrılmaz.
+# Yetki oturumdadır. nyx.auth bu modülde yoktur.
+
+import nox.fs
+import nox.json
+import nox.strings
+import nyx.csrf
+import nyx.ctrl
+import nyx.password
+import nyx.params
+import nyx.response
+import nyx.runtime
+from nox.db import Row, Statement
+from nox.http import HttpResponse
+from nox.json import JsonError
+from nox.router import Context
+from nox.sqlite import Connection
+from nyx.app import Application
+
+def _ada_hash() -> str:
+    return "$argon2id$v=19$m=19456,t=2,p=1$mfyH9ExxDTnVhBto5sUtTYqkNjah5EQomkz/WO9kPHc$wCOXhvlNlLMk59N1vSrCurC+p5t6uZKvMQDpza8HCPU"
+
+def _bor_hash() -> str:
+    return "$argon2id$v=19$m=19456,t=2,p=1$4f9yugZEC2Rro89ijcj8kr1g/4///F+5+vmDXQ4su6w$MABYe3gmeTFM7YtuO2p/Qi4I0cGHwZlzRPOfuTv/UJk"
+
+def _owner() -> str:
+    raw: str = nyx.runtime.session_json()
+    if len(raw) == 0 or raw == "{}":
+        return ""
+    try:
+        v: JsonValue = nox.json.parse(raw)
+        idv: JsonValue = nox.json.get_or_null(v, "user_id")
+        if nox.json.is_string(idv):
+            return nox.json.as_string(idv)
+    except JsonError:
+        return ""
+    return ""
+
+def _field(v: JsonValue, key: str) -> str:
+    item: JsonValue = nox.json.get_or_null(v, key)
+    if nox.json.is_string(item):
+        return nox.json.as_string(item)
+    return ""
+
+def _gen(v: JsonValue) -> int:
+    item: JsonValue = nox.json.get_or_null(v, "generation")
+    if nox.json.is_number(item):
+        return nox.json.as_int(item)
+    return 0
+
+def _int_field(v: JsonValue, key: str) -> int:
+    item: JsonValue = nox.json.get_or_null(v, key)
+    if nox.json.is_number(item):
+        return nox.json.as_int(item)
+    return 0
+
+def _notes_json(db: Connection, owner: str) -> str:
+    stmt: Statement = db.prepare("SELECT id, body FROM ui_notes WHERE owner = ? ORDER BY id")
+    stmt.bind_str(0, owner)
+    rows: list[Row] = stmt.query()
+    out: str = "["
+    i: int = 0
+    while i < len(rows):
+        row: Row = rows[i]
+        if i > 0:
+            out = out + ","
+        out = out + "{\"id\":" + str(row.get_int(0)) + ",\"body\":" + nox.json.dump_string(row.get_str(1)) + "}"
+        i = i + 1
+    return out + "]"
+
+def _envelope(secret: str, user: str, gen: int, notes: str, err: str) -> str:
+    csrf: str = nyx.csrf.token(secret)
+    out: str = "{\"ok\":"
+    if len(err) == 0:
+        out = out + "true"
+    else:
+        out = out + "false,\"error\":" + nox.json.dump_string(err)
+    out = out + ",\"user\":" + nox.json.dump_string(user)
+    out = out + ",\"csrf\":" + nox.json.dump_string(csrf)
+    out = out + ",\"generation\":" + str(gen)
+    if len(notes) > 0:
+        out = out + ",\"notes\":" + notes
+    return out + "}"
+
+def _json(status: int, body: str) -> HttpResponse:
+    return nyx.ctrl.json(status, body)
+
+def _seed(db: Connection) -> None:
+    rows: list[Row] = db.query("SELECT COUNT(*) FROM ui_users")
+    if len(rows) > 0 and rows[0].get_int(0) > 0:
+        return
+    ada: Statement = db.prepare("INSERT INTO ui_users (name, password_digest) VALUES (?, ?)")
+    ada.bind_str(0, "ada")
+    ada.bind_str(1, _ada_hash())
+    ada.execute()
+    bor: Statement = db.prepare("INSERT INTO ui_users (name, password_digest) VALUES (?, ?)")
+    bor.bind_str(0, "bor")
+    bor.bind_str(1, _bor_hash())
+    bor.execute()
+
+def _ctype(path: str) -> str:
+    if nox.strings.ends_with(path, ".wasm"):
+        return "application/wasm"
+    if nox.strings.ends_with(path, ".js"):
+        return "text/javascript; charset=utf-8"
+    if nox.strings.ends_with(path, ".css"):
+        return "text/css; charset=utf-8"
+    return "text/html; charset=utf-8"
+
+def _file_for(target: str) -> str:
+    path: str = nyx.params.path_only(target)
+    if path == "/ui/notes.html":
+        return "examples/ui/notes.html"
+    if path == "/ui/notes.wasm":
+        return "examples/ui/notes.wasm"
+    if path == "/ui/board.html":
+        return "examples/ui/board.html"
+    if path == "/ui/board.wasm":
+        return "examples/ui/board.wasm"
+    if path == "/ui/load.html":
+        return "examples/ui/load.html"
+    if path == "/ui/load.wasm":
+        return "examples/ui/load.wasm"
+    if path == "/ui/threads.html":
+        return "examples/ui/threads.html"
+    if path == "/ui/threads.wasm":
+        return "examples/ui/threads.wasm"
+    if path == "/ui/spike/session.js":
+        return "examples/ui-spike/session.js"
+    if path == "/ui/spike/mount.js":
+        return "examples/ui-spike/mount.js"
+    if path == "/ui/spike/host.js":
+        return "examples/ui-spike/host.js"
+    if path == "/ui/spike/ui-worker.js":
+        return "examples/ui-spike/ui-worker.js"
+    if path == "/ui/spike/thread-host.js":
+        return "examples/ui-spike/thread-host.js"
+    if path == "/ui/styles/base.css":
+        return "ui/styles/base.css"
+    return ""
+
+def _serve_file(ctx: Context) -> HttpResponse:
+    path: str = _file_for(ctx.request.target)
+    if len(path) == 0 or not nox.fs.exists(path):
+        return _json(404, "{\"ok\":false,\"error\":\"dosya yok\"}")
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = _ctype(path)
+    resp: HttpResponse = HttpResponse(200, nox.fs.read_to_string(path), headers)
+    route: str = nyx.params.path_only(ctx.request.target)
+    if route == "/ui/threads.html" or route == "/ui/threads.wasm" or route == "/ui/spike/thread-host.js" or route == "/ui/spike/host.js" or route == "/ui/styles/base.css":
+        resp = nyx.response.with_header(resp, "Cross-Origin-Resource-Policy", "same-origin")
+    if route != "/ui/threads.html":
+        return resp
+    opened: HttpResponse = nyx.response.with_header(resp, "Cross-Origin-Opener-Policy", "same-origin")
+    return nyx.response.with_header(opened, "Cross-Origin-Embedder-Policy", "require-corp")
+
+def _session(application: Application, ctx: Context) -> HttpResponse:
+    secret: str = application.config.secret_key
+    return _json(200, _envelope(secret, _owner(), -1, "", ""))
+
+def _login(application: Application, v: JsonValue, gen: int) -> HttpResponse:
+    name: str = _field(v, "name")
+    password: str = _field(v, "password")
+    secret: str = application.config.secret_key
+    if len(name) == 0 or len(name) > 32 or len(password) == 0 or len(password) > 64:
+        return _json(400, _envelope(secret, "", gen, "", "gecersiz"))
+    stmt: Statement = application.db.prepare("SELECT password_digest FROM ui_users WHERE name = ?")
+    stmt.bind_str(0, name)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0 or not nyx.password.verify(rows[0].get_str(0), password):
+        return _json(401, _envelope(secret, "", gen, "", "kimlik yok"))
+    nyx.runtime.set_session("{\"user_id\":" + nox.json.dump_string(name) + "}")
+    nyx.runtime.cycle_session()
+    nyx.runtime.set_user(name, "{\"user_id\":" + nox.json.dump_string(name) + "}")
+    return _json(200, _envelope(secret, name, gen, "", ""))
+
+def _logout(application: Application, gen: int) -> HttpResponse:
+    nyx.runtime.logout()
+    return _json(200, _envelope(application.config.secret_key, "", gen, "", ""))
+
+def _list(application: Application, gen: int) -> HttpResponse:
+    owner: str = _owner()
+    secret: str = application.config.secret_key
+    if len(owner) == 0:
+        return _json(401, _envelope(secret, "", gen, "", "oturum yok"))
+    return _json(200, _envelope(secret, owner, gen, _notes_json(application.db, owner), ""))
+
+def _create(application: Application, v: JsonValue, gen: int) -> HttpResponse:
+    owner: str = _owner()
+    secret: str = application.config.secret_key
+    if len(owner) == 0:
+        return _json(401, _envelope(secret, "", gen, "", "oturum yok"))
+    body: str = _field(v, "body")
+    if len(body) == 0 or len(body) > 200:
+        return _json(400, _envelope(secret, owner, gen, "", "not gecersiz"))
+    stmt: Statement = application.db.prepare("INSERT INTO ui_notes (owner, body) VALUES (?, ?)")
+    stmt.bind_str(0, owner)
+    stmt.bind_str(1, body)
+    stmt.execute()
+    return _json(200, _envelope(secret, owner, gen, _notes_json(application.db, owner), ""))
+
+def _order_sql(sort: str, direction: str) -> str:
+    if sort == "id" and direction == "asc":
+        return "SELECT id, body FROM ui_notes WHERE owner = ? ORDER BY id ASC LIMIT ? OFFSET ?"
+    if sort == "id" and direction == "desc":
+        return "SELECT id, body FROM ui_notes WHERE owner = ? ORDER BY id DESC LIMIT ? OFFSET ?"
+    if sort == "body" and direction == "asc":
+        return "SELECT id, body FROM ui_notes WHERE owner = ? ORDER BY body ASC, id ASC LIMIT ? OFFSET ?"
+    if sort == "body" and direction == "desc":
+        return "SELECT id, body FROM ui_notes WHERE owner = ? ORDER BY body DESC, id ASC LIMIT ? OFFSET ?"
+    return ""
+
+def _page_json(db: Connection, owner: str, sort: str, direction: str, page: int, size: int) -> str:
+    sql: str = _order_sql(sort, direction)
+    offset: int = (page - 1) * size
+    stmt: Statement = db.prepare(sql)
+    stmt.bind_str(0, owner)
+    stmt.bind_int(1, size)
+    stmt.bind_int(2, offset)
+    rows: list[Row] = stmt.query()
+    out: str = "["
+    i: int = 0
+    while i < len(rows):
+        row: Row = rows[i]
+        if i > 0:
+            out = out + ","
+        out = out + "{\"id\":" + str(row.get_int(0)) + ",\"body\":" + nox.json.dump_string(row.get_str(1)) + "}"
+        i = i + 1
+    return out + "]"
+
+def _count_notes(db: Connection, owner: str) -> int:
+    stmt: Statement = db.prepare("SELECT COUNT(*) FROM ui_notes WHERE owner = ?")
+    stmt.bind_str(0, owner)
+    rows: list[Row] = stmt.query()
+    if len(rows) == 0:
+        return 0
+    return rows[0].get_int(0)
+
+def _with_page(body: str, total: int, page: int, size: int) -> str:
+    n: int = len(body)
+    if n == 0:
+        return body
+    return body[0:n - 1] + ",\"total\":" + str(total) + ",\"page\":" + str(page) + ",\"size\":" + str(size) + "}"
+
+def _board(application: Application, v: JsonValue, gen: int) -> HttpResponse:
+    owner: str = _owner()
+    secret: str = application.config.secret_key
+    if len(owner) == 0:
+        return _json(401, _envelope(secret, "", gen, "", "oturum yok"))
+    sort: str = _field(v, "sort")
+    direction: str = _field(v, "dir")
+    page: int = _int_field(v, "page")
+    size: int = _int_field(v, "size")
+    if len(_order_sql(sort, direction)) == 0 or page < 1 or size < 1 or size > 5:
+        return _json(400, _envelope(secret, owner, gen, "", "sayfa gecersiz"))
+    total: int = _count_notes(application.db, owner)
+    notes: str = _page_json(application.db, owner, sort, direction, page, size)
+    packed: str = _envelope(secret, owner, gen, notes, "")
+    return _json(200, _with_page(packed, total, page, size))
+
+def _delete(application: Application, v: JsonValue, gen: int) -> HttpResponse:
+    owner: str = _owner()
+    secret: str = application.config.secret_key
+    if len(owner) == 0:
+        return _json(401, _envelope(secret, "", gen, "", "oturum yok"))
+    idv: JsonValue = nox.json.get_or_null(v, "id")
+    if not nox.json.is_number(idv):
+        return _json(400, _envelope(secret, owner, gen, "", "not gecersiz"))
+    id: int = nox.json.as_int(idv)
+    if id <= 0:
+        return _json(400, _envelope(secret, owner, gen, "", "not gecersiz"))
+    found: Statement = application.db.prepare("SELECT owner FROM ui_notes WHERE id = ?")
+    found.bind_int(0, id)
+    rows: list[Row] = found.query()
+    if len(rows) == 0:
+        return _json(404, _envelope(secret, owner, gen, "", "not yok"))
+    if rows[0].get_str(0) != owner:
+        return _json(403, _envelope(secret, owner, gen, _notes_json(application.db, owner), "yetkisiz"))
+    stmt: Statement = application.db.prepare("DELETE FROM ui_notes WHERE id = ? AND owner = ?")
+    stmt.bind_int(0, id)
+    stmt.bind_str(1, owner)
+    stmt.execute()
+    return _json(200, _envelope(secret, owner, gen, _notes_json(application.db, owner), ""))
+
+def _rpc(application: Application, ctx: Context) -> HttpResponse:
+    secret: str = application.config.secret_key
+    if len(ctx.request.body) > 4096:
+        return _json(413, _envelope(secret, _owner(), 0, "", "govde buyuk"))
+    try:
+        v: JsonValue = nox.json.parse(ctx.request.body)
+        op: str = _field(v, "op")
+        gen: int = _gen(v)
+        if op == "session.login":
+            return _login(application, v, gen)
+        if op == "session.logout":
+            return _logout(application, gen)
+        if op == "notes.list":
+            return _list(application, gen)
+        if op == "notes.create":
+            return _create(application, v, gen)
+        if op == "notes.delete":
+            return _delete(application, v, gen)
+        if op == "board.page":
+            return _board(application, v, gen)
+        return _json(404, _envelope(secret, _owner(), gen, "", "kayitli degil"))
+    except JsonError:
+        return _json(400, _envelope(secret, _owner(), 0, "", "json degil"))
+
+def install(application: Application) -> None:
+    _seed(application.db)
+    application.router.get("/ui/session", _session_route(application))
+    application.router.post("/ui/rpc", _rpc_route(application))
+    application.router.get("/ui/notes.html", _serve_file)
+    application.router.get("/ui/notes.wasm", _serve_file)
+    application.router.get("/ui/board.html", _serve_file)
+    application.router.get("/ui/board.wasm", _serve_file)
+    application.router.get("/ui/load.html", _serve_file)
+    application.router.get("/ui/load.wasm", _serve_file)
+    application.router.get("/ui/threads.html", _serve_file)
+    application.router.get("/ui/threads.wasm", _serve_file)
+    application.router.get("/ui/spike/session.js", _serve_file)
+    application.router.get("/ui/spike/mount.js", _serve_file)
+    application.router.get("/ui/spike/host.js", _serve_file)
+    application.router.get("/ui/spike/ui-worker.js", _serve_file)
+    application.router.get("/ui/spike/thread-host.js", _serve_file)
+    application.router.get("/ui/styles/base.css", _serve_file)
+
+def _session_route(application: Application) -> (Context) -> HttpResponse:
+    def handler(ctx: Context) -> HttpResponse:
+        return _session(application, ctx)
+    return handler
+
+def _rpc_route(application: Application) -> (Context) -> HttpResponse:
+    def handler(ctx: Context) -> HttpResponse:
+        return _rpc(application, ctx)
+    return handler

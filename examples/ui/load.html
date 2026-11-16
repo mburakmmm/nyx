@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yük</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <p id="clock" role="status">saat 0</p>
+  <p id="lane">tek iş parçacığı</p>
+  <button id="close" type="button">Kapat</button>
+  <div id="app"></div>
+  <script type="module">
+    import { UiSession } from "/ui/spike/session.js";
+
+    const error = document.querySelector("#nyx-ui-error");
+    const clock = document.querySelector("#clock");
+    const lane = document.querySelector("#lane");
+    const app = document.querySelector("#app");
+    let frames = 0;
+    let last = performance.now();
+    let maxGap = 0;
+    function tick(now) {
+      const gap = now - last;
+      if (frames > 0 && gap > maxGap) maxGap = gap;
+      last = now;
+      frames += 1;
+      clock.textContent = "saat " + frames + " ara " + Math.round(maxGap);
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    function fail(message) {
+      error.textContent = message;
+    }
+
+    const session = new UiSession(app, fail);
+    session.local = new URL(location.href).searchParams.get("yerel") === "1";
+    const response = await fetch(new URL("./load.wasm", import.meta.url));
+    if (!response.ok) fail("load.wasm yok: " + response.status);
+    else {
+      const bytes = await response.arrayBuffer();
+      await session.start(bytes);
+      lane.textContent = session._worker ? "işçi" : "yerel";
+      if (!globalThis.crossOriginIsolated) lane.textContent += ", COOP kapalı";
+      const close = document.querySelector("#close");
+      const shut = async () => {
+        await session.dispose();
+        lane.textContent = (session._worker ? "işçi duruyor" : "kapandı") + ", düğüm " + app.childElementCount;
+      };
+      close.addEventListener("click", () => { shut(); });
+      close.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.isTrusted) shut();
+      });
+    }
+  </script>
+</body>
+</html>

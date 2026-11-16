@@ -1,0 +1,132 @@
+import nox.test
+import nox.fs
+import nox.strings
+import nyx.app
+import nyx.config
+import nyx.testing
+import nyx.ui_net
+import nyx.ui_rpc
+from nox.http import HttpRequest, HttpResponse
+from nyx.app import Application
+from nyx.config import Config
+
+def setup(application: Application) -> None:
+    nyx.ui_rpc.install(application)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-ui-notes-secret-key-32b!!"
+cfg.db_path = ":memory:"
+cfg.migrate_path = "examples/ui/db/migrate"
+cfg.jobs_db_path = ":memory:"
+cfg.csrf_enabled = True
+cfg.session_enabled = True
+cfg.log_requests = False
+cfg.rate_limit_enabled = False
+cfg.metrics_enabled = False
+cfg.secure_cookies = False
+
+application: Application = nyx.app.boot(cfg, setup)
+
+def cookie_of(resp: HttpResponse) -> str:
+    raw: str | None = nyx.testing.extract_set_cookie(resp)
+    if raw == None:
+        return ""
+    cut: int = nox.strings.index_of(raw, ";")
+    if cut < 0:
+        return raw
+    return raw[0:cut]
+
+def call(method: str, path: str, body: str, cookie: str, csrf: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    if len(cookie) > 0:
+        headers["Cookie"] = cookie
+    if len(csrf) > 0:
+        headers["X-CSRF-Token"] = csrf
+    if method == "POST":
+        headers["Content-Type"] = "application/json"
+    return nyx.app.dispatch(application, HttpRequest(method, path, body, headers, ""))
+
+def csrf_of(body: str) -> str:
+    return nyx.ui_net.csrf_of(body)
+
+opened: HttpResponse = call("GET", "/ui/session", "", "", "")
+nox.test.assert_eq_int(opened.status, 200, "session")
+cookie: str = cookie_of(opened)
+csrf: str = csrf_of(opened.body)
+nox.test.assert_true(len(cookie) > 0, "cookie")
+nox.test.assert_true(len(csrf) > 0, "csrf")
+nox.test.assert_eq_str(nyx.ui_net.user_of(opened.body), "", "anon")
+
+bare: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"ada\",\"password\":\"ada-pass-9\",\"generation\":1}", cookie, "")
+nox.test.assert_eq_int(bare.status, 403, "csrf required")
+
+bad: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"ada\",\"password\":\"nope\",\"generation\":1}", cookie, csrf)
+nox.test.assert_eq_int(bad.status, 401, "bad password")
+
+login: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"ada\",\"password\":\"ada-pass-9\",\"generation\":1}", cookie, csrf)
+nox.test.assert_eq_int(login.status, 200, "login")
+nox.test.assert_eq_str(nyx.ui_net.user_of(login.body), "ada", "ada")
+ada_cookie: str = cookie_of(login)
+ada_csrf: str = csrf_of(login.body)
+nox.test.assert_true(len(ada_cookie) > 0, "rotated cookie")
+
+made: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.create\",\"body\":\"<script>alert(1)</script>\",\"generation\":2}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(made.status, 200, "create")
+nox.test.assert_true(nyx.ui_net.has_notes(made.body), "notes key")
+notes: list[nyx.ui_net.Note] = nyx.ui_net.notes_of(made.body)
+nox.test.assert_eq_int(len(notes), 1, "one note")
+nox.test.assert_eq_str(notes[0].body, "<script>alert(1)</script>", "stored text")
+note_id: int = notes[0].id
+
+foreign: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"nyx.db.query\",\"generation\":3}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(foreign.status, 404, "db op rejected")
+nox.test.assert_eq_str(nyx.ui_net.error_of(foreign.body), "kayitli degil", "db name")
+
+auth_op: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"nyx.auth.login\",\"generation\":3}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(auth_op.status, 404, "auth op rejected")
+
+bor_open: HttpResponse = call("GET", "/ui/session", "", "", "")
+bor_cookie: str = cookie_of(bor_open)
+bor_csrf: str = csrf_of(bor_open.body)
+bor_login: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"bor\",\"password\":\"bor-pass-9\",\"generation\":1}", bor_cookie, bor_csrf)
+nox.test.assert_eq_int(bor_login.status, 200, "bor")
+bor_cookie = cookie_of(bor_login)
+bor_csrf = csrf_of(bor_login.body)
+stolen: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.delete\",\"id\":" + str(note_id) + ",\"generation\":2}", bor_cookie, bor_csrf)
+nox.test.assert_eq_int(stolen.status, 403, "other user")
+nox.test.assert_eq_str(nyx.ui_net.error_of(stolen.body), "yetkisiz", "authz")
+
+still: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.list\",\"generation\":4}", ada_cookie, ada_csrf)
+kept: list[nyx.ui_net.Note] = nyx.ui_net.notes_of(still.body)
+nox.test.assert_eq_int(len(kept), 1, "ada keeps the note")
+
+nox.test.assert_true(nyx.ui_net.is_cancel("{\"ok\":false,\"error\":\"iptal\"}"), "cancel body")
+nox.test.assert_eq_int(nyx.ui_net.generation_of("{\"generation\":2}"), 2, "generation")
+
+out: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.logout\",\"generation\":5}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(out.status, 200, "logout")
+fresh: HttpResponse = call("GET", "/ui/session", "", "", "")
+nox.test.assert_eq_int(fresh.status, 200, "fresh session")
+fresh_cookie: str = cookie_of(fresh)
+fresh_csrf: str = csrf_of(fresh.body)
+back: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"ada\",\"password\":\"ada-pass-9\",\"generation\":1}", fresh_cookie, fresh_csrf)
+nox.test.assert_eq_int(back.status, 200, "login after logout")
+nox.test.assert_eq_str(nyx.ui_net.user_of(back.body), "ada", "ada returns")
+
+client: str = nox.fs.read_to_string("examples/ui/notes.nox")
+net: str = nox.fs.read_to_string("ui_net.nox")
+ui: str = nox.fs.read_to_string("ui.nox")
+session: str = nox.fs.read_to_string("ui_session.nox")
+tree: str = nox.fs.read_to_string("ui_tree.nox")
+graph: str = client + "\n" + net + "\n" + ui + "\n" + session + "\n" + tree
+nox.test.assert_true(not nox.strings.contains(graph, "import nyx.db"), "client graph skips nyx.db")
+nox.test.assert_true(not nox.strings.contains(graph, "import nyx.auth"), "client graph skips nyx.auth")
+nox.test.assert_true(not nox.strings.contains(graph, "nyx-ui-notes-secret"), "secret stays on the server")
+nox.test.assert_true(not nox.strings.contains(client, "ada-pass-9"), "password stays on the server")
+
+page: HttpResponse = call("GET", "/ui/notes.html", "", "", "")
+nox.test.assert_eq_int(page.status, 200, "shell")
+nox.test.assert_true(nox.strings.contains(page.body, "UiSession"), "shell boots the session")
+
+nyx.app.shutdown(application)
+print("rpc_test ok")

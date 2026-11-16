@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Sayaç</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <p class="nyx-shell">Oturum A</p>
+  <div id="app"></div>
+  <p class="nyx-shell">Oturum B</p>
+  <div id="app-b"></div>
+  <script type="module">
+    import { UiSession } from "../ui-spike/session.js";
+
+    const error = document.querySelector("#nyx-ui-error");
+    const app = document.querySelector("#app");
+    const other = document.querySelector("#app-b");
+
+    function fail(message) {
+      error.textContent = message;
+    }
+
+    const response = await fetch(new URL("./counter.wasm", import.meta.url));
+    if (!response.ok) fail("counter.wasm yok: " + response.status);
+    else {
+      const compiled = await WebAssembly.compile(await response.arrayBuffer());
+      const first = new UiSession(app, fail);
+      const second = new UiSession(other, fail);
+      await first.start(compiled);
+      await second.start(compiled);
+    }
+  </script>
+</body>
+</html>

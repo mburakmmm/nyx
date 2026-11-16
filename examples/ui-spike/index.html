@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Nyx UI faz 0</title>
+</head>
+<body>
+  <h1>Nox WASM gidiş-dönüş</h1>
+  <p>Satır Nox <code>input()</code> ile okunur ve <code>print</code> ile geri yazılır.</p>
+  <form id="echo-form">
+    <label for="line">Satır</label>
+    <input id="line" name="line" value="ada" autocomplete="off">
+    <button type="submit">Çalıştır</button>
+  </form>
+  <pre id="out"></pre>
+  <script type="module">
+    import { runEcho } from "./host.js";
+
+    const form = document.querySelector("#echo-form");
+    const line = document.querySelector("#line");
+    const out = document.querySelector("#out");
+    const wasmUrl = new URL("./echo.wasm", import.meta.url);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      out.textContent = "çalışıyor";
+      try {
+        const bytes = await fetch(wasmUrl).then((response) => {
+          if (!response.ok) throw new Error("echo.wasm yok: " + response.status);
+          return response.arrayBuffer();
+        });
+        const result = await runEcho(bytes, line.value);
+        out.textContent = "kod " + result.code + "\n" + result.out + result.err;
+      } catch (error) {
+        out.textContent = String(error && error.message ? error.message : error);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Merhaba</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <div id="app"></div>
+  <script type="module">
+    import { runEcho } from "../ui-spike/host.js";
+    import { mountTree } from "../ui-spike/mount.js";
+
+    const error = document.querySelector("#nyx-ui-error");
+    const app = document.querySelector("#app");
+    const params = new URLSearchParams(location.search);
+
+    function fail(message) {
+      error.textContent = message;
+    }
+
+    async function start() {
+      try {
+        if (params.get("hata") === "1") {
+          mountTree("bozuk", app);
+          return;
+        }
+        const response = await fetch(new URL("./hello.wasm", import.meta.url));
+        if (!response.ok) throw new Error("hello.wasm yok: " + response.status);
+        const result = await runEcho(await response.arrayBuffer(), "");
+        if (result.code !== 0) throw new Error("nox çıkış " + result.code + "\n" + result.err);
+        mountTree(result.out, app);
+      } catch (err) {
+        fail(String(err && err.message ? err.message : err));
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Statik sayfa. Yazar HTML, CSS ve JS yazmaz.
+
+import nyx.ui
+from nyx.ui import Node
+
+page: Node = nyx.ui.root()
+nyx.ui.heading(page, "Merhaba", 1, "title")
+nyx.ui.text(page, "Nyx UI", "lead")
+nyx.ui.button(page, "Tamam", "ok", "save")
+card: Node = nyx.ui.box(page, "card")
+nyx.ui.text(card, "<script>alert(1)</script>", "raw")
+print(nyx.ui.render(page))

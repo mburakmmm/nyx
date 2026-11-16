@@ -7,6 +7,8 @@ tests/.auth_compile/
 /tmp/
 .nox/
 
+examples/ui/db/*.sqlite
+
 benchmarks/results/
 benchmarks/fastify/node_modules/
 benchmarks/nyx/nox.lock

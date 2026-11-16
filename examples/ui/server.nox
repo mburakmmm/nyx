@@ -1,0 +1,34 @@
+# Not defteri sunucusu. Depo kökünden:
+#   noxc run examples/ui/server.nox
+#   http://127.0.0.1:8766/ui/notes.html
+# Hesaplar ada / ada-pass-9 ve bor / bor-pass-9. Parola wasm içinde yoktur.
+
+import nox.http
+import nyx.app
+import nyx.config
+import nyx.ui_rpc
+from nox.http import HttpRequest, HttpResponse
+from nyx.app import Application
+from nyx.config import Config
+
+cfg: Config = nyx.config.defaults("development")
+cfg.secret_key = "nyx-ui-notes-secret-key-32b!!"
+cfg.db_path = "examples/ui/db/notes.sqlite"
+cfg.migrate_path = "examples/ui/db/migrate"
+cfg.jobs_db_path = ":memory:"
+cfg.log_requests = False
+cfg.rate_limit_enabled = False
+cfg.metrics_enabled = False
+cfg.log_json = False
+cfg.secure_cookies = False
+
+def setup(application: Application) -> None:
+    nyx.ui_rpc.install(application)
+
+application: Application = nyx.app.boot(cfg, setup)
+
+def handle(req: HttpRequest) -> HttpResponse:
+    return nyx.app.dispatch(application, req)
+
+print("ui notes http://127.0.0.1:8766/ui/notes.html")
+nox.http.serve(8766, handle)

@@ -1,0 +1,68 @@
+import nox.test
+import nyx.ui
+import nyx.ui_session
+from nyx.ui import UiError, Node
+
+page: Node = nyx.ui.root()
+shell: Node = nyx.ui.sidebar(page, "shell")
+side: Node = nyx.ui.column(shell, "side")
+nyx.ui.button(side, "Form", "form", "form")
+main: Node = nyx.ui.column(shell, "main")
+fields: Node = nyx.ui.grid(main, 2, "fields")
+nyx.ui.label(fields, "Adet", "count", "count-label")
+nyx.ui.number(fields, "3", "count", "count")
+menu: Node = nyx.ui.choice(fields, "inbox", "kind", "kind")
+nyx.ui.option(menu, "Gelen", "inbox", "inbox")
+nyx.ui.check(main, "Kabul", 1, "agree", "agree")
+nyx.ui.error(main, "başlık gerekli", "title", "title-error")
+book: Node = nyx.ui.tabs(main, 1, "pages")
+nyx.ui.tab(book, "Metin", "tab0", "tab0")
+nyx.ui.panel(book, "text-panel")
+dialog: Node = nyx.ui.modal(page, 0, "close", "dialog")
+nyx.ui.heading(dialog, "Kaydedildi", 2, "done")
+
+wire: str = nyx.ui.render(page)
+print(wire)
+nox.test.assert_true(wire.find("N root/shell sidebar shell root - 0") > 0, "sidebar")
+nox.test.assert_true(wire.find("N root/shell/main/fields grid fields root/shell/main - 2") > 0, "grid")
+nox.test.assert_true(wire.find("N root/shell/main/fields/count number count root/shell/main/fields count 0") > 0, "number")
+nox.test.assert_true(wire.find("N root/shell/main/fields/kind select kind root/shell/main/fields kind 0") > 0, "select")
+nox.test.assert_true(wire.find("N root/shell/main/fields/kind/inbox option inbox root/shell/main/fields/kind inbox 0") > 0, "option")
+nox.test.assert_true(wire.find("N root/shell/main/agree check agree root/shell/main agree 1") > 0, "check")
+nox.test.assert_true(wire.find("T root/shell/main/title-error başlık\\sgerekli") > 0, "error")
+nox.test.assert_true(wire.find("N root/shell/main/pages tabs pages root/shell/main - 1") > 0, "tabs")
+nox.test.assert_true(wire.find("N root/dialog modal dialog root close 0") > 0, "modal")
+
+wide: bool = False
+try:
+    nyx.ui.grid(nyx.ui.root(), 0, "bad")
+except UiError:
+    wide = True
+nox.test.assert_true(wide, "grid columns")
+
+slash: bool = False
+try:
+    nyx.ui.navigate("a/b")
+except UiError:
+    slash = True
+print("slash " + str(slash))
+nox.test.assert_true(slash, "route slash")
+
+nyx.ui.history()
+nox.test.assert_eq_str(nyx.ui.nav_state(), "listen", "listen")
+nyx.ui.navigate("form")
+nox.test.assert_eq_str(nyx.ui.nav_state(), "push form", "push")
+nyx.ui.frame(nyx.ui.root())
+nox.test.assert_eq_str(nyx.ui.nav_state(), "listen", "push spent")
+
+back: nyx.ui_session.Event = nyx.ui_session.parse_event("nav form")
+nox.test.assert_eq_str(back.kind, "nav", "nav kind")
+nox.test.assert_eq_str(back.name, "form", "nav name")
+
+empty: bool = False
+try:
+    nyx.ui_session.parse_event("nav")
+except UiError:
+    empty = True
+nox.test.assert_true(empty, "empty route")
+print("form_test ok")

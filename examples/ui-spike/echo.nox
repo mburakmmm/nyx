@@ -1,0 +1,5 @@
+# Faz 0 gidiş-dönüş. Satır nox_host.read ile gelir, yanıt nox_host.write ile döner.
+# Geliştirici HTML yazmaz. Bu dosya bileşen sistemi değildir.
+
+line: str = input()
+print("echo:" + line)

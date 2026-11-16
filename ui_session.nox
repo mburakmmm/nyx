@@ -1,0 +1,74 @@
+# Olay bekler. Köprüye fonksiyon geçmez. Gövde bir satırdır.
+# Adres host tarafından tamamlanır. Ağ çağrısı değildir.
+# http://nyx-ui.invalid/event
+
+import nox.http
+import nox.strings
+import nyx.ui
+import nyx.ui_tree
+from nox.http import HttpResponse
+from nyx.ui import UiError
+
+class Event:
+    kind: str
+    name: str
+    value: str
+
+    def __init__(self: Event, kind: str, name: str, value: str) -> None:
+        self.kind = kind
+        self.name = name
+        self.value = value
+
+def _strip_end(text: str) -> str:
+    n: int = len(text)
+    if n > 0 and nox.strings.byte_at(text, n - 1) == 10:
+        text = text[0:n - 1]
+        n = len(text)
+    if n > 0 and nox.strings.byte_at(text, n - 1) == 13:
+        return text[0:n - 1]
+    return text
+
+def _head(text: str) -> str:
+    i: int = 0
+    n: int = len(text)
+    while i < n:
+        if text[i:i + 1] == " ":
+            return text[0:i]
+        i = i + 1
+    return text
+
+def _tail(text: str) -> str:
+    i: int = 0
+    n: int = len(text)
+    while i < n:
+        if text[i:i + 1] == " ":
+            return text[i + 1:n]
+        i = i + 1
+    return ""
+
+def parse_event(line: str) -> Event:
+    raw: str = _strip_end(line)
+    kind: str = _head(raw)
+    rest: str = _tail(raw)
+    name: str = _head(rest)
+    value_raw: str = _tail(rest)
+    value: str = ""
+    if len(value_raw) > 0:
+        value = nyx.ui_tree.unescape_field(value_raw)
+    if kind == "stop":
+        return Event("stop", "", "")
+    if kind == "click" or kind == "input":
+        if len(name) == 0:
+            raise UiError("olay adı boş")
+        return Event(kind, name, value)
+    if kind == "nav":
+        if len(name) == 0:
+            raise UiError("yol boş")
+        return Event("nav", name, "")
+    raise UiError("bilinmeyen olay")
+
+def poll_event() -> Event:
+    nyx.ui.reset_frames()
+    headers: dict[str, str] = {}
+    resp: HttpResponse = nox.http.request("GET", "http://nyx-ui.invalid/event", "", headers, 0)
+    return parse_event(resp.body)

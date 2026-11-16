@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <p id="out" role="status">deneniyor</p>
+  <script type="module">
+    import { probeThreads } from "/ui/spike/thread-host.js";
+
+    const out = document.querySelector("#out");
+    const error = document.querySelector("#nyx-ui-error");
+    try {
+      const response = await fetch(new URL("./threads.wasm", import.meta.url));
+      if (!response.ok) throw new Error("threads.wasm yok");
+      const result = await probeThreads(await response.arrayBuffer());
+      out.textContent = "kod " + result.code + " " + result.out.trim();
+    } catch (failure) {
+      const message = String(failure && failure.message ? failure.message : failure);
+      out.textContent = "threads düştü: " + message;
+      error.textContent = "Faz 0 kararı durur: tek iş parçacığı";
+    }
+  </script>
+</body>
+</html>

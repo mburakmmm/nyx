@@ -1,0 +1,124 @@
+# İstemci ağı. nyx.db ve nyx.auth bu modülde yoktur.
+# Adres http://nyx-ui.invalid yoludur. Host onu sayfanın kökenine çevirir.
+# Başka köken hostta reddedilir.
+
+import nox.http
+import nox.json
+import nox.strings
+from nox.http import HttpError, HttpResponse
+from nox.json import JsonError
+
+class Note:
+    id: int
+    body: str
+
+    def __init__(self: Note, id: int, body: str) -> None:
+        self.id = id
+        self.body = body
+
+def error_of(body: str) -> str:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        err: JsonValue = nox.json.get_or_null(v, "error")
+        if nox.json.is_string(err):
+            return nox.json.as_string(err)
+    except JsonError:
+        return ""
+    return ""
+
+def is_cancel(body: str) -> bool:
+    return error_of(body) == "iptal"
+
+def generation_of(body: str) -> int:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        g: JsonValue = nox.json.get_or_null(v, "generation")
+        if nox.json.is_number(g):
+            return nox.json.as_int(g)
+    except JsonError:
+        return -1
+    return -1
+
+def user_of(body: str) -> str:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        u: JsonValue = nox.json.get_or_null(v, "user")
+        if nox.json.is_string(u):
+            return nox.json.as_string(u)
+    except JsonError:
+        return ""
+    return ""
+
+def csrf_of(body: str) -> str:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        t: JsonValue = nox.json.get_or_null(v, "csrf")
+        if nox.json.is_string(t):
+            return nox.json.as_string(t)
+    except JsonError:
+        return ""
+    return ""
+
+def number_of(body: str, key: str) -> int:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        item: JsonValue = nox.json.get_or_null(v, key)
+        if nox.json.is_number(item):
+            return nox.json.as_int(item)
+    except JsonError:
+        return -1
+    return -1
+
+def has_notes(body: str) -> bool:
+    try:
+        v: JsonValue = nox.json.parse(body)
+        n: JsonValue = nox.json.get_or_null(v, "notes")
+        return nox.json.is_array(n)
+    except JsonError:
+        return False
+
+def notes_of(body: str) -> list[Note]:
+    out: list[Note] = []
+    arr: JsonValue = nox.json.parse("[]")
+    try:
+        v: JsonValue = nox.json.parse(body)
+        arr = nox.json.get_or_null(v, "notes")
+    except JsonError:
+        return out
+    if not nox.json.is_array(arr):
+        return out
+    i: int = 0
+    n: int = nox.json.array_len(arr)
+    while i < n:
+        item: JsonValue = nox.json.array_get(arr, i)
+        id: int = 0
+        text: str = ""
+        idv: JsonValue = nox.json.get_or_null(item, "id")
+        if nox.json.is_number(idv):
+            id = nox.json.as_int(idv)
+        bv: JsonValue = nox.json.get_or_null(item, "body")
+        if nox.json.is_string(bv):
+            text = nox.json.as_string(bv)
+        out.append(Note(id, text))
+        i = i + 1
+    return out
+
+def _failed(message: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    return HttpResponse(0, "{\"ok\":false,\"error\":" + nox.json.dump_string(message) + "}", headers)
+
+def get_session() -> HttpResponse:
+    headers: dict[str, str] = {}
+    try:
+        return nox.http.request("GET", "http://nyx-ui.invalid/ui/session", "", headers, 0)
+    except HttpError:
+        return _failed("ag")
+
+def post_rpc(body: str, csrf: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    headers["Content-Type"] = "application/json"
+    headers["X-CSRF-Token"] = csrf
+    try:
+        return nox.http.request("POST", "http://nyx-ui.invalid/ui/rpc", body, headers, 0)
+    except HttpError:
+        return _failed("ag")

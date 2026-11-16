@@ -1,0 +1,319 @@
+# nyx.ui - yazarın gördüğü statik ağaç.
+#
+# page: Node = nyx.ui.root()
+# nyx.ui.heading(page, "Merhaba", 1, "")
+# print(nyx.ui.render(page))
+#
+# Tel nyx-ui 1. JS metni textContent ile basar.
+# Olay kimliği bir addır. Fonksiyon köprüden geçmez.
+# frame art arda 8 kez çağrılırsa yeniden çizim durur.
+# poll_event her wasm örneğinde ayrıdır.
+
+import nox.strings
+import nyx.ui_tree
+
+class UiError(Exception):
+    pass
+
+class Node:
+    kind: str
+    key: str
+    text: str
+    level: int
+    event: str
+    children: list[Node]
+
+    def __init__(self: Node, kind: str, key: str, text: str, level: int, event: str) -> None:
+        self.kind = kind
+        self.key = key
+        self.text = text
+        self.level = level
+        self.event = event
+        self.children = []
+
+def root() -> Node:
+    return Node("box", "root", "", 0, "")
+
+_FRAME_LIMIT: int = 8
+_open_frames: int = 0
+
+def frame_limit() -> int:
+    return _FRAME_LIMIT
+
+def reset_frames() -> None:
+    _open_frames = 0
+
+def _kind_ok(kind: str) -> bool:
+    if kind == "text" or kind == "heading" or kind == "button" or kind == "box":
+        return True
+    if kind == "input" or kind == "secret" or kind == "number" or kind == "select" or kind == "option" or kind == "check":
+        return True
+    if kind == "label" or kind == "error":
+        return True
+    if kind == "row" or kind == "column" or kind == "grid" or kind == "sidebar":
+        return True
+    if kind == "tabs" or kind == "tab" or kind == "panel" or kind == "modal":
+        return True
+    if kind == "table" or kind == "tr" or kind == "th" or kind == "td":
+        return True
+    if kind == "meter" or kind == "status" or kind == "bars" or kind == "bar":
+        return True
+    return False
+
+def _event_ok(name: str) -> bool:
+    if len(name) == 0:
+        return True
+    i: int = 0
+    n: int = len(name)
+    while i < n:
+        b: int = nox.strings.byte_at(name, i)
+        digit: bool = b >= 48 and b <= 57
+        upper: bool = b >= 65 and b <= 90
+        lower: bool = b >= 97 and b <= 122
+        if not (digit or upper or lower or b == 45 or b == 95):
+            return False
+        i = i + 1
+    return True
+
+def _attach(parent: Node, child: Node) -> None:
+    if not _kind_ok(child.kind):
+        raise UiError("bilinmeyen düğüm: " + child.kind)
+    count: int = len(parent.children)
+    if len(child.key) == 0:
+        child.key = nyx.ui_tree.auto_key(count)
+    i: int = 0
+    while i < count:
+        if parent.children[i].key == child.key:
+            raise UiError("kardeş anahtarı yineleniyor: " + child.key)
+        i = i + 1
+    nxt: list[Node] = []
+    j: int = 0
+    while j < count:
+        nxt.append(parent.children[j])
+        j = j + 1
+    nxt.append(child)
+    parent.children = nxt
+
+def text(parent: Node, value: str, key: str) -> None:
+    _attach(parent, Node("text", key, value, 0, ""))
+
+def heading(parent: Node, value: str, level: int, key: str) -> None:
+    if level < 1 or level > 6:
+        raise UiError("başlık düzeyi 1 ile 6 arasında olmalı")
+    _attach(parent, Node("heading", key, value, level, ""))
+
+def button(parent: Node, label: str, event: str, key: str) -> None:
+    if not _event_ok(event):
+        raise UiError("olay kimliği yalnız harf, rakam, - ve _ olur")
+    _attach(parent, Node("button", key, label, 0, event))
+
+def field(parent: Node, value: str, event: str, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("girdi olay kimliği boş veya geçersiz")
+    _attach(parent, Node("input", key, value, 0, event))
+
+def secret(parent: Node, value: str, event: str, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("girdi olay kimliği boş veya geçersiz")
+    _attach(parent, Node("secret", key, value, 0, event))
+
+def box(parent: Node, key: str) -> Node:
+    child: Node = Node("box", key, "", 0, "")
+    _attach(parent, child)
+    return child
+
+def _layout(parent: Node, kind: str, level: int, key: str) -> Node:
+    child: Node = Node(kind, key, "", level, "")
+    _attach(parent, child)
+    return child
+
+def row(parent: Node, key: str) -> Node:
+    return _layout(parent, "row", 0, key)
+
+def column(parent: Node, key: str) -> Node:
+    return _layout(parent, "column", 0, key)
+
+def grid(parent: Node, columns: int, key: str) -> Node:
+    if columns < 1 or columns > 12:
+        raise UiError("ızgara sütunu 1 ile 12 arasında olmalı")
+    return _layout(parent, "grid", columns, key)
+
+def sidebar(parent: Node, key: str) -> Node:
+    return _layout(parent, "sidebar", 0, key)
+
+def tabs(parent: Node, selected: int, key: str) -> Node:
+    if selected < 0:
+        raise UiError("sekme sırası negatif olamaz")
+    return _layout(parent, "tabs", selected, key)
+
+def tab(parent: Node, label: str, event: str, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("sekme olay kimliği boş veya geçersiz")
+    _attach(parent, Node("tab", key, label, 0, event))
+
+def panel(parent: Node, key: str) -> Node:
+    return _layout(parent, "panel", 0, key)
+
+def modal(parent: Node, open: int, event: str, key: str) -> Node:
+    if not _event_ok(event):
+        raise UiError("pencere olay kimliği geçersiz")
+    level: int = 0
+    if open != 0:
+        level = 1
+    child: Node = Node("modal", key, "", level, event)
+    _attach(parent, child)
+    return child
+
+def number(parent: Node, value: str, event: str, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("sayı olay kimliği boş veya geçersiz")
+    _attach(parent, Node("number", key, value, 0, event))
+
+def choice(parent: Node, value: str, event: str, key: str) -> Node:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("seçim olay kimliği boş veya geçersiz")
+    child: Node = Node("select", key, value, 0, event)
+    _attach(parent, child)
+    return child
+
+def option(parent: Node, label: str, value: str, key: str) -> None:
+    if len(value) == 0 or not _event_ok(value):
+        raise UiError("seçenek değeri yalnız harf, rakam, - ve _ olur")
+    _attach(parent, Node("option", key, label, 0, value))
+
+def check(parent: Node, label: str, checked: int, event: str, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("onay olay kimliği boş veya geçersiz")
+    level: int = 0
+    if checked != 0:
+        level = 1
+    _attach(parent, Node("check", key, label, level, event))
+
+def label(parent: Node, value: str, target: str, key: str) -> None:
+    if len(target) == 0 or not _event_ok(target):
+        raise UiError("etiket hedefi boş veya geçersiz")
+    _attach(parent, Node("label", key, value, 0, target))
+
+def error(parent: Node, value: str, target: str, key: str) -> None:
+    if len(target) == 0 or not _event_ok(target):
+        raise UiError("hata hedefi boş veya geçersiz")
+    _attach(parent, Node("error", key, value, 0, target))
+
+# Grafik kütüphanesi yok. Çubuk, 0 ile 100 arasındaki düzeyin genişliğidir.
+
+def _span(value: int) -> int:
+    if value < 0:
+        return 0
+    if value > 100:
+        return 100
+    return value
+
+def sheet(parent: Node, key: str) -> Node:
+    child: Node = Node("table", key, "", 0, "")
+    _attach(parent, child)
+    return child
+
+def line(parent: Node, key: str) -> Node:
+    child: Node = Node("tr", key, "", 0, "")
+    _attach(parent, child)
+    return child
+
+def head_cell(parent: Node, value: str, event: str, mark: int, key: str) -> None:
+    if len(event) == 0 or not _event_ok(event):
+        raise UiError("sütun olay kimliği boş veya geçersiz")
+    if mark < 0 or mark > 2:
+        raise UiError("sıralama işareti 0, 1 veya 2 olmalı")
+    _attach(parent, Node("th", key, value, mark, event))
+
+def cell(parent: Node, value: str, key: str) -> None:
+    _attach(parent, Node("td", key, value, 0, ""))
+
+def meter(parent: Node, value: str, amount: int, key: str) -> None:
+    _attach(parent, Node("meter", key, value, _span(amount), ""))
+
+def status(parent: Node, value: str, key: str) -> None:
+    _attach(parent, Node("status", key, value, 0, ""))
+
+def bars(parent: Node, key: str) -> Node:
+    child: Node = Node("bars", key, "", 0, "")
+    _attach(parent, child)
+    return child
+
+def bar(parent: Node, value: str, amount: int, key: str) -> None:
+    _attach(parent, Node("bar", key, value, _span(amount), ""))
+
+_nav_mode: str = ""
+_nav_path: str = ""
+
+def history() -> None:
+    if len(_nav_mode) == 0:
+        _nav_mode = "listen"
+
+def nav_state() -> str:
+    if len(_nav_path) == 0:
+        return _nav_mode
+    return _nav_mode + " " + _nav_path
+
+def _remember_nav(mode: str, path: str) -> None:
+    if len(path) == 0 or not _event_ok(path):
+        raise UiError("yol yalnız harf, rakam, - ve _ olur")
+    _nav_mode = mode
+    _nav_path = path
+
+def navigate(path: str) -> None:
+    _remember_nav("push", path)
+
+def replace_route(path: str) -> None:
+    _remember_nav("replace", path)
+
+def _take_nav() -> str:
+    mode: str = _nav_mode
+    path: str = _nav_path
+    if mode == "push" or mode == "replace":
+        _nav_mode = "listen"
+        _nav_path = ""
+    if mode == "listen":
+        return "H listen\n"
+    if mode == "push":
+        return "H listen\nH push " + path + "\n"
+    if mode == "replace":
+        return "H listen\nH replace " + path + "\n"
+    return ""
+
+def _token(value: str) -> str:
+    if len(value) == 0:
+        return "-"
+    return nyx.ui_tree.escape_field(value)
+
+def _write_node(parent_id: str, node: Node, out: str) -> str:
+    nid: str = nyx.ui_tree.node_id(parent_id, node.key)
+    line: str = "N " + nid + " " + node.kind + " " + _token(node.key) + " " + _token(parent_id) + " " + _token(node.event) + " " + str(node.level)
+    out = out + line + "\n"
+    if len(node.text) > 0:
+        out = out + "T " + nid + " " + nyx.ui_tree.escape_field(node.text) + "\n"
+    c: int = 0
+    while c < len(node.children):
+        out = _write_node(nid, node.children[c], out)
+        c = c + 1
+    return out
+
+def wire_version() -> str:
+    return "nyx-ui 1"
+
+def render(node: Node) -> str:
+    if node.key != "root":
+        raise UiError("çizim kökü root anahtarı taşır")
+    return wire_version() + "\n" + _write_node("", node, "") + ".\n"
+
+def frame(node: Node) -> None:
+    _open_frames = _open_frames + 1
+    if _open_frames > _FRAME_LIMIT:
+        print("yeniden çizim sınırı")
+        raise UiError("yeniden çizim sınırı")
+    body: str = render(node)
+    extra: str = _take_nav()
+    if len(extra) == 0:
+        print(body)
+        return
+    prefix: str = wire_version() + "\n"
+    print(prefix + extra + body[len(prefix):len(body)])

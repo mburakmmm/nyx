@@ -1,0 +1,117 @@
+import nox.test
+import nox.fs
+import nox.strings
+import nyx.app
+import nyx.config
+import nyx.testing
+import nyx.ui
+import nyx.ui_net
+import nyx.ui_rpc
+from nox.http import HttpRequest, HttpResponse
+from nyx.app import Application
+from nyx.config import Config
+from nyx.ui import Node
+
+def setup(application: Application) -> None:
+    nyx.ui_rpc.install(application)
+
+cfg: Config = nyx.config.defaults("test")
+cfg.secret_key = "nyx-ui-notes-secret-key-32b!!"
+cfg.db_path = ":memory:"
+cfg.migrate_path = "examples/ui/db/migrate"
+cfg.jobs_db_path = ":memory:"
+cfg.csrf_enabled = True
+cfg.session_enabled = True
+cfg.log_requests = False
+cfg.rate_limit_enabled = False
+cfg.metrics_enabled = False
+cfg.secure_cookies = False
+
+application: Application = nyx.app.boot(cfg, setup)
+
+def cookie_of(resp: HttpResponse) -> str:
+    raw: str | None = nyx.testing.extract_set_cookie(resp)
+    if raw == None:
+        return ""
+    cut: int = nox.strings.index_of(raw, ";")
+    if cut < 0:
+        return raw
+    return raw[0:cut]
+
+def call(method: str, path: str, body: str, cookie: str, csrf: str) -> HttpResponse:
+    headers: dict[str, str] = {}
+    if len(cookie) > 0:
+        headers["Cookie"] = cookie
+    if len(csrf) > 0:
+        headers["X-CSRF-Token"] = csrf
+    if method == "POST":
+        headers["Content-Type"] = "application/json"
+    return nyx.app.dispatch(application, HttpRequest(method, path, body, headers, ""))
+
+opened: HttpResponse = call("GET", "/ui/session", "", "", "")
+cookie: str = cookie_of(opened)
+csrf: str = nyx.ui_net.csrf_of(opened.body)
+login: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"ada\",\"password\":\"ada-pass-9\",\"generation\":1}", cookie, csrf)
+nox.test.assert_eq_int(login.status, 200, "login")
+ada_cookie: str = cookie_of(login)
+ada_csrf: str = nyx.ui_net.csrf_of(login.body)
+
+first: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.create\",\"body\":\"mira\",\"generation\":2}", ada_cookie, ada_csrf)
+second: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.create\",\"body\":\"alfa\",\"generation\":3}", ada_cookie, ada_csrf)
+third: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"notes.create\",\"body\":\"zeta\",\"generation\":4}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(first.status, 200, "mira")
+nox.test.assert_eq_int(second.status, 200, "alfa")
+nox.test.assert_eq_int(third.status, 200, "zeta")
+
+bad: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"board.page\",\"sort\":\"id;drop\",\"dir\":\"asc\",\"page\":1,\"size\":2,\"generation\":5}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(bad.status, 400, "bad sort")
+nox.test.assert_eq_str(nyx.ui_net.error_of(bad.body), "sayfa gecersiz", "sort error")
+
+page1: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"board.page\",\"sort\":\"body\",\"dir\":\"asc\",\"page\":1,\"size\":2,\"generation\":6}", ada_cookie, ada_csrf)
+nox.test.assert_eq_int(page1.status, 200, "page 1")
+nox.test.assert_eq_int(nyx.ui_net.number_of(page1.body, "total"), 3, "total")
+nox.test.assert_eq_int(nyx.ui_net.number_of(page1.body, "page"), 1, "page")
+rows: list[nyx.ui_net.Note] = nyx.ui_net.notes_of(page1.body)
+nox.test.assert_eq_int(len(rows), 2, "page size")
+nox.test.assert_eq_str(rows[0].body, "alfa", "first body")
+nox.test.assert_eq_str(rows[1].body, "mira", "second body")
+
+page2: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"board.page\",\"sort\":\"body\",\"dir\":\"asc\",\"page\":2,\"size\":2,\"generation\":7}", ada_cookie, ada_csrf)
+rest: list[nyx.ui_net.Note] = nyx.ui_net.notes_of(page2.body)
+nox.test.assert_eq_int(len(rest), 1, "last page")
+nox.test.assert_eq_str(rest[0].body, "zeta", "last body")
+
+desc: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"board.page\",\"sort\":\"id\",\"dir\":\"desc\",\"page\":1,\"size\":2,\"generation\":8}", ada_cookie, ada_csrf)
+newest: list[nyx.ui_net.Note] = nyx.ui_net.notes_of(desc.body)
+nox.test.assert_eq_str(newest[0].body, "zeta", "newest first")
+
+bor_open: HttpResponse = call("GET", "/ui/session", "", "", "")
+bor_cookie: str = cookie_of(bor_open)
+bor_csrf: str = nyx.ui_net.csrf_of(bor_open.body)
+bor_login: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"session.login\",\"name\":\"bor\",\"password\":\"bor-pass-9\",\"generation\":1}", bor_cookie, bor_csrf)
+bor_cookie = cookie_of(bor_login)
+bor_csrf = nyx.ui_net.csrf_of(bor_login.body)
+empty: HttpResponse = call("POST", "/ui/rpc", "{\"op\":\"board.page\",\"sort\":\"id\",\"dir\":\"asc\",\"page\":1,\"size\":2,\"generation\":2}", bor_cookie, bor_csrf)
+nox.test.assert_eq_int(empty.status, 200, "bor page")
+nox.test.assert_eq_int(nyx.ui_net.number_of(empty.body, "total"), 0, "bor sees none")
+
+root: Node = nyx.ui.root()
+table: Node = nyx.ui.sheet(root, "sheet")
+head: Node = nyx.ui.line(table, "head")
+nyx.ui.head_cell(head, "No", "sid", 1, "id")
+nyx.ui.cell(nyx.ui.line(table, "r1"), "alfa", "b1")
+nyx.ui.meter(root, "3 / 20", 15, "fill")
+nyx.ui.status(root, "sayfa 1, 3 not", "status")
+nyx.ui.bar(nyx.ui.bars(root, "chart"), "1", 4, "c1")
+wire: str = nyx.ui.render(root)
+nox.test.assert_true(nox.strings.contains(wire, "N root/sheet table sheet root - 0"), "table line")
+nox.test.assert_true(nox.strings.contains(wire, "N root/sheet/head/id th id root/sheet/head sid 1"), "sort mark")
+nox.test.assert_true(nox.strings.contains(wire, "N root/fill meter fill root - 15"), "meter")
+nox.test.assert_true(nox.strings.contains(wire, "sayfa\\s1,\\s3\\snot"), "status text")
+
+client: str = nox.fs.read_to_string("examples/ui/board.nox")
+nox.test.assert_true(nox.strings.index_of(client, "nyx.db") < 0, "client db")
+nox.test.assert_true(nox.strings.index_of(client, "nyx.auth") < 0, "client auth")
+nox.test.assert_true(nox.strings.index_of(client, "ada-pass-9") < 0, "client secret")
+
+print("board_test ok")

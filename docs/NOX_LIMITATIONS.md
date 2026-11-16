@@ -2,7 +2,7 @@
 
 Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sürüm tablosu `docs/NOX_REQUESTS.md` içindedir. Tarihsel repro `docs/repro-p1c-c2/` 1.18.1’de kapandı; güncel bir hatanın repro’su değildir.
 
-**Doğrulama:** 16 Kasım 2026. Kaynak `nox-lang` **2.1.186**. Yayımlanmış en son kararlı etiket budur. Nyx **0.30.11**. CI resmi **v2.1.186** paketini kurar.
+**Doğrulama:** 16 Kasım 2026. Kaynak `nox-lang` **2.1.186**. Yayımlanmış en son kararlı etiket budur. Nyx **0.30.12**. CI resmi **v2.1.186** paketini kurar.
 
 Çalıştırma kanıtları `/tmp` altında tek seferlik programlardır; depoya alınmadı. Her birinin komutu ve görülen çıktı aşağıdadır. `nox.test.AssertionError` satırı stdlib `test.nox` içindeki `raise` satırıdır; test dosyasının satırı değildir.
 
@@ -122,7 +122,44 @@ macOS ve Linux’ta HTTP/2 varsayılan açıktır. `NYX_HTTP2=0` kapatır.
 
 Nyx `live_sse` `conn != 0` iken sokete yazar. Güvenlik başlıkları `open_sse`’nin `extra` sözlüğüne, akıştan önce konur (`nyx.security.header_dict`). Oturum çerezi akıştan önce var olmalıdır. `conn == 0` (test, `dispatch_from_parts`) tek SSE gövdesi döner; middleware o gövdeye hâlâ başlık ekleyebilir.
 
----
+### 2.9 `def main` yoktur
+
+16 Kasım 2026, `noxc 2.1.186`. Üst düzey deyimler zaten programın girişidir. `def main` derlenmez:
+
+```
+type error (DuplicateDefinition): line 1: 'main' is a reserved name: Nox has no 'def main()' convention, top-level statements are already the program's entry point — define this function under another name
+```
+
+Nyx UI sayacı fonksiyonu `run` adını taşır.
+
+### 2.10 `len` ve `s[i]` kod noktasıdır, `byte_at` bayttır
+
+Aynı indeks ikisine birden verilmez. `ş` için `len` 1, `byte_len` 2, ilk bayt 197, ikinci bayt 159’dur. `s[0:1]` karakterin tamamını döndürür. `char_from_byte` baytları yan yana koyunca `ş` geri gelir.
+
+`ş ş` üzerinde `i < len` ile `byte_at` yürüyüşü boşluğu kaçırır ve `ş \s` yazar. Doğru yürüyüş `byte_len` + `byte_at` + `char_from_byte` ile `ş\sş` yazar. Nyx UI kaçışı ikinci yolu kullanır (`ui_tree.nox`).
+
+### 2.11 Tarayıcı WASM’i DOM ve kullanıcı fonksiyonu vermez
+
+Ayrıntı ve komutlar `docs/ui/00-feasibility.md` içindedir. Buraya yalnız Nyx’i bağlayan sınırlar yazılır. Hepsi 16 Kasım 2026, Nox 2.1.186.
+
+- Kullanıcı fonksiyonu dışa aktarılmaz. Giriş `_start`. DOM importu yoktur.
+- `nox_host.read` ve `sleep_ms` senkrondur. Aynı iş parçacığında olay döngüsüne dönmezler. `--asyncify` uyku için `nox_host_resume` üretmez.
+- Askıya alma `nox.http` içeren `--asyncify` modülündedir ve fetch içindir. Genel bir UI olayı protokolü yoktur. Nyx UI olay beklerken `http://nyx-ui.invalid/event` ister. Host bu adresi kendisi tamamlar.
+- İç içe `async def` derlenmez: `a nested function definition CANNOT be 'async def'`.
+- `except nox.http.HttpError` sözdizimi hatasıdır. `from nox.http import HttpError` gerekir.
+- `wasm32-freestanding` üzerinde `nox.fs` bellektedir. Disk dosyası oluşturmaz.
+- `Connection.execute` bir dosyadaki ilk SQL cümlesini çalıştırır. 16 Kasım 2026: `001_ui_notes.sql` içinde iki `CREATE` vardı. `ui_users` kuruldu, `ui_notes` kurulmadı. İstek `prepare failed: no such table: ui_notes` verdi. Nyx migrate dosya başına bir `execute` çağırır. Her dosyada bir cümle olur.
+
+### 2.13 `protocol` tanımlayıcı değildir
+
+16 Kasım 2026. `def protocol() -> str` derlenmedi:
+
+```text
+ui.nox:300:5: syntax error: unexpected 'protocol' (expected identifier)
+    def protocol() -> str:
+```
+
+Tel sürümü `nyx.ui.wire_version()` adını taşır.
 
 ## 3. Bilinçli olarak ayrı kalanlar
 

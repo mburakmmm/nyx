@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masa</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <div id="app"></div>
+  <script type="module">
+    import { UiSession } from "../ui-spike/session.js";
+
+    const error = document.querySelector("#nyx-ui-error");
+    const app = document.querySelector("#app");
+
+    function fail(message) {
+      error.textContent = message;
+    }
+
+    const response = await fetch(new URL("./desk.wasm", import.meta.url));
+    if (!response.ok) fail("desk.wasm yok: " + response.status);
+    else {
+      const compiled = await WebAssembly.compile(await response.arrayBuffer());
+      const session = new UiSession(app, fail);
+      await session.start(compiled);
+    }
+  </script>
+</body>
+</html>

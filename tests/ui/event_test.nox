@@ -1,0 +1,57 @@
+import nox.test
+import nyx.ui
+import nyx.ui_session
+import nyx.ui_tree
+from nyx.ui import Node, UiError
+from nyx.ui_session import Event
+
+spaced: Event = nyx.ui_session.parse_event("input name a\\sb")
+nox.test.assert_eq_str(spaced.kind, "input", "kind")
+nox.test.assert_eq_str(spaced.name, "name", "name")
+nox.test.assert_eq_str(spaced.value, "a b", "space returns")
+
+empty: Event = nyx.ui_session.parse_event("input name \\z")
+nox.test.assert_eq_str(empty.value, "", "empty value")
+
+click: Event = nyx.ui_session.parse_event("click inc")
+nox.test.assert_eq_str(click.kind, "click", "click kind")
+nox.test.assert_eq_str(click.name, "inc", "click name")
+
+stop: Event = nyx.ui_session.parse_event("stop\n")
+nox.test.assert_eq_str(stop.kind, "stop", "stop")
+
+turk: str = nyx.ui_tree.escape_field("ş ş")
+print(turk)
+nox.test.assert_eq_str(nyx.ui_tree.unescape_field(turk), "ş ş", "utf-8 roundtrip")
+
+bad: bool = False
+try:
+    nyx.ui_session.parse_event("nope")
+except UiError:
+    bad = True
+print("bad " + str(bad))
+nox.test.assert_true(bad, "unknown event")
+
+page: Node = nyx.ui.root()
+missing: bool = False
+try:
+    nyx.ui.field(page, "", "", "field")
+except UiError:
+    missing = True
+print("field " + str(missing))
+nox.test.assert_true(missing, "input needs an event id")
+
+nyx.ui.reset_frames()
+i: int = 0
+while i < nyx.ui.frame_limit():
+    nyx.ui.frame(page)
+    i = i + 1
+limited: bool = False
+try:
+    nyx.ui.frame(page)
+except UiError:
+    limited = True
+nyx.ui.reset_frames()
+print("limit " + str(limited))
+nox.test.assert_true(limited, "render loop stops")
+print("event_test ok")

@@ -1,0 +1,235 @@
+# Pano. Notlar gerçek Nyx oturumundan gelir.
+# Sıralama ve sayfa sunucudadır. Grafik kütüphanesi yoktur.
+
+import nox.json
+import nyx.ui
+import nyx.ui_net
+import nyx.ui_session
+from nox.http import HttpResponse
+from nyx.ui import Node
+from nyx.ui_net import Note
+from nyx.ui_session import Event
+
+class Page:
+    user: str
+    csrf: str
+    name: str
+    password: str
+    draft: str
+    status: str
+    generation: int
+    notes: list[Note]
+    total: int
+    page: int
+    sort: str
+    desc: int
+
+    def __init__(self: Page) -> None:
+        self.user = ""
+        self.csrf = ""
+        self.name = ""
+        self.password = ""
+        self.draft = ""
+        self.status = ""
+        self.generation = 0
+        self.notes = []
+        self.total = 0
+        self.page = 1
+        self.sort = "id"
+        self.desc = 0
+
+def _percent(total: int) -> int:
+    if total >= 20:
+        return 100
+    if total < 0:
+        return 0
+    return total * 5
+
+def _bar(text: str) -> int:
+    n: int = len(text)
+    if n > 100:
+        return 100
+    return n
+
+def _mark(state: Page, name: str) -> int:
+    if state.sort != name:
+        return 0
+    if state.desc == 1:
+        return 2
+    return 1
+
+def _sheet(main: Node, state: Page) -> None:
+    table: Node = nyx.ui.sheet(main, "sheet")
+    head: Node = nyx.ui.line(table, "head")
+    nyx.ui.head_cell(head, "No", "sid", _mark(state, "id"), "id")
+    nyx.ui.head_cell(head, "Not", "sbody", _mark(state, "body"), "body")
+    i: int = 0
+    while i < len(state.notes):
+        note: Note = state.notes[i]
+        row: Node = nyx.ui.line(table, "r" + str(note.id))
+        nyx.ui.cell(row, str(note.id), "i" + str(note.id))
+        nyx.ui.cell(row, note.body, "b" + str(note.id))
+        i = i + 1
+    chart: Node = nyx.ui.bars(main, "chart")
+    j: int = 0
+    while j < len(state.notes):
+        item: Note = state.notes[j]
+        nyx.ui.bar(chart, str(item.id), _bar(item.body), "c" + str(item.id))
+        j = j + 1
+
+def view(state: Page) -> Node:
+    page: Node = nyx.ui.root()
+    nyx.ui.heading(page, "Pano", 1, "title")
+    nyx.ui.status(page, state.status, "status")
+    if len(state.user) == 0:
+        nyx.ui.label(page, "Ad", "name", "name-label")
+        nyx.ui.field(page, state.name, "name", "name")
+        nyx.ui.label(page, "Parola", "password", "password-label")
+        nyx.ui.secret(page, state.password, "password", "password")
+        nyx.ui.button(page, "Giriş", "login", "login")
+        return page
+    nyx.ui.text(page, state.user, "who")
+    nyx.ui.meter(page, str(state.total) + " / 20", _percent(state.total), "fill")
+    _sheet(page, state)
+    tools: Node = nyx.ui.row(page, "tools")
+    nyx.ui.button(tools, "Önceki", "prev", "prev")
+    nyx.ui.button(tools, "Sonraki", "next", "next")
+    nyx.ui.label(page, "Yeni not", "draft", "draft-label")
+    nyx.ui.field(page, state.draft, "draft", "draft")
+    nyx.ui.button(page, "Ekle", "add", "add")
+    nyx.ui.button(page, "Çıkış", "logout", "logout")
+    return page
+
+def _take(state: Page, status: int, body: str) -> None:
+    if status == 0:
+        state.status = "hata: ağ"
+        return
+    if status == 403:
+        state.status = "hata: csrf"
+        return
+    if nyx.ui_net.is_cancel(body):
+        state.status = "iptal"
+        return
+    seen: int = nyx.ui_net.generation_of(body)
+    if seen != -1 and seen != state.generation:
+        state.status = "iptal"
+        return
+    err: str = nyx.ui_net.error_of(body)
+    if status >= 400 or len(err) > 0:
+        if len(err) == 0:
+            state.status = "hata"
+        else:
+            state.status = "hata: " + err
+        return
+    state.user = nyx.ui_net.user_of(body)
+    token: str = nyx.ui_net.csrf_of(body)
+    if len(token) > 0:
+        state.csrf = token
+    if nyx.ui_net.has_notes(body):
+        state.notes = nyx.ui_net.notes_of(body)
+    total: int = nyx.ui_net.number_of(body, "total")
+    if total >= 0:
+        state.total = total
+    shown: int = nyx.ui_net.number_of(body, "page")
+    if shown > 0:
+        state.page = shown
+    if total >= 0:
+        state.status = "sayfa " + str(state.page) + ", " + str(state.total) + " not"
+    else:
+        state.status = ""
+
+def _call(state: Page, body: str) -> None:
+    state.generation = state.generation + 1
+    state.status = "yükleniyor"
+    nyx.ui.frame(view(state))
+    resp: HttpResponse = nyx.ui_net.post_rpc(body, state.csrf)
+    _take(state, resp.status, resp.body)
+
+def _dir(state: Page) -> str:
+    if state.desc == 1:
+        return "desc"
+    return "asc"
+
+def _load(state: Page) -> None:
+    body: str = "{\"op\":\"board.page\",\"generation\":" + str(state.generation + 1)
+    body = body + ",\"sort\":" + nox.json.dump_string(state.sort)
+    body = body + ",\"dir\":" + nox.json.dump_string(_dir(state))
+    body = body + ",\"page\":" + str(state.page) + ",\"size\":2}"
+    _call(state, body)
+
+def _sort(state: Page, name: str) -> None:
+    if state.sort == name:
+        if state.desc == 1:
+            state.desc = 0
+        else:
+            state.desc = 1
+    else:
+        state.sort = name
+        state.desc = 0
+    state.page = 1
+    _load(state)
+
+def apply(state: Page, ev: Event) -> None:
+    if ev.kind == "input" and ev.name == "name":
+        state.name = ev.value
+    if ev.kind == "input" and ev.name == "password":
+        state.password = ev.value
+    if ev.kind == "input" and ev.name == "draft":
+        state.draft = ev.value
+    if ev.kind == "click" and ev.name == "login":
+        body: str = "{\"op\":\"session.login\",\"generation\":" + str(state.generation + 1)
+        body = body + ",\"name\":" + nox.json.dump_string(state.name)
+        body = body + ",\"password\":" + nox.json.dump_string(state.password) + "}"
+        _call(state, body)
+        state.password = ""
+        if len(state.user) > 0 and len(state.status) == 0:
+            state.page = 1
+            _load(state)
+    if ev.kind == "click" and ev.name == "sid":
+        _sort(state, "id")
+    if ev.kind == "click" and ev.name == "sbody":
+        _sort(state, "body")
+    if ev.kind == "click" and ev.name == "next":
+        if state.page * 2 < state.total:
+            state.page = state.page + 1
+            _load(state)
+    if ev.kind == "click" and ev.name == "prev":
+        if state.page > 1:
+            state.page = state.page - 1
+            _load(state)
+    if ev.kind == "click" and ev.name == "add":
+        body2: str = "{\"op\":\"notes.create\",\"generation\":" + str(state.generation + 1)
+        body2 = body2 + ",\"body\":" + nox.json.dump_string(state.draft) + "}"
+        _call(state, body2)
+        if len(state.status) == 0:
+            state.draft = ""
+            state.page = 1
+            state.sort = "id"
+            state.desc = 1
+            _load(state)
+    if ev.kind == "click" and ev.name == "logout":
+        _call(state, "{\"op\":\"session.logout\",\"generation\":" + str(state.generation + 1) + "}")
+        state.notes = []
+        state.total = 0
+        state.draft = ""
+        if len(state.status) == 0:
+            fresh: HttpResponse = nyx.ui_net.get_session()
+            _take(state, fresh.status, fresh.body)
+            state.status = ""
+
+def run() -> None:
+    state: Page = Page()
+    state.status = "yükleniyor"
+    nyx.ui.frame(view(state))
+    opened: HttpResponse = nyx.ui_net.get_session()
+    _take(state, opened.status, opened.body)
+    if len(state.user) > 0:
+        _load(state)
+    while True:
+        nyx.ui.frame(view(state))
+        ev: Event = nyx.ui_session.poll_event()
+        if ev.kind == "stop":
+            return
+        apply(state, ev)
+
+run()

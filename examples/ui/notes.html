@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Notlar</title>
+  <link rel="stylesheet" href="/ui/styles/base.css">
+</head>
+<body>
+  <div id="nyx-ui-error" role="alert"></div>
+  <div id="app"></div>
+  <script type="module">
+    import { UiSession } from "/ui/spike/session.js";
+
+    const error = document.querySelector("#nyx-ui-error");
+    const app = document.querySelector("#app");
+
+    function fail(message) {
+      error.textContent = message;
+    }
+
+    const response = await fetch(new URL("./notes.wasm", import.meta.url));
+    if (!response.ok) fail("notes.wasm yok: " + response.status);
+    else {
+      const compiled = await WebAssembly.compile(await response.arrayBuffer());
+      const session = new UiSession(app, fail, location.origin);
+      await session.start(compiled);
+    }
+  </script>
+</body>
+</html>

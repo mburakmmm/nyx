@@ -1,0 +1,155 @@
+# Masa. Yazar HTML, CSS ve JS yazmaz.
+# Yerleşim, form, doğrulama ve istemci geçmişi bu örneğin içindedir.
+
+import nox.strings
+import nyx.ui
+import nyx.ui_session
+from nyx.ui import Node
+from nyx.ui_session import Event
+
+class Page:
+    route: str
+    tab: int
+    title: str
+    count: str
+    kind: str
+    agree: int
+    title_error: str
+    count_error: str
+    agree_error: str
+    modal: int
+
+    def __init__(self: Page) -> None:
+        self.route = "home"
+        self.tab = 0
+        self.title = ""
+        self.count = ""
+        self.kind = "inbox"
+        self.agree = 0
+        self.title_error = ""
+        self.count_error = ""
+        self.agree_error = ""
+        self.modal = 0
+
+def _digits(value: str) -> bool:
+    if len(value) == 0:
+        return False
+    i: int = 0
+    n: int = len(value)
+    while i < n:
+        b: int = nox.strings.byte_at(value, i)
+        if b < 48 or b > 57:
+            return False
+        i = i + 1
+    return True
+
+def _form(main: Node, state: Page) -> None:
+    nyx.ui.heading(main, "Form", 1, "title")
+    pages: Node = nyx.ui.tabs(main, state.tab, "pages")
+    nyx.ui.tab(pages, "Metin", "tab0", "tab0")
+    nyx.ui.tab(pages, "Seçim", "tab1", "tab1")
+    text_panel: Node = nyx.ui.panel(pages, "text-panel")
+    pick_panel: Node = nyx.ui.panel(pages, "pick-panel")
+    fields: Node = nyx.ui.grid(text_panel, 2, "fields")
+    title_col: Node = nyx.ui.column(fields, "title-col")
+    nyx.ui.label(title_col, "Başlık", "title", "title-label")
+    nyx.ui.field(title_col, state.title, "title", "title")
+    if len(state.title_error) > 0:
+        nyx.ui.error(title_col, state.title_error, "title", "title-error")
+    count_col: Node = nyx.ui.column(fields, "count-col")
+    nyx.ui.label(count_col, "Adet", "count", "count-label")
+    nyx.ui.number(count_col, state.count, "count", "count")
+    if len(state.count_error) > 0:
+        nyx.ui.error(count_col, state.count_error, "count", "count-error")
+    nyx.ui.label(pick_panel, "Kutu", "kind", "kind-label")
+    menu: Node = nyx.ui.choice(pick_panel, state.kind, "kind", "kind")
+    nyx.ui.option(menu, "Gelen", "inbox", "inbox")
+    nyx.ui.option(menu, "Arşiv", "archive", "archive")
+    nyx.ui.check(pick_panel, "Koşulları kabul ediyorum", state.agree, "agree", "agree")
+    if len(state.agree_error) > 0:
+        nyx.ui.error(pick_panel, state.agree_error, "agree", "agree-error")
+    nyx.ui.button(main, "Kaydet", "save", "save")
+
+def view(state: Page) -> Node:
+    page: Node = nyx.ui.root()
+    shell: Node = nyx.ui.sidebar(page, "shell")
+    side: Node = nyx.ui.column(shell, "side")
+    nyx.ui.button(side, "Ev", "home", "home")
+    nyx.ui.button(side, "Form", "form", "form")
+    nyx.ui.button(side, "Hakkında", "about", "about")
+    main: Node = nyx.ui.column(shell, "main")
+    if state.route == "about":
+        nyx.ui.heading(main, "Hakkında", 1, "title")
+        nyx.ui.text(main, "Bu sayfa Nox ile kuruldu.", "lead")
+    else:
+        if state.route == "form":
+            _form(main, state)
+        else:
+            nyx.ui.heading(main, "Ev", 1, "title")
+            nyx.ui.text(main, "Kenar çubuğundan forma geç.", "lead")
+    dialog: Node = nyx.ui.modal(page, state.modal, "close", "dialog")
+    nyx.ui.heading(dialog, "Kaydedildi", 2, "done")
+    nyx.ui.text(dialog, state.title, "saved")
+    nyx.ui.button(dialog, "Kapat", "close", "dismiss")
+    return page
+
+def _route(state: Page, name: str) -> None:
+    if name != "home" and name != "form" and name != "about":
+        return
+    if state.route == name:
+        return
+    state.route = name
+    nyx.ui.navigate(name)
+
+def _save(state: Page) -> None:
+    state.title_error = ""
+    state.count_error = ""
+    state.agree_error = ""
+    if len(state.title) == 0:
+        state.title_error = "başlık gerekli"
+    if not _digits(state.count):
+        state.count_error = "sayı gerekli"
+    if state.agree == 0:
+        state.agree_error = "onay gerekli"
+    if len(state.title_error) == 0 and len(state.count_error) == 0 and len(state.agree_error) == 0:
+        state.modal = 1
+
+def apply(state: Page, ev: Event) -> None:
+    if ev.kind == "nav":
+        if ev.name == "home" or ev.name == "form" or ev.name == "about":
+            state.route = ev.name
+        return
+    if ev.kind == "input" and ev.name == "title":
+        state.title = ev.value
+    if ev.kind == "input" and ev.name == "count":
+        state.count = ev.value
+    if ev.kind == "input" and ev.name == "kind":
+        if ev.value == "inbox" or ev.value == "archive":
+            state.kind = ev.value
+    if ev.kind == "input" and ev.name == "agree":
+        if ev.value == "1":
+            state.agree = 1
+        else:
+            state.agree = 0
+    if ev.kind == "click" and ev.name == "tab0":
+        state.tab = 0
+    if ev.kind == "click" and ev.name == "tab1":
+        state.tab = 1
+    if ev.kind == "click" and (ev.name == "home" or ev.name == "form" or ev.name == "about"):
+        _route(state, ev.name)
+    if ev.kind == "click" and ev.name == "save":
+        _save(state)
+    if ev.kind == "click" and ev.name == "close":
+        state.modal = 0
+
+def run() -> None:
+    state: Page = Page()
+    nyx.ui.history()
+    while True:
+        nyx.ui.frame(view(state))
+        ev: Event = nyx.ui_session.poll_event()
+        if ev.kind == "stop":
+            return
+        apply(state, ev)
+
+run()
