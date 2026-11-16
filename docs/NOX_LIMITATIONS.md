@@ -2,7 +2,7 @@
 
 Bu dosya **bugün ölçülmüş** sınırları tutar. Kapanmış isteklerin sürüm tablosu `docs/NOX_REQUESTS.md` içindedir. Tarihsel repro `docs/repro-p1c-c2/` 1.18.1’de kapandı; güncel bir hatanın repro’su değildir.
 
-**Doğrulama:** 16 Kasım 2026. Kaynak `nox-lang` **2.1.186**. Yayımlanmış en son kararlı etiket budur. Nyx **0.30.5**. CI resmi **v2.1.186** paketini kurar.
+**Doğrulama:** 16 Kasım 2026. Kaynak `nox-lang` **2.1.186**. Yayımlanmış en son kararlı etiket budur. Nyx **0.30.6**. CI resmi **v2.1.186** paketini kurar.
 
 Çalıştırma kanıtları `/tmp` altında tek seferlik programlardır; depoya alınmadı. Her birinin komutu ve görülen çıktı aşağıdadır. `nox.test.AssertionError` satırı stdlib `test.nox` içindeki `raise` satırıdır; test dosyasının satırı değildir.
 

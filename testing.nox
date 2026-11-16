@@ -42,7 +42,7 @@ def python_bin() -> str:
         j: int = 0
         while j < len(names):
             candidate: str = nox.path.join(dirs[i], names[j])
-            if len(dirs[i]) > 0 and nox.fs.exists(candidate):
+            if len(dirs[i]) > 0 and nox.fs.exists(candidate) and not nox.strings.contains(candidate, "WindowsApps"):
                 return candidate
             j = j + 1
         i = i + 1

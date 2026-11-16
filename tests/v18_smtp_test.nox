@@ -31,6 +31,9 @@ bg.arg(str(port))
 bg.arg(ready_path)
 bg.arg(log_path)
 out: Output = bg.run()
+if not out.success():
+    print(out.stdout)
+    print(out.stderr)
 nox.test.assert_true(out.success(), "sahte SMTP basladi")
 ready: bool = False
 wait_i: int = 0
@@ -41,6 +44,10 @@ while wait_i < 50:
     else:
         nox.time.sleep_ms(100)
         wait_i = wait_i + 1
+if not ready:
+    print("smtp ready missing " + ready_path)
+    if nox.fs.exists(log_path):
+        print(nox.fs.read_to_string(log_path))
 nox.test.assert_true(ready, "sahte SMTP dinlemiyor")
 
 cfg: Config = nyx.config.defaults("test")

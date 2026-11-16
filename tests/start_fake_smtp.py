@@ -16,7 +16,9 @@ kwargs = {
     "stdin": subprocess.DEVNULL,
 }
 if os.name == "nt":
-    kwargs["creationflags"] = 0x00000008 | 0x00000200
+    # DETACHED_PROCESS (0x8) drops the console before Python starts, so the
+    # child exits without writing the ready file. CREATE_NO_WINDOW keeps it running.
+    kwargs["creationflags"] = 0x08000000 | 0x00000200
 else:
     kwargs["start_new_session"] = True
 subprocess.Popen(cmd, **kwargs)

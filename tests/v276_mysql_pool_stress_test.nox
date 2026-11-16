@@ -9,6 +9,7 @@ import nox.tasks
 import nox.mysql
 from nox.tasks import TaskGroup
 from nox.os import OsError
+from nox.db import Row
 from nox.mysql import Connection as MysqlConnection, MysqlError
 import nyx.db
 import nyx.db_pool
@@ -45,7 +46,10 @@ async def stress(url: str) -> None:
     again: Task[None] = spawn wave(pool, 64)
     await again
     held: MysqlConnection = pool.acquire()
-    held.close()
+    id_rows: list[Row] = held.query("SELECT CONNECTION_ID()")
+    killer: MysqlConnection = pool.acquire()
+    killer.execute("KILL " + str(id_rows[0].get_int(0)))
+    pool.give_back(killer)
     pool.give_back(held)
     fresh: MysqlConnection = pool.acquire()
     fresh.query("SELECT 1")

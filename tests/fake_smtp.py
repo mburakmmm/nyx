@@ -17,7 +17,11 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", port))
 srv.listen(1)
 srv.settimeout(8)
-open(ready_path, "w").write("1")
+ready_file = open(ready_path, "w")
+ready_file.write("1")
+ready_file.flush()
+os.fsync(ready_file.fileno())
+ready_file.close()
 
 try:
     conn, _addr = srv.accept()
