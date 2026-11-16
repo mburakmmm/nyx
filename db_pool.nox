@@ -131,12 +131,32 @@ def armed() -> bool:
         return True
     return False
 
+# libmysqlclient is not reentrant on one thread. Two fibers that both call
+# mysql_init while a connect is in progress get a null handle. Every pool
+# call into the library takes this lock, and the lock stays held across the
+# call even when that call yields.
+_mysql_api_lock: nox.atomic.AtomicInt = nox.atomic.new_int(0)
+
+def _mysql_api_enter() -> None:
+    spins: int = 0
+    while not _mysql_api_lock.compare_and_swap(0, 1):
+        spins = spins + 1
+        if spins > 20:
+            nox.time.sleep_ms(1)
+
+def _mysql_api_leave() -> None:
+    _mysql_api_lock.store(0)
+
 def _mysql_ok(conn: MysqlConnection) -> bool:
+    _mysql_api_enter()
+    ok: bool = False
     try:
         conn.query("SELECT 1")
-        return True
+        ok = True
     except MysqlError:
-        return False
+        ok = False
+    _mysql_api_leave()
+    return ok
 
 # Same rules as nox.postgres.Pool. MySQL has no stdlib pool.
 class MysqlPool:
@@ -183,18 +203,24 @@ class MysqlPool:
             if candidate != None:
                 if _mysql_ok(candidate):
                     return candidate
+                _mysql_api_enter()
                 candidate.close()
+                _mysql_api_leave()
                 self._lock()
                 self.opened = self.opened - 1
                 self._unlock()
             elif can_open:
+                _mysql_api_enter()
                 try:
-                    return nox.mysql.open_url(self.conn_url)
+                    opened_conn: MysqlConnection = nox.mysql.open_url(self.conn_url)
                 except MysqlError as e:
+                    _mysql_api_leave()
                     self._lock()
                     self.opened = self.opened - 1
                     self._unlock()
                     raise e
+                _mysql_api_leave()
+                return opened_conn
             else:
                 if started.elapsed_ms() >= self.acquire_timeout_ms:
                     raise MysqlError(
@@ -211,10 +237,12 @@ class MysqlPool:
     # ondan once calismazsa sonraki istek ayni baglantida yarim isi gorur.
     def give_back(self: MysqlPool, conn: MysqlConnection) -> None:
         healthy: bool = True
+        _mysql_api_enter()
         try:
             conn.execute("ROLLBACK")
         except MysqlError:
             healthy = False
+        _mysql_api_leave()
         if healthy:
             healthy = _mysql_ok(conn)
         self._lock()
@@ -226,7 +254,9 @@ class MysqlPool:
             self.opened = self.opened - 1
         self._unlock()
         if not healthy:
+            _mysql_api_enter()
             conn.close()
+            _mysql_api_leave()
 
     def close(self: MysqlPool) -> None:
         self._lock()
@@ -236,7 +266,9 @@ class MysqlPool:
         self._unlock()
         i: int = 0
         while i < len(idle):
+            _mysql_api_enter()
             idle[i].close()
+            _mysql_api_leave()
             i = i + 1
 
     def idle_count(self: MysqlPool) -> int:

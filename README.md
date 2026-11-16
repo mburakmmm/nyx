@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.30.3 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.30.4 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.3"
+      "ref": "v0.30.4"
     }
   ]
 }
@@ -172,6 +172,10 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 ---
 
 ## Changelog
+
+### 0.30.4 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- The MySQL pool opens and checks connections one at a time. Two overlapping `mysql_init` calls on one thread make the second handle null
 
 ### 0.30.3 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
