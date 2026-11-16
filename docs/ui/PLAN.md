@@ -194,7 +194,7 @@ Doğrulama, 16 Kasım 2026, bu makinede Node v26.13.0. `noxc run --target wasm32
 
 Kapı: mevcut Nyx testleri yeşil. Üretim paketi geliştirme bağımlılığı taşımaz. Protokol sürümü paket sürümünden ayrıdır. Uyumsuz istemci anlaşılır hata verir. Kapı geçti.
 
-Tel `nyx.ui.wire_version()` ile `nyx-ui 1` dir. Paket etiketi `v0.30.12`. Kayıt, CI yeşil olduktan sonra yapılır.
+Tel `nyx.ui.wire_version()` ile `nyx-ui 1` dir. Paket etiketi `v0.30.13`. Kayıt, CI yeşil olduktan sonra yapılır.
 
 - [x] Güvenlik notu, örnek deploy, CI’de WASM derlemesi ve tarayıcı
 - [x] Sürüm notu. Kayıt yayını beş iş yeşilken ve ayrıca istenince

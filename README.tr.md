@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.30.12 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.13 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.12"
+      "ref": "v0.30.13"
     }
   ]
 }
@@ -165,6 +165,11 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 ---
 
 ## Sürüm notları
+
+### 0.30.13 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- `ui` CI işi `noxc build --target wasm32-freestanding` öncesinde Zig **0.16.0** kurar. Zig yokken hello WASM adımı `needs zig on PATH` ile düşer
+- `v0.30.12` yeniden etiketlenmez. O gönderide beş regresyon işi yeşildi; yalnız `ui` Zig yüzünden kırmızıydı
 
 ### 0.30.12 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı

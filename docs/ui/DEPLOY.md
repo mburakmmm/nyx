@@ -36,4 +36,4 @@ Vekil `Cross-Origin-Opener-Policy` eklemez. Threads sayfasının kendi yanıtı 
 
 Statik Merhaba sayfası Nyx süreci olmadan da açılır. Depo kökünden `python3 -m http.server 8765` ve `http://127.0.0.1:8765/examples/ui/index.html`. Bu yol oturum ve CSRF vermez. Pano ve notlar `8766` üzerindeki Nyx sürecindedir.
 
-Geri alma: önceki paket `v0.30.11` etiketindedir ve UI modüllerini taşımaz. `v0.30.12` teli `nyx-ui 1` dir. Eski bir kabuk bu teli tanımazsa `nyx ui protokolü uyumsuz` yazar ve `#app` boş kalır.
+Geri alma: önceki paket `v0.30.11` etiketindedir ve UI modüllerini taşımaz. `v0.30.13` teli `nyx-ui 1` dir. Eski bir kabuk bu teli tanımazsa `nyx ui protokolü uyumsuz` yazar ve `#app` boş kalır.

@@ -1,6 +1,6 @@
 # Nyx UI arıza notu
 
-`import: module not found` ve `nyx.ui`: eski `nox.lock` `v0.30.11` ağacını çözer. O etikette bu modüller yoktur. `v0.30.12` onları taşır. CI, paketi çalışma kopyasına çevirir. `nox.lock` depoya yazılmaz.
+`import: module not found` ve `nyx.ui`: eski `nox.lock` `v0.30.11` ağacını çözer. O etikette bu modüller yoktur. `v0.30.13` onları taşır. CI, paketi çalışma kopyasına çevirir. `nox.lock` depoya yazılmaz.
 
 `nyx ui protokolü uyumsuz`: ilk satır `nyx-ui 1` değildir. `#app` boş kalır. `?hata=1` bu yolu açar.
 

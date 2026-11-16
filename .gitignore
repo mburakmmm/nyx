@@ -8,6 +8,10 @@ tests/.auth_compile/
 .nox/
 
 examples/ui/db/*.sqlite
+examples/ui/*.wasm
+examples/ui/*.ll
+examples/ui-spike/*.wasm
+examples/ui-spike/*.ll
 
 benchmarks/results/
 benchmarks/fastify/node_modules/
