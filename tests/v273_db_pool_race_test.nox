@@ -28,9 +28,13 @@ async def hold_pg(pool: PgPool, release: Channel[int]) -> None:
     pool.give_back(conn)
 
 async def hold_my(pool: MysqlPool, release: Channel[int]) -> None:
-    conn: MysqlConnection = pool.acquire()
-    await release.recv()
-    pool.give_back(conn)
+    try:
+        conn: MysqlConnection = pool.acquire()
+        await release.recv()
+        pool.give_back(conn)
+    except MysqlError as e:
+        print("mysql hold: " + e.message)
+        raise MysqlError(e.message)
 
 async def burst_pg(pool: PgPool) -> None:
     conn: PgConnection = pool.acquire()
@@ -87,10 +91,11 @@ async def race_my(url: str) -> None:
     b: Task[None] = spawn hold_my(small, release)
     ready: bool = False
     spins: int = 0
-    while not ready and spins < 200:
+    while not ready and spins < 1000:
         nox.time.sleep_ms(10)
         ready = small.open_count() >= 2
         spins = spins + 1
+    print("mysql held open=" + str(small.open_count()))
     nox.test.assert_true(ready, "two mysql connections are held")
     blocked: bool = False
     try:

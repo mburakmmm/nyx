@@ -114,13 +114,20 @@ if len(comspec) > 0:
         nox_home = parent_home + "/.nox"
     if len(parent_home) == 0:
         parent_home = profile
+    # The child starts with an empty PATH. noxc links with gcc, which the
+    # workflow put on this process's PATH.
+    parent_path: str = ""
+    try:
+        parent_path = nox.os.getenv("PATH")
+    except OsError:
+        parent_path = ""
     launcher = comspec
     wrapper = _slashes(nox.os.current_dir() + "/" + root + "/run_noxc.cmd")
     script = "@echo off\r\n"
     script = script + "set \"HOME=" + _slashes(parent_home) + "\"\r\n"
     script = script + "set \"USERPROFILE=" + profile + "\"\r\n"
     script = script + "set \"NOX_HOME=" + nox_home + "\"\r\n"
-    script = script + "set \"PATH=" + profile + "\\.nox-lang\\bin;%PATH%\"\r\n"
+    script = script + "set \"PATH=" + profile + "\\.nox-lang\\bin;" + parent_path + "\"\r\n"
     script = script + "cd /d \"" + _slashes(nox.os.current_dir()) + "\"\r\n"
     script = script + "call \"" + profile + "\\.nox-lang\\bin\\noxc.exe\" test \"" + _slashes(prog_path) + "\"\r\n"
 else:
