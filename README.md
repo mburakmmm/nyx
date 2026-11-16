@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.29.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.30.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.29.0"
+      "ref": "v0.30.0"
     }
   ]
 }
@@ -172,6 +172,15 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 ---
 
 ## Changelog
+
+### 0.30.0 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- `schema_migrations` still stores the filename that ran. A later twin (`001_users.sql`, `001_users.pg.sql`, `001_users.mysql.sql`) counts as the same migration and is not applied again
+- MySQL `give_back` rolls the connection back before the health check. An open transaction does not reach the next request
+- MySQL DDL commits on its own. A failed migration no longer says the schema was rolled back. `v275` checks that DML rolls back and `CREATE TABLE` remains
+- The running job id lives on the task. Two jobs in one process no longer share it. A handler that never yields is still reclaimed after five minutes
+- Pool size, open, and idle gauges are published per worker. The unlabeled series is the sum. Workers of the same port and database share one metrics buffer
+- The auth compile test launches `noxc` through `cmd` on Windows and `/bin/sh` elsewhere. CI runs the suite on macOS and the tests that do not use `/tmp` on Windows
 
 ### 0.29.0 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off

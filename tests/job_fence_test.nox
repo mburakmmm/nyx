@@ -112,6 +112,49 @@ file_id: int = nyx.job.enqueue(file_db, "FileAuto", "{}", nox.time.now_ms())
 nox.test.assert_true(nyx.job.process_one(file_db, file_reg), "file auto job ran")
 nox.test.assert_eq_str(status_of(file_db, file_id), "completed", "file auto job completed")
 
+par_path: str = "/tmp/nyx_job_parallel.sqlite"
+if nox.fs.exists(par_path):
+    nox.fs.remove_file(par_path)
+if nox.fs.exists(par_path + "-wal"):
+    nox.fs.remove_file(par_path + "-wal")
+if nox.fs.exists(par_path + "-shm"):
+    nox.fs.remove_file(par_path + "-shm")
+par_a: Connection = nyx.db.open(par_path)
+par_a.query("PRAGMA busy_timeout = 5000")
+nyx.job.ensure_schema(par_a)
+par_reg: JobRegistry = JobRegistry()
+par_id_a: int = nyx.job.enqueue(par_a, "ParA", "{}", nox.time.now_ms())
+par_id_b: int = nyx.job.enqueue(par_a, "ParB", "{}", nox.time.now_ms())
+par_b: Connection = nyx.db.open(par_path)
+par_b.query("PRAGMA busy_timeout = 5000")
+
+def par_handler_a(payload_json: str) -> None:
+    nox.time.sleep_ms(400)
+    nox.test.assert_eq_int(nyx.job.active_id(), par_id_a, "parallel job a keeps its id")
+
+def par_handler_b(payload_json: str) -> None:
+    nox.time.sleep_ms(400)
+    nox.test.assert_eq_int(nyx.job.active_id(), par_id_b, "parallel job b keeps its id")
+
+par_reg.register("ParA", par_handler_a)
+par_reg.register("ParB", par_handler_b)
+
+async def run_par_a() -> bool:
+    return nyx.job.process_one(par_a, par_reg)
+
+async def run_par_b() -> bool:
+    return nyx.job.process_one(par_b, par_reg)
+
+par_task_a: Task[bool] = spawn run_par_a()
+par_task_b: Task[bool] = spawn run_par_b()
+par_ok_a: bool = await par_task_a
+par_ok_b: bool = await par_task_b
+nox.test.assert_true(par_ok_a, "parallel job a ran")
+nox.test.assert_true(par_ok_b, "parallel job b ran")
+nox.test.assert_eq_int(nyx.job.active_id(), 0, "parallel jobs clear the active id")
+par_a.close()
+par_b.close()
+
 owner.close()
 other.close()
 file_db.close()

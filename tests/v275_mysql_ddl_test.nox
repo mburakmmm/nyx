@@ -1,0 +1,37 @@
+# MySQL DDL commits the open transaction. DML still rolls back.
+# Skips when DATABASE_URL is not a MySQL URL.
+
+import nox.os
+import nox.test
+from nox.os import OsError
+from nox.db import Row
+from nox.mysql import MysqlError, Connection as MysqlConnection
+import nyx.db
+
+url: str = ""
+try:
+    url = nox.os.getenv("DATABASE_URL")
+except OsError:
+    url = ""
+
+if nyx.db.dialect_of_url(url) == "mysql":
+    conn: MysqlConnection = nyx.db.open_mysql(url)
+    conn.execute("DROP TABLE IF EXISTS nyx_ddl_probe")
+    conn.execute("DROP TABLE IF EXISTS nyx_dml_probe")
+    conn.execute("START TRANSACTION")
+    conn.execute("CREATE TABLE nyx_ddl_probe (id INT PRIMARY KEY)")
+    conn.execute("ROLLBACK")
+    left: list[Row] = conn.query("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nyx_ddl_probe'")
+    nox.test.assert_eq_int(len(left), 1, "mysql ddl survives rollback")
+    conn.execute("CREATE TABLE nyx_dml_probe (id INT PRIMARY KEY)")
+    conn.execute("START TRANSACTION")
+    conn.execute("INSERT INTO nyx_dml_probe (id) VALUES (1)")
+    conn.execute("ROLLBACK")
+    rows: list[Row] = conn.query("SELECT id FROM nyx_dml_probe")
+    nox.test.assert_eq_int(len(rows), 0, "mysql dml rolls back")
+    conn.execute("DROP TABLE IF EXISTS nyx_ddl_probe")
+    conn.execute("DROP TABLE IF EXISTS nyx_dml_probe")
+    conn.close()
+    print("v275_mysql_ddl_test ok")
+else:
+    print("v275_mysql_ddl_test ok (no mysql DATABASE_URL)")

@@ -283,12 +283,30 @@ def _sort_names(names: list[str]) -> list[str]:
         i = i + 1
     return out
 
+# Satir, calisan dosyanin adini tutar (rollback o adin .down.sql dosyasini arar).
+# Uygulanmis sayilma kimlige bakar: 001_users.sql kaydi, sonra eklenen
+# 001_users.pg.sql dosyasini yeni migration sanmaz.
+def migration_aliases(version: str) -> list[str]:
+    ident: str = _migration_identity(version)
+    out: list[str] = []
+    out.append(ident)
+    out.append(ident + ".sql")
+    out.append(ident + ".pg.sql")
+    out.append(ident + ".mysql.sql")
+    return out
+
 def _ensure_migrations_table(db: Connection) -> None:
     db.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
 
 def _already_applied(db: Connection, version: str) -> bool:
-    stmt: Statement = db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
-    stmt.bind_str(0, version)
+    names: list[str] = migration_aliases(version)
+    stmt: Statement = db.prepare(
+        "SELECT 1 FROM schema_migrations WHERE version = ? OR version = ? OR version = ? OR version = ?"
+    )
+    stmt.bind_str(0, names[0])
+    stmt.bind_str(1, names[1])
+    stmt.bind_str(2, names[2])
+    stmt.bind_str(3, names[3])
     rows: list[Row] = stmt.query()
     return len(rows) > 0
 
@@ -377,8 +395,14 @@ def _ensure_migrations_table_pg(conn: PgConnection) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
 
 def _already_applied_pg(conn: PgConnection, version: str) -> bool:
-    stmt: Statement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = $1")
-    stmt.bind_str(0, version)
+    names: list[str] = migration_aliases(version)
+    stmt: Statement = conn.prepare(
+        "SELECT 1 FROM schema_migrations WHERE version = $1 OR version = $2 OR version = $3 OR version = $4"
+    )
+    stmt.bind_str(0, names[0])
+    stmt.bind_str(1, names[1])
+    stmt.bind_str(2, names[2])
+    stmt.bind_str(3, names[3])
     rows: list[PgRow] = stmt.query()
     return len(rows) > 0
 
@@ -446,8 +470,14 @@ def _ensure_migrations_table_mysql(conn: MysqlConnection) -> None:
     )
 
 def _already_applied_mysql(conn: MysqlConnection, version: str) -> bool:
-    stmt: Statement = conn.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
-    stmt.bind_str(0, version)
+    names: list[str] = migration_aliases(version)
+    stmt: Statement = conn.prepare(
+        "SELECT 1 FROM schema_migrations WHERE version = ? OR version = ? OR version = ? OR version = ?"
+    )
+    stmt.bind_str(0, names[0])
+    stmt.bind_str(1, names[1])
+    stmt.bind_str(2, names[2])
+    stmt.bind_str(3, names[3])
     rows: list[Row] = stmt.query()
     return len(rows) > 0
 
@@ -458,6 +488,9 @@ def _record_applied_mysql(conn: MysqlConnection, version: str) -> None:
 
 # MySQL: kimligin `*.mysql.sql` ikizi varsa o, yoksa duz `*.sql`.
 # execute tek deyim calistirir; bir dosyada birden fazla deyim varsa ayri dosyaya bolun.
+# DDL (CREATE/ALTER/DROP) MySQL'de acik islemi örtülü commit eder. ROLLBACK
+# o tabloyu silmez. Basarisiz bir migration dosyasi semayi yarim birakabilir;
+# yeniden kosum IF NOT EXISTS / IF EXISTS ile guvenli olmalidir.
 def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
     if not nox.fs.exists(dir_path):
         raise DbError("migration dizini yok: " + dir_path)
@@ -480,7 +513,10 @@ def migrate_mysql(conn: MysqlConnection, dir_path: str) -> int:
                 conn.execute("COMMIT")
             except MysqlError as e:
                 conn.execute("ROLLBACK")
-                raise DbError("migration basarisiz (geri alindi): " + version + ": " + e.message)
+                raise DbError(
+                    "migration basarisiz: " + version + ": " + e.message +
+                    " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
+                )
             applied = applied + 1
         j = j + 1
     return applied
@@ -507,7 +543,10 @@ def rollback_mysql(conn: MysqlConnection, dir_path: str) -> str:
         conn.execute("COMMIT")
     except MysqlError as e:
         conn.execute("ROLLBACK")
-        raise DbError("rollback basarisiz (geri alindi): " + version + ": " + e.message)
+        raise DbError(
+            "rollback basarisiz: " + version + ": " + e.message +
+            " (MySQL DDL geri alinmaz; yarim sema kalmis olabilir)"
+        )
     return version
 
 # Dialect'e gore migrate - sqlite, postgres veya mysql URL.

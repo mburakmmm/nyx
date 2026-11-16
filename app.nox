@@ -118,14 +118,21 @@ def mysql(application: Application) -> MysqlConnection:
         return _take_mysql(application)
     return application._my[0]
 
-def _pool_gauge(application: Application) -> str:
+def _publish_pool(application: Application) -> None:
     if application.dialect == "postgres" and len(application._pg_pool) > 0:
+        if not nyx.metrics.worker_claimed():
+            nyx.metrics.claim_worker()
         pool: PgPool = application._pg_pool[0]
-        return nyx.metrics.pool_gauge_text(pool.size, pool.open_count(), pool.idle_count())
-    if application.dialect == "mysql" and len(application._my_pool) > 0:
+        nyx.metrics.record_pool_worker(nyx.metrics.worker_index(), pool.size, pool.open_count(), pool.idle_count())
+    elif application.dialect == "mysql" and len(application._my_pool) > 0:
+        if not nyx.metrics.worker_claimed():
+            nyx.metrics.claim_worker()
         my_pool: MysqlPool = application._my_pool[0]
-        return nyx.metrics.pool_gauge_text(my_pool.size, my_pool.open_count(), my_pool.idle_count())
-    return ""
+        nyx.metrics.record_pool_worker(nyx.metrics.worker_index(), my_pool.size, my_pool.open_count(), my_pool.idle_count())
+
+def _pool_gauge(application: Application) -> str:
+    _publish_pool(application)
+    return nyx.metrics.pool_series_text()
 
 def _is_placeholder_secret(secret: str) -> bool:
     if nox.strings.contains(secret, "change-me"):
@@ -225,6 +232,7 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     dialect: str = nyx.db.dialect_of_url(cfg.db_path)
     if dialect == "":
         dialect = "sqlite"
+    nyx.metrics.bind_shared(str(cfg.port) + ":" + cfg.db_path + ":" + dialect)
     pg_list: list[PgConnection] = []
     my_list: list[MysqlConnection] = []
     pg_pools: list[PgPool] = []
@@ -290,6 +298,7 @@ def boot(cfg: Config, setup: (Application) -> None) -> Application:
     _install_framework_middleware(application)
     mount_health(application)
     setup(application)
+    _publish_pool(application)
     return application
 
 def _install_framework_middleware(application: Application) -> None:
@@ -810,6 +819,7 @@ def _take_pg(application: Application) -> PgConnection:
             raise PostgresError(e.message)
     nyx.db_pool.hold_pg(conn)
     nyx.metrics.record_db_checkout(nox.time.now_ms() - started)
+    _publish_pool(application)
     return conn
 
 def _take_mysql(application: Application) -> MysqlConnection:
@@ -826,6 +836,7 @@ def _take_mysql(application: Application) -> MysqlConnection:
         raise AppError("db_pool_exhausted")
     nyx.db_pool.hold_mysql(conn)
     nyx.metrics.record_db_checkout(nox.time.now_ms() - started)
+    _publish_pool(application)
     return conn
 
 def _release_db(application: Application) -> None:
@@ -834,11 +845,13 @@ def _release_db(application: Application) -> None:
         nyx.db_pool.clear_pg()
         if conn != None:
             application._pg_pool[0].give_back(conn)
+            _publish_pool(application)
     elif application.dialect == "mysql" and len(application._my_pool) > 0:
         my_conn: MysqlConnection | None = nyx.db_pool.current_mysql()
         nyx.db_pool.clear_mysql()
         if my_conn != None:
             application._my_pool[0].give_back(my_conn)
+            _publish_pool(application)
 
 def dispatch(application: Application, req: HttpRequest) -> HttpResponse:
     cfg: Config = application.config

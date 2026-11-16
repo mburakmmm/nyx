@@ -8,11 +8,13 @@
 # body: str = nyx.metrics.prometheus_text()
 
 import nox.uuid
+import nox.strings
 import nox.sharedmem
 from nox.sharedmem import SharedBuffer
 
 # Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited,
 # 40 pool checkouts, 48 pool wait ms, 56 pool exhausted.
+# 64 worker count. 72 + i*24: that worker's size, open, idle.
 _SLOT_REQ: int = 0
 _SLOT_5XX: int = 8
 _SLOT_JOB: int = 16
@@ -21,7 +23,11 @@ _SLOT_RL: int = 32
 _SLOT_POOL_OUT: int = 40
 _SLOT_POOL_WAIT: int = 48
 _SLOT_POOL_FAIL: int = 56
-_SIZE: int = 64
+_SLOT_WORKERS: int = 64
+_WORKER_ORIGIN: int = 72
+_WORKER_STRIDE: int = 24
+_MAX_WORKERS: int = 16
+_SIZE: int = 456
 
 def _compact_shm_name() -> str:
     # macOS PSEMNAMLEN ≈ 31; UUID with dashes is too long for shm_open.
@@ -60,6 +66,31 @@ class _MetricsBag:
             return got
 
 _store: _MetricsBag = _MetricsBag()
+_worker_claimed: bool = False
+_worker_index: int = 0
+
+def bind_shared(key: str) -> None:
+    # serve_multicore her worker'a taze modul kopyasi verir. Ayni port ve
+    # veritabani yolu ayni paylasilan bellek adini uretir.
+    if _store.buf != None:
+        return
+    _store.name = _name_from_key(key)
+
+def _name_from_key(key: str) -> str:
+    h: int = 2166136261
+    i: int = 0
+    while i < len(key):
+        h = (h * 131 + nox.strings.byte_at(key, i)) % 1000000007
+        i = i + 1
+    name: str = "/nyxm" + str(h)
+    if len(name) > 30:
+        short: str = ""
+        j: int = 0
+        while j < 30:
+            short = short + nox.strings.char_from_byte(nox.strings.byte_at(name, j))
+            j = j + 1
+        return short
+    return name
 
 def _bump(offset: int) -> None:
     buf: SharedBuffer = _store.ensure()
@@ -86,7 +117,17 @@ def reset() -> None:
     buf.write_int(_SLOT_POOL_OUT, 0)
     buf.write_int(_SLOT_POOL_WAIT, 0)
     buf.write_int(_SLOT_POOL_FAIL, 0)
+    buf.write_int(_SLOT_WORKERS, 0)
+    w: int = 0
+    while w < _MAX_WORKERS:
+        base: int = _WORKER_ORIGIN + w * _WORKER_STRIDE
+        buf.write_int(base, 0)
+        buf.write_int(base + 8, 0)
+        buf.write_int(base + 16, 0)
+        w = w + 1
     buf.unlock()
+    _worker_claimed = False
+    _worker_index = 0
 
 def inc_requests() -> None:
     _bump(_SLOT_REQ)
@@ -139,6 +180,90 @@ def db_pool_checkout_wait_ms() -> int:
 
 def db_pool_exhausted() -> int:
     return _get(_SLOT_POOL_FAIL)
+
+def claim_worker() -> int:
+    if _worker_claimed:
+        return _worker_index
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    n: int = buf.read_int(_SLOT_WORKERS)
+    claimed: int = n
+    if claimed >= _MAX_WORKERS:
+        claimed = _MAX_WORKERS - 1
+    else:
+        buf.write_int(_SLOT_WORKERS, n + 1)
+    buf.unlock()
+    _worker_claimed = True
+    _worker_index = claimed
+    return claimed
+
+def worker_index() -> int:
+    return _worker_index
+
+def worker_claimed() -> bool:
+    return _worker_claimed
+
+def record_pool_worker(index: int, size: int, opened: int, idle: int) -> None:
+    if index < 0 or index >= _MAX_WORKERS:
+        return
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    n: int = buf.read_int(_SLOT_WORKERS)
+    if index + 1 > n and n < _MAX_WORKERS:
+        buf.write_int(_SLOT_WORKERS, index + 1)
+    base: int = _WORKER_ORIGIN + index * _WORKER_STRIDE
+    buf.write_int(base, size)
+    buf.write_int(base + 8, opened)
+    buf.write_int(base + 16, idle)
+    buf.unlock()
+
+def pool_series_text() -> str:
+    buf: SharedBuffer = _store.ensure()
+    buf.lock()
+    n: int = buf.read_int(_SLOT_WORKERS)
+    if n > _MAX_WORKERS:
+        n = _MAX_WORKERS
+    sizes: list[int] = []
+    opens: list[int] = []
+    idles: list[int] = []
+    i: int = 0
+    while i < n:
+        base: int = _WORKER_ORIGIN + i * _WORKER_STRIDE
+        sizes.append(buf.read_int(base))
+        opens.append(buf.read_int(base + 8))
+        idles.append(buf.read_int(base + 16))
+        i = i + 1
+    buf.unlock()
+    if n == 0:
+        return ""
+    size_sum: int = 0
+    open_sum: int = 0
+    idle_sum: int = 0
+    size_lines: str = ""
+    open_lines: str = ""
+    idle_lines: str = ""
+    k: int = 0
+    while k < n:
+        size_sum = size_sum + sizes[k]
+        open_sum = open_sum + opens[k]
+        idle_sum = idle_sum + idles[k]
+        label: str = "{worker=\"" + str(k) + "\"} "
+        size_lines = size_lines + "nyx_db_pool_size" + label + str(sizes[k]) + "\n"
+        open_lines = open_lines + "nyx_db_pool_open" + label + str(opens[k]) + "\n"
+        idle_lines = idle_lines + "nyx_db_pool_idle" + label + str(idles[k]) + "\n"
+        k = k + 1
+    out: str = ""
+    out = out + "# HELP nyx_db_pool_size Checkout slots. Unlabeled value is the sum across workers.\n"
+    out = out + "# TYPE nyx_db_pool_size gauge\n"
+    out = out + size_lines
+    out = out + "nyx_db_pool_size " + str(size_sum) + "\n"
+    out = out + "# TYPE nyx_db_pool_open gauge\n"
+    out = out + open_lines
+    out = out + "nyx_db_pool_open " + str(open_sum) + "\n"
+    out = out + "# TYPE nyx_db_pool_idle gauge\n"
+    out = out + idle_lines
+    out = out + "nyx_db_pool_idle " + str(idle_sum) + "\n"
+    return out
 
 def pool_gauge_text(size: int, opened: int, idle: int) -> str:
     out: str = ""

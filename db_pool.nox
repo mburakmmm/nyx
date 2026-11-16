@@ -206,8 +206,17 @@ class MysqlPool:
                     poll = poll * 2
         raise MysqlError("unreachable")
 
+    # Postgres havuzu gibi: iade etmeden once acik islemi geri al.
+    # Saglik sorgusu acik bir transaction icinde de basarili olur; ROLLBACK
+    # ondan once calismazsa sonraki istek ayni baglantida yarim isi gorur.
     def give_back(self: MysqlPool, conn: MysqlConnection) -> None:
-        healthy: bool = _mysql_ok(conn)
+        healthy: bool = True
+        try:
+            conn.execute("ROLLBACK")
+        except MysqlError:
+            healthy = False
+        if healthy:
+            healthy = _mysql_ok(conn)
         self._lock()
         if healthy:
             idle: list[MysqlConnection] = self.idle

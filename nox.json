@@ -1,5 +1,6 @@
 {
   "name": "nyx",
+  "source": "nox",
   "entry": "examples/blog/main.nox",
   "bin": {
     "name": "nyx",
@@ -9,7 +10,7 @@
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.29.0"
+      "ref": "v0.30.0"
     },
     {
       "alias": "rune",

@@ -116,5 +116,29 @@ nox.test.assert_eq_int(len(ok_versions), 1, "basarili migration schema_migration
 
 atomic_db.close()
 
+# Eski damga 010_legacy.pg.sql, sqlite'in sececegi 010_legacy.sql ile ayni kimlik.
+# Ikizi yeniden calismamali ve ikinci bir satir yazmamali.
+ident_dir: str = "/tmp/nyx_mig_identity"
+if nox.fs.exists(ident_dir):
+    nox.fs.remove_dir_all(ident_dir)
+nox.fs.create_dir(ident_dir)
+plain_sql: str = "CREATE TABLE IF NOT EXISTS t_legacy (id INTEGER PRIMARY KEY);"
+nox.fs.write_string(ident_dir + "/010_legacy.sql", plain_sql)
+nox.fs.write_string(ident_dir + "/010_legacy.pg.sql", plain_sql)
+ident_db: Connection = nyx.db.open(":memory:")
+ident_db.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY NOT NULL)")
+ident_db.execute("INSERT INTO schema_migrations (version) VALUES ('010_legacy.pg.sql')")
+ident_n: int = nyx.db.migrate(ident_db, ident_dir)
+nox.test.assert_eq_int(ident_n, 0, "eski lehce damgasi ayni kimligi atlar")
+ident_rows: list[Row] = ident_db.query("SELECT version FROM schema_migrations")
+nox.test.assert_eq_int(len(ident_rows), 1, "kimlik ikinci satir acmaz")
+nox.test.assert_eq_str(ident_rows[0].get_str(0), "010_legacy.pg.sql", "eski damga durur")
+legacy_table: list[Row] = ident_db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 't_legacy'")
+nox.test.assert_eq_int(len(legacy_table), 0, "atlanan dosya calismaz")
+aliases: list[str] = nyx.db.migration_aliases("010_legacy.pg.sql")
+nox.test.assert_eq_str(aliases[1], "010_legacy.sql", "duz ad ayni kimlik")
+nox.test.assert_eq_str(aliases[2], "010_legacy.pg.sql", "pg ad ayni kimlik")
+ident_db.close()
+
 db.close()
 print("db_test ok")

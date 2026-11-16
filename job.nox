@@ -18,6 +18,7 @@
 # Lease 5 dakikadir (reclaim_stale ile ayni). Worker, handler yield ettikce
 # lease'i kendisi uzatir (heartbeat_interval_ms). heartbeat_active aninda
 # uzatmak icindir. Yield etmeyen handler 5 dakikada stale sayilir.
+# Aktif is TaskLocal'dadir: ayni surecte iki job birbirinin kimligini okumaz.
 # Dosya kuyrugunda yenileme ayri bir baglantidadir; bellek kuyrugunda ayni
 # baglanti kullanilir. reserve ve reclaim fence'i artirir. complete ve
 # fail_owned yalnizca ayni fence ve status=running iken yazar.
@@ -75,12 +76,37 @@ class _Active:
         self.fence = 0
 
 _active: _Active = _Active()
+_active_tl: TaskLocal[_Active] = TaskLocal[_Active]()
+
+def _read_active() -> _Active:
+    got: _Active | None = _active_tl.get()
+    if got != None:
+        return got
+    return _active
+
+def _bind_active(id: int, fence: int) -> None:
+    slot: _Active = _Active()
+    slot.id = id
+    slot.fence = fence
+    _active_tl.set(slot)
+    got: _Active | None = _active_tl.get()
+    if got == None:
+        _active.id = id
+        _active.fence = fence
+
+def _clear_active() -> None:
+    got: _Active | None = _active_tl.get()
+    if got != None:
+        got.id = 0
+        got.fence = 0
+    _active.id = 0
+    _active.fence = 0
 
 def active_id() -> int:
-    return _active.id
+    return _read_active().id
 
 def active_fence() -> int:
-    return _active.fence
+    return _read_active().fence
 
 def _has_column(db: Connection, name: str) -> bool:
     stmt: Statement = db.prepare("SELECT name FROM pragma_table_info('jobs')")
@@ -211,9 +237,10 @@ def heartbeat(db: Connection, id: int, fence: int) -> bool:
     return stmt.execute() > 0
 
 def heartbeat_active(db: Connection) -> bool:
-    if _active.id == 0:
+    current: _Active = _read_active()
+    if current.id == 0:
         return False
-    return heartbeat(db, _active.id, _active.fence)
+    return heartbeat(db, current.id, current.fence)
 
 class _LeaseConn:
     db: Connection
@@ -243,7 +270,9 @@ def _lease_conn(db: Connection) -> _LeaseConn:
         return _LeaseConn(db, False)
     try:
         opened: Connection = nyx.db.open(path)
-        opened.execute("PRAGMA busy_timeout = 50")
+        # PRAGMA busy_timeout bir satir dondurur. execute yalnizca SQLITE_DONE
+        # kabul eder, bu yuzden query kullanilir; aksi halde ikinci baglanti dusurulur.
+        opened.query("PRAGMA busy_timeout = 5000")
         return _LeaseConn(opened, True)
     except SqliteError:
         return _LeaseConn(db, False)
@@ -419,12 +448,10 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
     job_name: str = nox.json.as_string(_field(v, "job_name"))
     payload_v: JsonValue = _field(v, "payload")
     payload_json: str = nox.json.dump(payload_v)
-    _active.id = id
-    _active.fence = fence
+    _bind_active(id, fence)
     if not registry.has(job_name):
         fail_owned(db, id, fence, "kayitli handler yok: " + job_name)
-        _active.id = 0
-        _active.fence = 0
+        _clear_active()
         return True
 
     handler: (str) -> None = registry.get(job_name)
@@ -447,8 +474,7 @@ def _process_reserved(db: Connection, registry: JobRegistry, job_json: str) -> b
         renewal.stop = True
         if not finished:
             fail_owned(db, id, fence, "handler aborted without completion")
-        _active.id = 0
-        _active.fence = 0
+        _clear_active()
     return True
 
 # Re-queue jobs stuck in 'running' longer than 'stale_ms'.

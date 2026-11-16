@@ -35,6 +35,7 @@ jobs:
           sha = os.environ["GITHUB_SHA"]
           data = {
             "name": "nyx",
+            "source": "nox",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
             "requires": [
@@ -127,6 +128,7 @@ jobs:
           sha = os.environ["GITHUB_SHA"]
           data = {
             "name": "nyx",
+            "source": "nox",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
             "requires": [
@@ -212,6 +214,7 @@ jobs:
           sha = os.environ["GITHUB_SHA"]
           data = {
             "name": "nyx",
+            "source": "nox",
             "entry": "examples/blog/main.nox",
             "bin": {"name": "nyx", "path": "cli.nox"},
             "requires": [
@@ -255,3 +258,134 @@ jobs:
           noxc test tests/v271_migrate_dialect_test.nox
           noxc test tests/v272_db_pool_test.nox
           noxc test tests/v273_db_pool_race_test.nox
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Nox toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.nox-lang
+          key: nox-v2.1.186-macos-arm64
+
+      - name: Install Nox
+        run: |
+          if ! "$HOME/.nox-lang/bin/noxc" --version >/dev/null 2>&1; then
+            bash ci/install_nox.sh
+          fi
+          echo "$HOME/.nox-lang/bin" >> "$GITHUB_PATH"
+
+      - name: Point package at checkout
+        run: |
+          python3 - <<'PY'
+          import json, os
+          ws = os.environ["GITHUB_WORKSPACE"]
+          sha = os.environ["GITHUB_SHA"]
+          data = {
+            "name": "nyx",
+            "source": "nox",
+            "entry": "examples/blog/main.nox",
+            "bin": {"name": "nyx", "path": "cli.nox"},
+            "requires": [
+              {"alias": "nyx", "repo": ws, "ref": "master"},
+              {"alias": "rune", "repo": "github.com/mburakmmm/rune", "ref": "v2.0.1"},
+            ],
+          }
+          with open("nox.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+          lock = {
+            "packages": [
+              {"alias": "nyx", "repo": ws, "ref": "master", "resolved": sha},
+              {
+                "alias": "rune",
+                "repo": "github.com/mburakmmm/rune",
+                "ref": "v2.0.1",
+                "resolved": "a4c5434563a7415cc45df687af4ac51f51085912",
+              },
+            ]
+          }
+          with open("nox.lock", "w", encoding="utf-8") as f:
+            json.dump(lock, f, indent=2)
+            f.write("\n")
+          PY
+
+      - name: Fetch & test
+        run: |
+          noxc --version
+          noxc fetch
+          fail=0
+          for t in tests/*.nox; do
+            echo "==> $t"
+            if ! noxc test "$t"; then
+              echo "FAILED: $t"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW
+        shell: pwsh
+        run: |
+          choco install mingw -y
+          $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+          $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
+          $env:Path = "$machine;$user"
+          $gcc = Get-Command gcc.exe | Select-Object -ExpandProperty Source
+          $dir = Split-Path $gcc
+          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install Nox
+        shell: pwsh
+        env:
+          NOX_VERSION: v2.1.186
+        run: |
+          irm https://raw.githubusercontent.com/mburakmmm/nox-lang/v2.1.186/install.ps1 | iex
+          "$env:USERPROFILE\.nox-lang\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Point package at checkout
+        shell: pwsh
+        run: |
+          python -c @"
+          import json, os
+          ws = os.environ['GITHUB_WORKSPACE']
+          sha = os.environ['GITHUB_SHA']
+          data = {
+            'name': 'nyx',
+            'source': 'nox',
+            'entry': 'examples/blog/main.nox',
+            'bin': {'name': 'nyx', 'path': 'cli.nox'},
+            'requires': [
+              {'alias': 'nyx', 'repo': ws, 'ref': 'master'},
+              {'alias': 'rune', 'repo': 'github.com/mburakmmm/rune', 'ref': 'v2.0.1'},
+            ],
+          }
+          open('nox.json','w',encoding='utf-8').write(json.dumps(data, indent=2)+'\n')
+          lock = {
+            'packages': [
+              {'alias': 'nyx', 'repo': ws, 'ref': 'master', 'resolved': sha},
+              {'alias': 'rune', 'repo': 'github.com/mburakmmm/rune', 'ref': 'v2.0.1', 'resolved': 'a4c5434563a7415cc45df687af4ac51f51085912'},
+            ],
+          }
+          open('nox.lock','w',encoding='utf-8').write(json.dumps(lock, indent=2)+'\n')
+          "@
+
+      - name: Portable tests
+        shell: pwsh
+        run: |
+          noxc --version
+          noxc fetch
+          $script:fail = 0
+          Get-ChildItem tests/*.nox | Where-Object { -not (Select-String -Path $_.FullName -Pattern '/tmp' -Quiet) } | ForEach-Object {
+            Write-Host "==> $($_.FullName)"
+            noxc test $_.FullName
+            if ($LASTEXITCODE -ne 0) { $script:fail = 1 }
+          }
+          exit $script:fail

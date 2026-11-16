@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.29.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.0 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.29.0"
+      "ref": "v0.30.0"
     }
   ]
 }
@@ -165,6 +165,15 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 ---
 
 ## Sürüm notları
+
+### 0.30.0 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- `schema_migrations` çalışan dosyanın adını tutar. Aynı kimliğin sonradan eklenen ikizi (`001_users.sql`, `001_users.pg.sql`, `001_users.mysql.sql`) yeniden uygulanmaz
+- MySQL `give_back` sağlık sorgusundan önce `ROLLBACK` yapar. Açık işlem sonraki isteğe geçmez
+- MySQL DDL kendi kendine commit olur. Başarısız migration artık semanın geri alındığını söylemez. `v275`, DML’in geri alındığını ve `CREATE TABLE`’ın durduğunu kontrol eder
+- Çalışan işin kimliği task üzerindedir. Aynı süreçteki iki iş birbirinin kimliğini okumaz. Yield etmeyen iş beş dakikada reclaim edilir
+- Havuz size, open ve idle gauge’leri worker etiketlidir. Etiketsiz seri toplamdır. Aynı port ve veritabanındaki worker’lar tek metrik tamponunu paylaşır
+- Auth derleme testi Windows’ta `cmd`, diğerlerinde `/bin/sh` ile `noxc` çalıştırır. CI macOS’ta paketi, Windows’ta `/tmp` kullanmayan testleri koşar
 
 ### 0.29.0 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
