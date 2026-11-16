@@ -452,14 +452,20 @@ def _break_stale_lock(dir_path: str, now: int) -> None:
         nox.fs.rename(dir_path, trash)
     except FsError:
         return
-    nox.fs.remove_dir_all(trash)
+    try:
+        nox.fs.remove_dir_all(trash)
+    except FsError:
+        return
 
 def _try_create_lock(dir_path: str, token: str, now: int) -> bool:
     try:
         nox.fs.create_dir(dir_path)
     except FsError:
         return False
-    nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
+    try:
+        nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
+    except FsError:
+        return False
     written: str = _read_owner(dir_path)
     if _owner_token(written) != token:
         return False
@@ -497,7 +503,10 @@ def _release_sqlite(db: Connection, token: str) -> None:
         nox.fs.rename(dir_path, trash)
     except FsError:
         return
-    nox.fs.remove_dir_all(trash)
+    try:
+        nox.fs.remove_dir_all(trash)
+    except FsError:
+        return
 
 def _refresh_sqlite(db: Connection, token: str) -> bool:
     if len(token) == 0:
@@ -508,8 +517,23 @@ def _refresh_sqlite(db: Connection, token: str) -> bool:
     if _owner_token(_read_owner(dir_path)) != token:
         return False
     now: int = nox.time.now_ms()
-    nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
+    try:
+        nox.fs.write_string_atomic(dir_path + "/owner", token + "\n" + str(now + lock_lease_ms()))
+    except FsError as e:
+        print("sqlite lock: " + e.message)
+        return False
     return _owner_token(_read_owner(dir_path)) == token
+
+def _sqlite_still_owned(db: Connection, token: str) -> bool:
+    if len(token) == 0:
+        return True
+    dir_path: str = _lock_dir(db)
+    if len(dir_path) == 0:
+        return True
+    text: str = _read_owner(dir_path)
+    if _owner_token(text) != token:
+        return False
+    return _owner_until(text) >= nox.time.now_ms()
 
 class _LockBeat:
     stop: bool
@@ -572,14 +596,15 @@ def _guard_sqlite(db: Connection, token: str) -> None:
     _pause_for_lock()
     if len(token) == 0:
         return
-    if _sqlite_beat.lost or not _refresh_sqlite(db, token):
+    if _sqlite_beat.lost or not _sqlite_still_owned(db, token):
         raise DbError("migration kilidi kaybedildi")
 
 # Oturum kilidi lease kullanmaz. Uzun sorgu surerken sunucu kilidi tutar.
 # Baglanti dusunce kilit birakilir. Satir INSERT yarisi yoktur.
-# current_database() name tipindedir. hashtext yalnizca text alir.
-def _pg_lock_keys() -> str:
-    return "hashtext(current_database()::text), 831194108"
+# Tek bigint anahtar. pg_advisory_lock_held(int, int) Postgres 16'da yok.
+# Sahiplik pg_locks satirindan okunur: classid yuksek yari, objid alcak yari, objsubid 1.
+def _pg_held_sql() -> str:
+    return "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) AND classid = 0 AND objid = 831194108 AND objsubid = 1 AND pid = pg_backend_pid() AND granted) THEN 1 ELSE 0 END"
 
 def _pg_lock_flag(conn: PgConnection, sql: str) -> bool:
     rows: list[PgRow] = []
@@ -594,7 +619,7 @@ def _pg_lock_flag(conn: PgConnection, sql: str) -> bool:
 
 def _acquire_pg(conn: PgConnection) -> None:
     started: int = nox.time.now_ms()
-    try_sql: str = "SELECT CASE WHEN pg_try_advisory_lock(" + _pg_lock_keys() + ") THEN 1 ELSE 0 END"
+    try_sql: str = "SELECT CASE WHEN pg_try_advisory_lock(831194108::bigint) THEN 1 ELSE 0 END"
     while True:
         now: int = nox.time.now_ms()
         if _pg_lock_flag(conn, try_sql):
@@ -605,16 +630,13 @@ def _acquire_pg(conn: PgConnection) -> None:
 
 def _release_pg(conn: PgConnection) -> None:
     try:
-        conn.query("SELECT pg_advisory_unlock(" + _pg_lock_keys() + ")")
+        conn.query("SELECT pg_advisory_unlock(831194108::bigint)")
     except PostgresError:
         return
 
 def _guard_pg(conn: PgConnection) -> None:
     _pause_for_lock()
-    held: bool = _pg_lock_flag(
-        conn,
-        "SELECT CASE WHEN pg_advisory_lock_held(" + _pg_lock_keys() + ") THEN 1 ELSE 0 END"
-    )
+    held: bool = _pg_lock_flag(conn, _pg_held_sql())
     if not held:
         raise DbError("migration kilidi kaybedildi")
 

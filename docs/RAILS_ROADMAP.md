@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.30.10** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
+**Durum:** Nyx **0.30.11** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -68,6 +68,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.30.8** | Windows SMTP’ye SYSTEMROOT ve kendi konsolu; depolama reparse noktasını reddeder |
 | **0.30.9** | Migration kilidi oturumda kalır; ORM üç veritabanında, şablon önbelleği sınırlı |
 | **0.30.10** | Postgres kilidi text cast; MySQL yarışı üst fiberde açılır; Windows reparse önbelleği fsutil sonrası mtime |
+| **0.30.11** | Postgres sahipliği pg_locks’tan okunur; SQLite kalp atışı tek yazıcı |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

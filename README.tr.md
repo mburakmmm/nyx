@@ -5,7 +5,7 @@
 **[Nox](https://github.com/mburakmmm/nox-lang) için Rails kapsamlı, batteries-included web framework.**  
 Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…). Ergonomi hâlâ yaklaşıyor — aşağıdaki typed API’leri tercih edin.
 
-**Sürüm:** 0.30.10 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Sürüm:** 0.30.11 · **Lisans:** MIT · **Nox ≥ 2.1.186** (CI **2.1.186**)  
 İç importlar paket adı `nyx` (Nox ≥ 1.12.1: tüketicinin `requires[].alias`ı farklı olabilir).
 
 ---
@@ -24,7 +24,7 @@ Kapsam Rails’in problem alanlarına denk (lifecycle, model, güvenlik, jobs…
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.10"
+      "ref": "v0.30.11"
     }
   ]
 }
@@ -165,6 +165,11 @@ Argv ayrıştırması Rune `Command` / `CliApp`. Dosya üretimi Nox. Windows’t
 ---
 
 ## Sürüm notları
+
+### 0.30.11 — Nox 2.1.186 (1.0 değil)
+- Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
+- Postgres oturum kilidinin sahipliğini `pg_locks` üzerinden okur. `pg_advisory_lock_held` Postgres 16’da iki tamsayı almaz. Anahtar tek `bigint`
+- SQLite kalp atışı owner dosyasının tek yazıcısıdır. Yenileme veya eski dizin silme hatası kilidin içinde kalır, süreci düşürmez
 
 ### 0.30.10 — Nox 2.1.186 (1.0 değil)
 - Hâlâ **Nox ≥ 2.1.186**. HTTP/3 kapalı
