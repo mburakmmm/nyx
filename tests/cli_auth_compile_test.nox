@@ -97,11 +97,29 @@ wrapper: str = root + "/run_noxc.sh"
 script: str = ""
 if len(comspec) > 0:
     profile: str = nox.os.getenv("USERPROFILE")
+    # noxc keeps the package cache in $NOX_HOME or $HOME/.nox. The child
+    # starts with an empty environment, so it must reuse this process's cache
+    # or it tries to fetch the local repo again and fails with FileNotFound.
+    parent_home: str = ""
+    try:
+        parent_home = nox.os.getenv("HOME")
+    except OsError:
+        parent_home = ""
+    nox_home: str = ""
+    try:
+        nox_home = nox.os.getenv("NOX_HOME")
+    except OsError:
+        nox_home = ""
+    if len(nox_home) == 0:
+        nox_home = parent_home + "/.nox"
+    if len(parent_home) == 0:
+        parent_home = profile
     launcher = comspec
     wrapper = _slashes(nox.os.current_dir() + "/" + root + "/run_noxc.cmd")
     script = "@echo off\r\n"
-    script = script + "set \"HOME=" + profile + "\"\r\n"
+    script = script + "set \"HOME=" + _slashes(parent_home) + "\"\r\n"
     script = script + "set \"USERPROFILE=" + profile + "\"\r\n"
+    script = script + "set \"NOX_HOME=" + nox_home + "\"\r\n"
     script = script + "set \"PATH=" + profile + "\\.nox-lang\\bin;%PATH%\"\r\n"
     script = script + "cd /d \"" + _slashes(nox.os.current_dir()) + "\"\r\n"
     script = script + "call \"" + profile + "\\.nox-lang\\bin\\noxc.exe\" test \"" + _slashes(prog_path) + "\"\r\n"

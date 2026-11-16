@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.30.1** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
+**Durum:** Nyx **0.30.2** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -59,6 +59,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.29.0** | Kimlik başına migration, auth snippet derlemesi, lazy checkout, havuz metrikleri, otomatik job lease. HTTP/3 kapalı |
 | **0.30.0** | Migration geçmişi kimlikle, MySQL iadesinde ROLLBACK, job kimliği TaskLocal, worker etiketli havuz toplamı, macOS ve Windows CI. HTTP/3 kapalı |
 | **0.30.1** | CI: MySQL istemci kütüphanesi, lease duvar saati, Windows shm adı ve cmd başlatıcı |
+| **0.30.2** | MySQL kütüphanesi Ubuntu 24.04 arşivinden. Auth derlemesi üst sürecin önbelleğini kullanır |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

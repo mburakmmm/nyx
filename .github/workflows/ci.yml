@@ -198,14 +198,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential curl python3
       - name: Install MySQL client library
         run: |
-          set -e
-          if ! ldconfig -p | grep -q 'libmysqlclient\.so\.21'; then
-            if ! sudo apt-get install -y libmysqlclient21; then
-              curl -fsSL -o /tmp/libmysqlclient21.deb \
-                https://archive.ubuntu.com/ubuntu/pool/main/m/mysql-8.0/libmysqlclient21_8.0.46-0ubuntu0.24.04.4_amd64.deb
-              sudo apt-get install -y /tmp/libmysqlclient21.deb
-            fi
+          set -euo pipefail
+          if ldconfig -p | grep -q 'libmysqlclient.so.21'; then
+            exit 0
           fi
+          # Ubuntu 26 does not ship libmysqlclient.so.21. Nox dlopens that
+          # SONAME, so the library comes from the Ubuntu 24.04 archive.
+          echo "deb http://archive.ubuntu.com/ubuntu noble main universe" | sudo tee /etc/apt/sources.list.d/noble-mysql.list
+          echo "deb http://security.ubuntu.com/ubuntu noble-security main universe" | sudo tee -a /etc/apt/sources.list.d/noble-mysql.list
+          printf '%s\n' \
+            'Package: *' \
+            'Pin: release n=noble' \
+            'Pin-Priority: 100' \
+            '' \
+            'Package: libmysqlclient21 mysql-common' \
+            'Pin: release n=noble*' \
+            'Pin-Priority: 990' \
+            | sudo tee /etc/apt/preferences.d/noble-mysql >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y libmysqlclient21
           ldconfig -p | grep 'libmysqlclient.so.21'
       - name: Cache Nox toolchain
         uses: actions/cache@v4
