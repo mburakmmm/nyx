@@ -34,7 +34,7 @@ def read_version() -> str:
         text: str = nox.strings.trim(nox.fs.read_to_string(path))
         if len(text) > 0:
             return text
-    return "0.30.6"
+    return "0.30.7"
 
 def templates_root() -> str:
     root: str = ""

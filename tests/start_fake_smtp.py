@@ -16,9 +16,10 @@ kwargs = {
     "stdin": subprocess.DEVNULL,
 }
 if os.name == "nt":
-    # DETACHED_PROCESS (0x8) drops the console before Python starts, so the
-    # child exits without writing the ready file. CREATE_NO_WINDOW keeps it running.
-    kwargs["creationflags"] = 0x08000000 | 0x00000200
+    # CREATE_NO_WINDOW and DETACHED_PROCESS both start Python without a
+    # window station, and Winsock then fails with WinError 10106.
+    # A new process group is enough for the child to outlive this starter.
+    kwargs["creationflags"] = 0x00000200
 else:
     kwargs["start_new_session"] = True
 subprocess.Popen(cmd, **kwargs)

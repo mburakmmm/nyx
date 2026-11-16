@@ -107,6 +107,13 @@ def _resolve_key(root: str, key: str) -> str:
         if ok:
             if not _same_root(root_parts, nox.path.components(resolved)):
                 raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
+            if nox.fs.is_dir(nxt):
+                try:
+                    followed: str = nox.path.canonicalize(nxt + "/")
+                    if not _same_root(root_parts, nox.path.components(followed)):
+                        raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
+                except PathError:
+                    raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
             current = resolved
         else:
             if i != len(parts) - 1:

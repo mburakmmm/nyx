@@ -124,14 +124,18 @@ ln.arg("import os,sys; os.symlink(sys.argv[1], sys.argv[2], target_is_directory=
 ln.arg(outside)
 ln.arg(link_path)
 ln_out: Output = ln.run()
+print("symlink status " + str(ln_out.status))
 if not ln_out.success():
     print(ln_out.stdout)
+    print(ln_out.stderr)
 nox.test.assert_eq_int(ln_out.status, 0, "symlink fixture")
 escaped: bool = False
 try:
-    nyx.storage.path_for(link_root, "link/secret.txt")
+    got_link: str = nyx.storage.path_for(link_root, "link/secret.txt")
+    print("symlink path " + got_link)
 except StorageError:
     escaped = True
+    print("symlink rejected")
 nox.test.assert_true(escaped, "symlink out of root is rejected")
 
 print("storage_test ok")
