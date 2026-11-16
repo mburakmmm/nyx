@@ -7,9 +7,11 @@
 # nyx.metrics.inc_requests()
 # body: str = nyx.metrics.prometheus_text()
 
+import nox.os
 import nox.uuid
 import nox.strings
 import nox.sharedmem
+from nox.os import OsError
 from nox.sharedmem import SharedBuffer
 
 # Layout (i64 slots): 0 req, 8 5xx, 16 job_dead, 24 mail_fail, 32 rate_limited,
@@ -29,6 +31,16 @@ _WORKER_STRIDE: int = 24
 _MAX_WORKERS: int = 16
 _SIZE: int = 456
 
+# POSIX shm_open adı `/` ile başlar. Windows temp dosyası `/` görünce yol bozulur.
+def _shm_prefix() -> str:
+    try:
+        spec: str = nox.os.getenv("COMSPEC")
+        if len(spec) > 0:
+            return "nyxm"
+    except OsError:
+        return "/nyxm"
+    return "/nyxm"
+
 def _compact_shm_name() -> str:
     # macOS PSEMNAMLEN ≈ 31; UUID with dashes is too long for shm_open.
     u: str = nox.uuid.uuid4()
@@ -39,7 +51,7 @@ def _compact_shm_name() -> str:
         if c != "-":
             compact = compact + c
         i = i + 1
-    name: str = "/nyxm"
+    name: str = _shm_prefix()
     j: int = 0
     while j < len(compact) and len(name) < 30:
         name = name + compact[j]
@@ -82,7 +94,7 @@ def _name_from_key(key: str) -> str:
     while i < len(key):
         h = (h * 131 + nox.strings.byte_at(key, i)) % 1000000007
         i = i + 1
-    name: str = "/nyxm" + str(h)
+    name: str = _shm_prefix() + str(h)
     if len(name) > 30:
         short: str = ""
         j: int = 0

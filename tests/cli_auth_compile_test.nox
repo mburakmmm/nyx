@@ -9,6 +9,18 @@ import nox.strings
 import nox.test
 import nyx.cli_gen
 
+def _slashes(path: str) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(path):
+        ch: str = path[i]
+        if ch == "/":
+            out = out + "\\"
+        else:
+            out = out + ch
+        i = i + 1
+    return out
+
 def drop_hash(line: str) -> str:
     if nox.strings.starts_with(line, "# "):
         out: str = ""
@@ -86,13 +98,13 @@ script: str = ""
 if len(comspec) > 0:
     profile: str = nox.os.getenv("USERPROFILE")
     launcher = comspec
-    wrapper = root + "/run_noxc.cmd"
+    wrapper = _slashes(nox.os.current_dir() + "/" + root + "/run_noxc.cmd")
     script = "@echo off\r\n"
     script = script + "set \"HOME=" + profile + "\"\r\n"
     script = script + "set \"USERPROFILE=" + profile + "\"\r\n"
     script = script + "set \"PATH=" + profile + "\\.nox-lang\\bin;%PATH%\"\r\n"
-    script = script + "cd /d \"" + nox.os.current_dir() + "\"\r\n"
-    script = script + "\"" + profile + "\\.nox-lang\\bin\\noxc.exe\" test \"" + prog_path + "\"\r\n"
+    script = script + "cd /d \"" + _slashes(nox.os.current_dir()) + "\"\r\n"
+    script = script + "call \"" + profile + "\\.nox-lang\\bin\\noxc.exe\" test \"" + _slashes(prog_path) + "\"\r\n"
 else:
     home: str = nox.os.getenv("HOME")
     script = "#!/bin/sh\n"

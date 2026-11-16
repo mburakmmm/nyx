@@ -278,20 +278,21 @@ def _lease_conn(db: Connection) -> _LeaseConn:
         return _LeaseConn(db, False)
 
 async def _renew_lease(db: Connection, id: int, fence: int, run: _LeaseRun, owned: bool) -> None:
-    waited: int = 0
+    # Dilim sayısı duvar saatini tutmaz. Yavaş bir zamanlayıcıda 20 dilim
+    # dolmadan handler uyanırsa lease yenilenmez. Karar saate bakar.
     step: int = _lease_slice_ms()
     every: int = heartbeat_interval_ms()
+    started: int = nox.time.now_ms()
     while not run.stop:
         nox.time.sleep_ms(step)
         if run.stop:
             break
-        waited = waited + step
-        if waited >= every:
-            waited = 0
+        if nox.time.now_ms() - started >= every:
+            started = nox.time.now_ms()
             try:
                 heartbeat(db, id, fence)
             except SqliteError:
-                waited = 0
+                started = nox.time.now_ms()
     if owned:
         db.close()
 

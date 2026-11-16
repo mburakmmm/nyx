@@ -36,11 +36,19 @@ nox.test.assert_true(nyx.job.process_one(live, registry), "long job ran")
 nox.test.assert_eq_str(status_of(live, long_id), "completed", "owner completed the long job")
 nox.test.assert_eq_int(nyx.job.active_id(), 0, "active job cleared")
 
+def running_lease(db: Connection) -> int:
+    rows: list[Row] = db.query("SELECT lease_until_ms FROM jobs WHERE status = 'running'")
+    if len(rows) == 0:
+        return 0
+    return rows[0].get_int(0)
+
 def auto_handler(payload_json: str) -> None:
     live.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE status = 'running'")
-    nox.time.sleep_ms(nyx.job.heartbeat_interval_ms() + 400)
-    kept: int = nyx.job.reclaim_stale(live, 300000)
-    nox.test.assert_eq_int(kept, 0, "automatic heartbeat keeps the lease")
+    spins: int = 0
+    while spins < 40 and running_lease(live) <= 1:
+        nox.time.sleep_ms(50)
+        spins = spins + 1
+    nox.test.assert_true(running_lease(live) > 1, "automatic heartbeat keeps the lease")
 
 registry.register("Auto", auto_handler)
 auto_id: int = nyx.job.enqueue(live, "Auto", "{}", nox.time.now_ms())
@@ -102,9 +110,11 @@ nyx.job.ensure_schema(file_db)
 
 def file_auto(payload_json: str) -> None:
     file_db.execute("UPDATE jobs SET updated_at_ms = 1, lease_until_ms = 1 WHERE status = 'running'")
-    nox.time.sleep_ms(nyx.job.heartbeat_interval_ms() + 400)
-    kept_file: int = nyx.job.reclaim_stale(other, 300000)
-    nox.test.assert_eq_int(kept_file, 0, "file queue renews the lease on its own connection")
+    spins_file: int = 0
+    while spins_file < 40 and running_lease(file_db) <= 1:
+        nox.time.sleep_ms(50)
+        spins_file = spins_file + 1
+    nox.test.assert_true(running_lease(file_db) > 1, "file queue renews the lease on its own connection")
 
 file_reg: JobRegistry = JobRegistry()
 file_reg.register("FileAuto", file_auto)

@@ -5,7 +5,7 @@
 **Rails-scoped, batteries-included web framework for [Nox](https://github.com/mburakmmm/nox-lang).**  
 Scope matches Rails’ problem domains (app lifecycle, models, security, jobs…). Ergonomics are still catching up — prefer the typed APIs below.
 
-**Version:** 0.30.0 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
+**Version:** 0.30.1 · **License:** MIT · **Requires Nox ≥ 2.1.186** (CI **2.1.186**)  
 Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].alias` may differ).
 
 ---
@@ -24,7 +24,7 @@ Internal imports use package name `nyx` (Nox ≥ 1.12.1: consumer `requires[].al
     {
       "alias": "nyx",
       "repo": "github.com/mburakmmm/nyx",
-      "ref": "v0.30.0"
+      "ref": "v0.30.1"
     }
   ]
 }
@@ -172,6 +172,12 @@ Argument parsing is Rune `Command` / `CliApp`. File generation is Nox. On Window
 ---
 
 ## Changelog
+
+### 0.30.1 — Nox 2.1.186 (not 1.0)
+- Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
+- MySQL CI installs `libmysqlclient.so.21` and allows root from the runner host
+- Job lease renewal follows the wall clock, so a slow scheduler still extends the lease before the handler wakes
+- Shared-memory names omit the leading slash on Windows, where that slash breaks the temp-file path. The auth compile test calls `noxc` from a `.cmd` file with backslashes
 
 ### 0.30.0 — Nox 2.1.186 (not 1.0)
 - Still requires **Nox ≥ 2.1.186**. HTTP/3 stays off
