@@ -1,6 +1,6 @@
 # Nyx → Rails seviyesi: batteries-included yol haritası (B + Devise-core)
 
-**Durum:** Nyx **0.30.7** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
+**Durum:** Nyx **0.30.8** (1.0 değil) · Nox **≥ 2.1.186** (CI **2.1.186**)  
 **Karar:** Stack B (`nyx new` = SQLite; PG production birinci sınıf) · Auth = Devise-core (OAuth/2FA sonra)
 
 Hedef: Rails’in problem alanlarında production-grade ergonomi (klon değil, eşdeğer iş akışı).
@@ -65,6 +65,7 @@ Tek paket `nyx.*`, adapter’lı batteries:
 | **0.30.5** | Metrik kuşağı, heartbeat birleşimi, migration kilidi, `nyx.orm` ve şablon önbelleği. HTTP/3 kapalı |
 | **0.30.6** | Windows depolama ve SMTP; MySQL stres testi kopan oturumu `KILL` ile dener |
 | **0.30.7** | Windows SMTP Winsock; depolama dizin bağını kökün içinde bırakmaz |
+| **0.30.8** | Windows SMTP’ye SYSTEMROOT ve kendi konsolu; depolama reparse noktasını reddeder |
 
 ## 4. Bilinçli dışarı (0.15 sonrası)
 

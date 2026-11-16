@@ -8,7 +8,9 @@
 # nyx.storage.delete("storage", key)
 
 import nox.fs
+import nox.os
 import nox.path
+import nox.process
 import nox.uuid
 import nox.crypto
 import nox.time
@@ -18,8 +20,10 @@ import nox.http
 import nox.transfer
 import nyx.config
 from nox.http import HttpResponse, HttpError, HttpTimeoutError
+from nox.os import OsError
 from nox.path import PathError
 from nox.fs import FsError
+from nox.process import ProcessError, Command, Output
 
 class StorageError(Exception):
     pass
@@ -87,9 +91,61 @@ def _same_root(root_parts: list[str], full_parts: list[str]) -> bool:
         i = i + 1
     return True
 
+def _on_windows() -> bool:
+    try:
+        spec: str = nox.os.getenv("COMSPEC")
+        return len(spec) > 0
+    except OsError:
+        return False
+
+def _win_path(path: str) -> str:
+    out: str = ""
+    i: int = 0
+    while i < len(path):
+        b: int = nox.strings.byte_at(path, i)
+        if b == 47:
+            out = out + "\\"
+        else:
+            out = out + nox.strings.char_from_byte(b)
+        i = i + 1
+    return out
+
+def _fsutil_bin() -> str:
+    root: str = "C:\\Windows"
+    try:
+        got: str = nox.os.getenv("SYSTEMROOT")
+        if len(got) > 0:
+            root = got
+    except OsError:
+        root = "C:\\Windows"
+    return _win_path(root) + "\\System32\\fsutil.exe"
+
+# Windows canonicalize sembolik bagi her zaman cozmez. Acilan dosya ise
+# bagi izler. fsutil son bileseni izlemeden reparse noktasini sorar:
+# 0 bag, 4390 (veya 1) normal dosya/dizin. Diger kodlar kapali kalir.
+def _reparse_point(path: str) -> bool:
+    if not _on_windows():
+        return False
+    if not nox.fs.exists(path):
+        return False
+    try:
+        cmd: Command = Command(_fsutil_bin())
+        cmd.arg("reparsepoint")
+        cmd.arg("query")
+        cmd.arg(_win_path(path))
+        cmd.set_timeout(5000)
+        out: Output = cmd.run()
+        if out.status == 0:
+            return True
+        if out.status == 1 or out.status == 4390:
+            return False
+        return True
+    except ProcessError:
+        return True
+
 # Her bilesen ayri canonicalize edilir. Windows, 'link/secret' gibi cok
 # parcali goreli yolu sembolik bagi cozmeden birakabiliyor; tek parca
-# cozum disari cikan bagi yakalar.
+# cozum disari cikan bagi yakalar. Reparse noktasi ayrica reddedilir.
 def _resolve_key(root: str, key: str) -> str:
     root_real: str = nox.path.canonicalize(root)
     root_parts: list[str] = nox.path.components(root_real)
@@ -107,13 +163,8 @@ def _resolve_key(root: str, key: str) -> str:
         if ok:
             if not _same_root(root_parts, nox.path.components(resolved)):
                 raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
-            if nox.fs.is_dir(nxt):
-                try:
-                    followed: str = nox.path.canonicalize(nxt + "/")
-                    if not _same_root(root_parts, nox.path.components(followed)):
-                        raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
-                except PathError:
-                    raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
+            if _reparse_point(nxt):
+                raise StorageError("depolama anahtari kok dizinin disina cikiyor: " + key)
             current = resolved
         else:
             if i != len(parts) - 1:

@@ -12,6 +12,10 @@ here = os.path.dirname(os.path.abspath(__file__))
 cert = os.path.join(here, "fixtures", "smtp.crt")
 key = os.path.join(here, "fixtures", "smtp.key")
 
+if os.name == "nt":
+    sys.stderr.write("smtp env SYSTEMROOT=" + str(os.environ.get("SYSTEMROOT")) + "\n")
+    sys.stderr.flush()
+
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", port))
